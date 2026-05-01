@@ -3,7 +3,9 @@
     "allow": [
       "Bash(gh auth *)",
       "Bash(git remote *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(python3 -c ' *)",
+      "Bash(python3)"
     ]
   }
 }

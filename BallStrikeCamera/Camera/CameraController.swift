@@ -11,6 +11,9 @@ final class CameraController: NSObject, ObservableObject {
     @Published var currentBallRect: CGRect?
     @Published var capturedFrames: [CapturedFrame] = []
     @Published var statusText: String = "Looking for ball"
+    @Published var isAnalyzingShot: Bool = false
+    @Published var latestShotAnalysis: ShotAnalysisResult?
+    @Published var analysisStatusText: String = ""
 
     let session = AVCaptureSession()
 
@@ -324,9 +327,11 @@ extension CameraController: AVCaptureVideoDataOutputSampleBufferDelegate {
                 capturedFrames = Array(eventFrames.prefix(preHitFrames + postHitFrames + 1))
                 print("Captured \(capturedFrames.count) hit frames")
                 print("Resetting shot pipeline")
+                let savedLockedBallRect = lockedBallRect  // capture before reset clears it
                 pendingPostCapture = false
                 eventFrames = []
                 resetShotPipeline(to: .captured, status: "Captured \(capturedFrames.count) hit frames")
+                analyzeCapturedFrames(capturedFrames, lockedBallRect: savedLockedBallRect)
             }
             return
         }
@@ -475,6 +480,74 @@ extension CameraController: AVCaptureVideoDataOutputSampleBufferDelegate {
         stableFrameCount = 0
         stableRect = nil
         readyLostFrameCount = 0
+    }
+
+    @MainActor
+    private func analyzeCapturedFrames(_ frames: [CapturedFrame], lockedBallRect: CGRect?) {
+        guard !frames.isEmpty else { return }
+        isAnalyzingShot = true
+        analysisStatusText = "Analyzing shot..."
+        print("Shot analysis started with \(frames.count) frames")
+
+        let impactIndex = min(preHitFrames, frames.count - 1)
+        let originTimestamp = frames[impactIndex].timestamp
+        let normalizer = FrameNormalizer()
+
+        // Step 1 — Normalize
+        print("Normalizing \(frames.count) shot frames")
+        let normStart = Date()
+        let prelimFrames: [AnalyzedShotFrame] = frames.enumerated().map { idx, frame in
+            AnalyzedShotFrame(
+                frameIndex: idx,
+                timestamp: frame.timestamp,
+                relativeTime: frame.timestamp - originTimestamp,
+                originalFrame: frame,
+                normalizedImage: normalizer.normalizedImage(from: frame.image),
+                ballObservation: nil
+            )
+        }
+        let normMs = Date().timeIntervalSince(normStart) * 1000
+        print(String(format: "Frame normalization took %.1f ms", normMs))
+        print("Frame normalization complete")
+
+        // Step 2 — Track
+        var observationMap: [Int: ShotBallObservation] = [:]
+        if let lockedRect = lockedBallRect {
+            let tracker = PostImpactBallTracker()
+            let observations = tracker.track(
+                frames: prelimFrames,
+                lockedBallRect: lockedRect,
+                impactFrameIndex: impactIndex
+            )
+            PostImpactBallTracker.printSummary(observations, impactFrameIndex: impactIndex)
+            for obs in observations { observationMap[obs.frameIndex] = obs }
+        } else {
+            print("PostImpactBallTracker: no lockedBallRect — skipping tracking")
+        }
+
+        // Step 3 — Merge observations into final frames
+        let finalFrames: [AnalyzedShotFrame] = prelimFrames.map { frame in
+            AnalyzedShotFrame(
+                frameIndex: frame.frameIndex,
+                timestamp: frame.timestamp,
+                relativeTime: frame.relativeTime,
+                originalFrame: frame.originalFrame,
+                normalizedImage: frame.normalizedImage,
+                ballObservation: observationMap[frame.frameIndex]
+            )
+        }
+
+        let result = ShotAnalysisResult(
+            frames: finalFrames,
+            impactFrameIndex: impactIndex,
+            lockedBallRect: lockedBallRect,
+            createdAt: Date()
+        )
+
+        latestShotAnalysis = result
+        isAnalyzingShot = false
+        analysisStatusText = "Analysis complete"
+        print("Shot analysis complete: \(result.frames.count) frames, impact at index \(result.impactFrameIndex)")
     }
 
     @MainActor
