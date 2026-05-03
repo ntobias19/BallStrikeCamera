@@ -523,16 +523,25 @@ extension CameraController: AVCaptureVideoDataOutputSampleBufferDelegate {
         // Step 2 — Track
         var observationMap: [Int: ShotBallObservation] = [:]
         var debugInfoMap:   [Int: ShotFrameDebugInfo]  = [:]
+        var effectiveImpactIndex = impactIndex
+        var fallbackImpactIndex = impactIndex
+        var impactDetectionReason = "no_locked_ball_rect"
+        var initialBallCenter: CGPoint? = nil
+        var movementThresholdNorm: CGFloat = 0
         if let lockedRect = lockedBallRect {
             let tracker = PostImpactBallTracker()
-            let (observations, debugInfos) = tracker.track(
+            let trackingResult = tracker.track(
                 frames: prelimFrames,
                 lockedBallRect: lockedRect,
                 impactFrameIndex: impactIndex
             )
-            PostImpactBallTracker.printSummary(observations, impactFrameIndex: impactIndex)
-            for obs  in observations { observationMap[obs.frameIndex]  = obs }
-            for info in debugInfos   { debugInfoMap[info.frameIndex]   = info }
+            effectiveImpactIndex = trackingResult.detectedImpactFrameIndex
+            fallbackImpactIndex = trackingResult.fallbackImpactFrameIndex
+            impactDetectionReason = trackingResult.impactDetectionReason
+            initialBallCenter = trackingResult.initialBallCenter
+            movementThresholdNorm = trackingResult.movementThresholdNorm
+            for obs  in trackingResult.observations { observationMap[obs.frameIndex]  = obs }
+            for info in trackingResult.debugInfos   { debugInfoMap[info.frameIndex]   = info }
         } else {
             print("PostImpactBallTracker: no lockedBallRect — skipping tracking")
         }
@@ -551,13 +560,35 @@ extension CameraController: AVCaptureVideoDataOutputSampleBufferDelegate {
             )
         }
 
-        let result = ShotAnalysisResult(
+        let analysisCreatedAt = Date()
+        var result = ShotAnalysisResult(
             frames: finalFrames,
-            impactFrameIndex: impactIndex,
+            impactFrameIndex: effectiveImpactIndex,
             lockedBallRect: lockedBallRect,
             lockedImpactROI: lockedImpactROI,
-            createdAt: Date()
+            createdAt: analysisCreatedAt,
+            fallbackImpactFrameIndex: fallbackImpactIndex,
+            detectedImpactFrameIndex: effectiveImpactIndex,
+            impactDetectionReason: impactDetectionReason,
+            initialBallCenter: initialBallCenter,
+            movementThresholdNorm: movementThresholdNorm
         )
+
+        if let metrics = ShotMetricsCalculator().calculate(for: result) {
+            result = ShotAnalysisResult(
+                frames: finalFrames,
+                impactFrameIndex: effectiveImpactIndex,
+                lockedBallRect: lockedBallRect,
+                lockedImpactROI: lockedImpactROI,
+                createdAt: analysisCreatedAt,
+                fallbackImpactFrameIndex: fallbackImpactIndex,
+                detectedImpactFrameIndex: effectiveImpactIndex,
+                impactDetectionReason: impactDetectionReason,
+                initialBallCenter: initialBallCenter,
+                movementThresholdNorm: movementThresholdNorm,
+                metrics: metrics
+            )
+        }
 
         latestShotAnalysis = result
         isAnalyzingShot = false

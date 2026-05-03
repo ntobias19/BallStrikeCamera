@@ -19,7 +19,8 @@ struct ShotTrackingReviewView: View {
         self.analysis = analysis
         self.onDismiss = onDismiss
         // Start at the impact frame so the user immediately sees the interesting moment.
-        self._currentIndex = State(initialValue: analysis.impactFrameIndex)
+        let maxIndex = max(0, analysis.frames.count - 1)
+        self._currentIndex = State(initialValue: min(max(0, analysis.detectedImpactFrameIndex), maxIndex))
     }
 
     private var currentFrame: AnalyzedShotFrame { analysis.frames[currentIndex] }
@@ -30,6 +31,7 @@ struct ShotTrackingReviewView: View {
             topBar
             imageArea
             infoPanel
+            metricsPanel
             navigationBar
         }
         .background(Color.black.ignoresSafeArea())
@@ -146,14 +148,14 @@ struct ShotTrackingReviewView: View {
                     .frame(width: geo.size.width, height: geo.size.height)
                     .allowsHitTesting(false)
 
-                    if currentFrame.frameIndex == analysis.impactFrameIndex {
+                    if currentFrame.frameIndex == analysis.detectedImpactFrameIndex {
                         VStack {
                             Text("IMPACT FRAME")
                                 .font(.system(size: 11, weight: .bold))
-                                .foregroundColor(.white)
+                                .foregroundColor(.black)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 4)
-                                .background(Color.red.opacity(0.85))
+                                .background(Color.yellow.opacity(0.90))
                                 .clipShape(Capsule())
                             Spacer()
                         }
@@ -198,7 +200,8 @@ struct ShotTrackingReviewView: View {
 
         // Ball detection result — green circle + center dot.
         if let obs = currentFrame.ballObservation,
-           let cx  = obs.centerX, let cy = obs.centerY, let d = obs.diameter {
+           let cx  = obs.centerX, let cy = obs.centerY,
+           let d = obs.finalDiameter ?? obs.diameter {
             let center = mapPoint(CGPoint(x: cx, y: cy), to: dr)
             let radius = d * dr.width / 2
             let ballRect = CGRect(x: center.x - radius, y: center.y - radius,
@@ -215,8 +218,8 @@ struct ShotTrackingReviewView: View {
         let frame    = currentFrame
         let obs      = frame.ballObservation
         let debug    = frame.debugInfo
-        let isImpact = frame.frameIndex == analysis.impactFrameIndex
-        let isPost   = frame.frameIndex > analysis.impactFrameIndex
+        let isImpact = frame.frameIndex == analysis.detectedImpactFrameIndex
+        let isPost   = frame.frameIndex > analysis.detectedImpactFrameIndex
 
         return VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 12) {
@@ -225,10 +228,10 @@ struct ShotTrackingReviewView: View {
 
                 Text(isImpact ? "IMPACT" : isPost ? "post" : "pre")
                     .font(.system(size: 10, weight: .bold))
-                    .foregroundColor(isImpact ? .red : isPost ? .orange : .secondary)
+                    .foregroundColor(isImpact ? .yellow : isPost ? .orange : .secondary)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 2)
-                    .background((isImpact ? Color.red : isPost ? Color.orange : Color.secondary).opacity(0.15))
+                    .background((isImpact ? Color.yellow : isPost ? Color.orange : Color.secondary).opacity(0.15))
                     .clipShape(Capsule())
 
                 Text(displayMode.displayName)
@@ -249,7 +252,9 @@ struct ShotTrackingReviewView: View {
                         .foregroundColor(.secondary)
                 }
                 Spacer()
-                if let d = obs?.diameter { Text(String(format: "d=%.4f", d)) }
+                if let d = obs?.finalDiameter ?? obs?.diameter {
+                    Text(String(format: "finalD=%.4f", d))
+                }
                 if let obs, obs.centerX != nil {
                     Text(String(format: "conf=%.2f", obs.confidence))
                         .foregroundColor(.green)
@@ -280,12 +285,95 @@ struct ShotTrackingReviewView: View {
                     }
                 }
             }
+
+            HStack(spacing: 10) {
+                Text("impact detected=\(analysis.detectedImpactFrameIndex) fallback=\(analysis.fallbackImpactFrameIndex)")
+                    .foregroundColor(.secondary)
+                Text(analysis.impactDetectionReason)
+                    .foregroundColor(.yellow)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer()
+                if let obs {
+                    let candidate = obs.candidateDiameter.map { String(format: "%.4f", $0) } ?? "n/a"
+                    let refined = obs.refinedDiameter.map { String(format: "%.4f", $0) } ?? "n/a"
+                    let smoothed = obs.smoothedDiameter.map { String(format: "%.4f", $0) } ?? "n/a"
+                    Text("candD=\(candidate) refinedD=\(refined) smoothD=\(smoothed)")
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            HStack(spacing: 10) {
+                if let reason = obs?.diameterDebugReason, !reason.isEmpty {
+                    Text("diam: \(reason)")
+                        .foregroundColor(.green.opacity(0.85))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                if let obs, obs.maskWhitePixelCount > 0 {
+                    Text("mask px: \(obs.maskWhitePixelCount)")
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+            }
         }
         .font(.system(size: 12, design: .monospaced))
         .foregroundColor(.white)
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(Color(white: 0.08))
+    }
+
+    @ViewBuilder
+    private var metricsPanel: some View {
+        if let metrics = analysis.metrics {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 14) {
+                    metricCell("Ball Speed", value: mph(metrics.ballLaunch.ballSpeedMph))
+                    metricCell("HLA", value: degrees(metrics.ballLaunch.hlaDegrees))
+                    metricCell("VLA", value: degrees(metrics.ballLaunch.vlaDegrees))
+                    metricCell("Club Speed", value: mph(metrics.club.clubSpeedMph))
+                    metricCell("Smash", value: plain(metrics.smashFactor, digits: 2))
+                    metricCell("Estimated Carry", value: yards(metrics.distance.carryYards))
+                    metricCell("Estimated Total", value: yards(metrics.distance.totalYards))
+                }
+
+                HStack(spacing: 12) {
+                    Text("ball pts \(metrics.ballLaunch.pointsUsed)")
+                    Text("club pts \(metrics.club.pointsUsed)")
+                    Text(String(format: "ball q %.2f", metrics.ballLaunch.quality))
+                    Text(String(format: "club q %.2f", metrics.club.quality))
+                    Text("impact \(metrics.detectedImpactFrameIndex)")
+                    Spacer()
+                    if let warning = metrics.warnings.first {
+                        Text(warning)
+                            .foregroundColor(.yellow.opacity(0.9))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                }
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundColor(.white.opacity(0.65))
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(Color(white: 0.065))
+        }
+    }
+
+    private func metricCell(_ label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundColor(.white.opacity(0.55))
+                .lineLimit(1)
+            Text(value)
+                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                .foregroundColor(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Navigation Bar
@@ -367,6 +455,23 @@ struct ShotTrackingReviewView: View {
     private func mapPoint(_ normalized: CGPoint, to dr: CGRect) -> CGPoint {
         CGPoint(x: dr.minX + normalized.x * dr.width,
                 y: dr.minY + normalized.y * dr.height)
+    }
+
+    private func mph(_ value: Double?) -> String {
+        value.map { String(format: "%.1f mph", $0) } ?? "--"
+    }
+
+    private func degrees(_ value: Double?) -> String {
+        value.map { String(format: "%.1f°", $0) } ?? "--"
+    }
+
+    private func yards(_ value: Double?) -> String {
+        value.map { String(format: "%.0f yd", $0) } ?? "--"
+    }
+
+    private func plain(_ value: Double?, digits: Int) -> String {
+        guard let value else { return "--" }
+        return String(format: "%.\(digits)f", value)
     }
 }
 

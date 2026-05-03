@@ -56,6 +56,11 @@ final class ShotExportService {
         try trackData.write(to: packageDir.appendingPathComponent("tracking.json"))
         print("Wrote tracking.json")
 
+        let metricsData = try JSONSerialization.data(
+            withJSONObject: metricsJSON(analysis: analysis), options: [.prettyPrinted])
+        try metricsData.write(to: packageDir.appendingPathComponent("metrics.json"))
+        print("Wrote metrics.json")
+
         let zipURL = exportsDir.appendingPathComponent("\(dirName).zip")
         try buildStoredZip(from: packageDir, to: zipURL)
         print("Created shot export zip: \(zipURL.lastPathComponent)")
@@ -100,6 +105,98 @@ final class ShotExportService {
             }
             return obs
         }]
+    }
+
+    private func metricsJSON(analysis: ShotAnalysisResult) -> [String: Any] {
+        guard let metrics = analysis.metrics else {
+            return [
+                "metrics_available": false,
+                "detectedImpactFrameIndex": analysis.detectedImpactFrameIndex,
+                "fallbackImpactFrameIndex": analysis.fallbackImpactFrameIndex,
+                "warnings": ["Metrics were not calculated for this shot."]
+            ]
+        }
+
+        return [
+            "metrics_available": true,
+            "detectedImpactFrameIndex": metrics.detectedImpactFrameIndex,
+            "fallbackImpactFrameIndex": metrics.fallbackImpactFrameIndex,
+            "ballSpeedMph": jsonNumber(metrics.ballLaunch.ballSpeedMph),
+            "hlaDegrees": jsonNumber(metrics.ballLaunch.hlaDegrees),
+            "vlaDegrees": jsonNumber(metrics.ballLaunch.vlaDegrees),
+            "clubSpeedMph": jsonNumber(metrics.club.clubSpeedMph),
+            "smashFactor": jsonNumber(metrics.smashFactor),
+            "carryYards": jsonNumber(metrics.distance.carryYards),
+            "totalYards": jsonNumber(metrics.distance.totalYards),
+            "ballQuality": metrics.ballLaunch.quality,
+            "clubQuality": metrics.club.quality,
+            "ballPointsUsed": metrics.ballLaunch.pointsUsed,
+            "clubPointsUsed": metrics.club.pointsUsed,
+            "ballMethod": metrics.ballLaunch.method,
+            "clubMethod": metrics.club.method,
+            "distanceMethod": metrics.distance.method,
+            "warnings": metrics.warnings,
+            "calibration": calibrationJSON(metrics.calibration),
+            "ball3DObservations": metrics.ball3DObservations.map(ball3DJSON),
+            "clubObservations": metrics.clubObservations.map(clubObservationJSON)
+        ]
+    }
+
+    private func calibrationJSON(_ calibration: CameraCalibration) -> [String: Any] {
+        [
+            "horizontalFOVDegrees": calibration.horizontalFOVDegrees,
+            "verticalFOVDegrees": calibration.verticalFOVDegrees,
+            "imageWidthPixels": calibration.imageWidthPixels,
+            "imageHeightPixels": calibration.imageHeightPixels,
+            "realBallDiameterMeters": calibration.realBallDiameterMeters,
+            "cameraHeightMeters": jsonNumber(calibration.cameraHeightMeters),
+            "cameraTiltDegrees": jsonNumber(calibration.cameraTiltDegrees),
+            "focalLengthPixelsX": calibration.focalLengthPixelsX,
+            "focalLengthPixelsY": calibration.focalLengthPixelsY
+        ]
+    }
+
+    private func ball3DJSON(_ observation: Ball3DObservation) -> [String: Any] {
+        [
+            "frameIndex": observation.frameIndex,
+            "timestamp": observation.timestamp,
+            "relativeTime": observation.relativeTime,
+            "imageX": observation.imageX,
+            "imageY": observation.imageY,
+            "diameterNorm": observation.diameterNorm,
+            "diameterPixels": observation.diameterPixels,
+            "positionMeters": [
+                "x": observation.positionMeters.x,
+                "y": observation.positionMeters.y,
+                "z": observation.positionMeters.z
+            ],
+            "confidence": observation.confidence
+        ]
+    }
+
+    private func clubObservationJSON(_ observation: ClubObservation) -> [String: Any] {
+        [
+            "frameIndex": observation.frameIndex,
+            "timestamp": observation.timestamp,
+            "relativeTime": observation.relativeTime,
+            "centerX": jsonNumber(observation.centerX.map(Double.init)),
+            "centerY": jsonNumber(observation.centerY.map(Double.init)),
+            "leadingEdgeX": jsonNumber(observation.leadingEdgeX.map(Double.init)),
+            "leadingEdgeY": jsonNumber(observation.leadingEdgeY.map(Double.init)),
+            "confidence": observation.confidence,
+            "searchROI": rectJSON(observation.searchROI),
+            "debugReason": observation.debugReason
+        ]
+    }
+
+    private func rectJSON(_ rect: CGRect?) -> Any {
+        guard let rect else { return NSNull() }
+        return ["x": rect.minX, "y": rect.minY, "width": rect.width, "height": rect.height]
+    }
+
+    private func jsonNumber(_ value: Double?) -> Any {
+        guard let value, value.isFinite else { return NSNull() }
+        return value
     }
 
     // MARK: - ZIP (stored method, no compression)
