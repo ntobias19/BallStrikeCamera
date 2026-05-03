@@ -12,6 +12,7 @@ struct BallTrackingTestSequence {
     let frames: [BallTrackingTestFrame]
     let impactFrameIndex: Int
     let sourceName: String
+    let sourceURL: URL?
     let lockedBallRect: CGRect?
 }
 
@@ -69,4 +70,29 @@ struct BallTrackingTestResult {
     let impactDetectionReason: String
     let initialBallCenter: CGPoint?
     let movementThresholdNorm: CGFloat
+    let metrics: ExperimentalShotMetricsResult?
+
+    init(
+        observations: [BallTrackingTestObservation],
+        trackedCount: Int,
+        missingCount: Int,
+        averageConfidence: Double,
+        detectedImpactFrameIndex: Int,
+        fallbackImpactFrameIndex: Int,
+        impactDetectionReason: String,
+        initialBallCenter: CGPoint?,
+        movementThresholdNorm: CGFloat,
+        metrics: ExperimentalShotMetricsResult? = nil
+    ) {
+        self.observations = observations
+        self.trackedCount = trackedCount
+        self.missingCount = missingCount
+        self.averageConfidence = averageConfidence
+        self.detectedImpactFrameIndex = detectedImpactFrameIndex
+        self.fallbackImpactFrameIndex = fallbackImpactFrameIndex
+        self.impactDetectionReason = impactDetectionReason
+        self.initialBallCenter = initialBallCenter
+        self.movementThresholdNorm = movementThresholdNorm
+        self.metrics = metrics
+    }
 }

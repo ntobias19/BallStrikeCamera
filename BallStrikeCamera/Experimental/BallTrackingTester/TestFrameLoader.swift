@@ -71,6 +71,7 @@ final class TestFrameLoader {
             frames: frames,
             impactFrameIndex: impactFrameIndex,
             sourceName: exportURL.lastPathComponent,
+            sourceURL: exportURL,
             lockedBallRect: lockedBallRect)
     }
 

@@ -45,6 +45,67 @@ struct DiameterRefinementSettings {
     }
 }
 
+// MARK: - Experimental Calibration Settings
+
+struct CalibrationTuningSettings {
+    var horizontalFOVDegrees: Double = 70
+    var verticalFOVDegrees:   Double = 45
+    var realBallDiameterMeters: Double = 0.04267
+    var useCameraHeight: Bool = false
+    var cameraHeightMeters: Double = 1.0
+    var useCameraTilt: Bool = false
+    var cameraTiltDegrees: Double = 0
+
+    mutating func resetDefaults() {
+        self = CalibrationTuningSettings()
+    }
+}
+
+// MARK: - Experimental Club Tracking Settings
+
+struct ClubTrackingTuningSettings {
+    var enabled: Bool = true
+    var searchBehindBallEnabled: Bool = true
+    var ballExclusionRadiusScale: Double = 1.8
+    var clubSearchROIScaleX: Double = 6.0
+    var clubSearchROIScaleY: Double = 4.0
+    var useFrameDifference: Bool = true
+    var frameDifferenceThreshold: Double = 34
+    var minClubBlobArea: Double = 5
+    var maxClubBlobArea: Double = 6000
+    var minClubConfidence: Double = 0.20
+    var minClubDarknessOrEdgeThreshold: Double = 85
+    var debugLoggingEnabled: Bool = true
+
+    var showClubTracker: Bool = true
+    var showClubSearchROI: Bool = true
+    var showClubPath: Bool = true
+    var showBallExclusionZone: Bool = true
+
+    mutating func resetDefaults() {
+        self = ClubTrackingTuningSettings()
+    }
+
+    func toConfig(trackingMode: FrameNormalizationMode, sampleStride: Double) -> ExperimentalClubTracker.Configuration {
+        ExperimentalClubTracker.Configuration(
+            enabled: enabled,
+            searchBehindBallEnabled: searchBehindBallEnabled,
+            ballExclusionRadiusScale: CGFloat(ballExclusionRadiusScale),
+            clubSearchROIScaleX: CGFloat(clubSearchROIScaleX),
+            clubSearchROIScaleY: CGFloat(clubSearchROIScaleY),
+            minClubDarknessOrEdgeThreshold: Int(minClubDarknessOrEdgeThreshold.rounded()),
+            useFrameDifference: useFrameDifference,
+            frameDifferenceThreshold: Int(frameDifferenceThreshold.rounded()),
+            minClubBlobArea: Int(minClubBlobArea.rounded()),
+            maxClubBlobArea: Int(maxClubBlobArea.rounded()),
+            minClubConfidence: minClubConfidence,
+            sampleStride: Int(sampleStride.rounded()),
+            debugLoggingEnabled: debugLoggingEnabled,
+            normalizationMode: trackingMode
+        )
+    }
+}
+
 // MARK: - Main Tuning Settings
 
 struct BallTrackingTuningSettings {
@@ -80,8 +141,14 @@ struct BallTrackingTuningSettings {
     var trackingMode:              FrameNormalizationMode  = .darkenedHighContrast
     var diameter:                  DiameterRefinementSettings = DiameterRefinementSettings()
     var impact:                    ImpactDetectionSettings    = ImpactDetectionSettings()
+    var calibration:               CalibrationTuningSettings  = CalibrationTuningSettings()
+    var club:                      ClubTrackingTuningSettings = ClubTrackingTuningSettings()
     var showOriginalCandidateBounds: Bool = false
     var showMaskPreview:             Bool = true
+    var showBallPath:                Bool = true
+    var show0DegRef:                 Bool = true
+    var zeroDegreeAngleDeg:          Double = 0
+    var carryCorrectionFactor:       Double = 0.75
 
     func toConfiguration() -> ExperimentalBallTracker.Configuration {
         ExperimentalBallTracker.Configuration(

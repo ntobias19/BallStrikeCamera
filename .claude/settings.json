@@ -20,7 +20,15 @@
       "Bash(python3 shot_tester.py)",
       "Bash(osascript -e 'tell application \"Terminal\" *)",
       "Bash(git -C /Users/noahtobias/Downloads/BallStrikeCamera diff --name-only)",
-      "Bash(python3 shot_tester.py \"/Users/noahtobias/Downloads/ShotExport_20260501_114631\")"
+      "Bash(python3 shot_tester.py \"/Users/noahtobias/Downloads/ShotExport_20260501_114631\")",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('/tmp/shot_tester.py'\\).read\\(\\)\\); print\\('shot_tester.py: OK'\\)\")",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('/Users/noahtobias/Downloads/BallStrikeCamera/BallStrikeCamera/Experimental/BallTrackingTester/Python/plot_tracking.py'\\).read\\(\\)\\); print\\('plot_tracking.py: OK'\\)\")",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('/tmp/shot_tester.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(xcrun swiftc *)",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('/tmp/shot_tester.py'\\).read\\(\\)\\); print\\('syntax OK'\\)\")",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('shot_tester.py'\\).read\\(\\)\\); print\\('syntax OK'\\)\")",
+      "Bash(python3 /tmp/shot_tester.py \".\" --face-method pca)",
+      "Bash(kill 4647)"
     ],
     "additionalDirectories": [
       "/tmp",
