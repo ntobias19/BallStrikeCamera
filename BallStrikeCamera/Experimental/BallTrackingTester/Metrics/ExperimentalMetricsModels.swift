@@ -23,7 +23,14 @@ struct ExperimentalBallLaunchMetrics {
     let hlaDisplay: String
     /// 3D raw atan2(vx, vz) — kept for reference/debugging
     let hla3DRawDegrees: Double?
+    /// VLA clamped to ≥ 0 (Part E)
     let vlaDegrees: Double?
+    /// Raw VLA before clamping (Part E) — nil if not clamped
+    let vlaRawDegrees: Double?
+    /// VLA estimated from ball diameter growth (Part D-new) — nil if not used
+    var vlaDiameterEstDegrees: Double? = nil
+    /// Raw diameter growth fraction used for VLA estimate (Part D-new)
+    var diameterGrowthFraction: Double? = nil
     let hlaReferenceAngleDegrees: Double
     let ballMovementDx: Double?
     let ballMovementDy: Double?

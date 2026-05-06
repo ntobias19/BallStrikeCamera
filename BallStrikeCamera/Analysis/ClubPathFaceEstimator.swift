@@ -1,24 +1,41 @@
-#if DEBUG
 import Foundation
 import CoreGraphics
 import UIKit
 
-struct ExperimentalClubPathFaceEstimator {
+struct ClubPathEstimate {
+    let clubPathDegreesSigned: Double?
+    let clubPathDisplay: String
+    let confidence: Double
+    let method: String
+    let warnings: [String]
+}
+
+struct FaceAngleEstimate {
+    let faceAngleDegreesSigned: Double?
+    let faceAngleDisplay: String
+    let faceToPathDegreesSigned: Double?
+    let faceToPathDisplay: String
+    let confidence: String
+    let method: String
+    let warnings: [String]
+}
+
+struct ClubPathFaceEstimator {
 
     // MARK: - Club path
 
     func estimateClubPath(
-        clubObservations: [ExperimentalClubObservation],
+        clubObservations: [ClubObservation],
         zeroDegreeAngleDegrees: Double,
-        calibration: ExperimentalCameraCalibration,
+        calibration: CameraCalibration,
         impactFrameIndex: Int
-    ) -> ExperimentalClubPathEstimate {
+    ) -> ClubPathEstimate {
         let preImpact = clubObservations
             .filter { $0.frameIndex <= impactFrameIndex && $0.centerX != nil && $0.centerY != nil }
             .sorted { $0.frameIndex < $1.frameIndex }
 
         guard preImpact.count >= 2 else {
-            return ExperimentalClubPathEstimate(
+            return ClubPathEstimate(
                 clubPathDegreesSigned: nil, clubPathDisplay: "—",
                 confidence: 0, method: "not_enough_data",
                 warnings: ["Not enough pre-impact club observations for path angle."]
@@ -30,17 +47,17 @@ struct ExperimentalClubPathFaceEstimator {
         let ys    = preImpact.compactMap { $0.centerY.map(Double.init) }
 
         guard xs.count == preImpact.count else {
-            return ExperimentalClubPathEstimate(
+            return ClubPathEstimate(
                 clubPathDegreesSigned: nil, clubPathDisplay: "—",
                 confidence: 0, method: "incomplete_data",
                 warnings: ["Some club observations missing center coordinates."]
             )
         }
 
-        let meanT  = times.reduce(0, +) / Double(times.count)
-        let denom  = times.map { ($0 - meanT) * ($0 - meanT) }.reduce(0, +)
+        let meanT = times.reduce(0, +) / Double(times.count)
+        let denom = times.map { ($0 - meanT) * ($0 - meanT) }.reduce(0, +)
         guard denom > 1e-12 else {
-            return ExperimentalClubPathEstimate(
+            return ClubPathEstimate(
                 clubPathDegreesSigned: nil, clubPathDisplay: "—",
                 confidence: 0, method: "zero_time_span",
                 warnings: ["Zero time span in club path estimation."]
@@ -57,7 +74,7 @@ struct ExperimentalClubPathFaceEstimator {
 
         let movLen = sqrt(dxPx * dxPx + dyPx * dyPx)
         guard movLen > 1e-6 else {
-            return ExperimentalClubPathEstimate(
+            return ClubPathEstimate(
                 clubPathDegreesSigned: nil, clubPathDisplay: "—",
                 confidence: 0, method: "near_zero_movement",
                 warnings: ["Club 2D movement vector near zero."]
@@ -71,9 +88,9 @@ struct ExperimentalClubPathFaceEstimator {
         let lateral = dxPx * perpX + dyPx * perpY
 
         let clubPath = atan2(lateral, forward) * 180.0 / .pi
-        let display  = ExperimentalDirectionalFormat.angleLR(clubPath)
+        let display  = DirectionalFormat.angleLR(clubPath)
 
-        return ExperimentalClubPathEstimate(
+        return ClubPathEstimate(
             clubPathDegreesSigned: clubPath,
             clubPathDisplay: display,
             confidence: min(1.0, Double(preImpact.count) / 5.0),
@@ -85,13 +102,13 @@ struct ExperimentalClubPathFaceEstimator {
     // MARK: - Face angle (gradient PCA on clubhead bbox)
 
     func estimateFaceAngle(
-        clubObservations: [ExperimentalClubObservation],
+        clubObservations: [ClubObservation],
         impactFrame: UIImage?,
         zeroDegreeAngleDegrees: Double,
-        calibration: ExperimentalCameraCalibration,
+        calibration: CameraCalibration,
         impactFrameIndex: Int,
         clubPathDegrees: Double?
-    ) -> ExperimentalFaceAngleEstimate {
+    ) -> FaceAngleEstimate {
         let nearImpact = clubObservations
             .filter { $0.clubBoundingBox != nil && $0.frameIndex <= impactFrameIndex }
             .sorted { abs($0.frameIndex - impactFrameIndex) < abs($1.frameIndex - impactFrameIndex) }
@@ -101,16 +118,15 @@ struct ExperimentalClubPathFaceEstimator {
                                         warning: "Face angle unavailable: no clubhead bounding box near impact.")
         }
 
-        // Try pixel gradient PCA
         if let frame = impactFrame,
            let result = gradientFaceAngle(image: frame, bbox: bbox,
                                           zeroDeg: zeroDegreeAngleDegrees, calibration: calibration) {
             let (faceAngle, pixelConf) = result
-            let faceDisplay  = ExperimentalDirectionalFormat.angleLR(faceAngle)
-            let ftp          = clubPathDegrees.map { faceAngle - $0 }
-            let ftpDisplay   = ftp.map { ExperimentalDirectionalFormat.angleLR($0) } ?? "—"
+            let faceDisplay = DirectionalFormat.angleLR(faceAngle)
+            let ftp         = clubPathDegrees.map { faceAngle - $0 }
+            let ftpDisplay  = ftp.map { DirectionalFormat.angleLR($0) } ?? "—"
 
-            return ExperimentalFaceAngleEstimate(
+            return FaceAngleEstimate(
                 faceAngleDegreesSigned: faceAngle,
                 faceAngleDisplay: faceDisplay,
                 faceToPathDegreesSigned: ftp,
@@ -130,10 +146,8 @@ struct ExperimentalClubPathFaceEstimator {
         let bboxW = bbox.width  * CGFloat(W)
         let bboxH = bbox.height * CGFloat(H)
 
-        // Longer bbox axis approximates shaft direction; face is perpendicular.
-        // This is a very rough heuristic — mark as low confidence.
-        let shaftAngleRad  = bboxW >= bboxH ? 0.0 : .pi / 2.0
-        let faceAngleRad   = shaftAngleRad + .pi / 2.0
+        let shaftAngleRad = bboxW >= bboxH ? 0.0 : .pi / 2.0
+        let faceAngleRad  = shaftAngleRad + .pi / 2.0
 
         let theta   = zeroDegreeAngleDegrees * .pi / 180.0
         let refX    = cos(theta);  let refY  = -sin(theta)
@@ -142,12 +156,12 @@ struct ExperimentalClubPathFaceEstimator {
         let fDirY   = sin(faceAngleRad)
         let forward = fDirX * refX + fDirY * refY
         let lateral = fDirX * perpX + fDirY * perpY
-        let faceAngle = atan2(lateral, forward) * 180.0 / .pi
-        let faceDisplay = ExperimentalDirectionalFormat.angleLR(faceAngle)
-        let ftp      = clubPathDegrees.map { faceAngle - $0 }
-        let ftpDisplay = ftp.map { ExperimentalDirectionalFormat.angleLR($0) } ?? "—"
+        let faceAngle  = atan2(lateral, forward) * 180.0 / .pi
+        let faceDisplay = DirectionalFormat.angleLR(faceAngle)
+        let ftp         = clubPathDegrees.map { faceAngle - $0 }
+        let ftpDisplay  = ftp.map { DirectionalFormat.angleLR($0) } ?? "—"
 
-        return ExperimentalFaceAngleEstimate(
+        return FaceAngleEstimate(
             faceAngleDegreesSigned: faceAngle,
             faceAngleDisplay: faceDisplay,
             faceToPathDegreesSigned: ftp,
@@ -167,7 +181,7 @@ struct ExperimentalClubPathFaceEstimator {
         image: UIImage,
         bbox: CGRect,
         zeroDeg: Double,
-        calibration: ExperimentalCameraCalibration
+        calibration: CameraCalibration
     ) -> (angle: Double, confidence: Double)? {
         guard let cgImage = image.cgImage else { return nil }
         let W = Int(calibration.imageWidthPixels)
@@ -186,7 +200,6 @@ struct ExperimentalClubPathFaceEstimator {
             to: CGRect(x: x0, y: y0, width: cropW, height: cropH)
         ) else { return nil }
 
-        // Draw into grayscale bitmap
         let rowStride: Int = cropW
         var pixels = [UInt8](repeating: 0, count: rowStride * cropH)
         guard let ctx = CGContext(
@@ -197,7 +210,6 @@ struct ExperimentalClubPathFaceEstimator {
         ) else { return nil }
         ctx.draw(cropped, in: CGRect(x: 0, y: 0, width: cropW, height: cropH))
 
-        // Sobel + circular-statistics accumulation for dominant edge direction
         let idx: (Int, Int) -> Int = { r, c in r * rowStride + c }
         var cosSum = 0.0, sinSum = 0.0, weightSum = 0.0
 
@@ -211,9 +223,7 @@ struct ExperimentalClubPathFaceEstimator {
                 let gxD = Double(gx); let gyD = Double(gy)
                 let mag = sqrt(gxD * gxD + gyD * gyD)
                 guard mag > 20 else { continue }
-                // Edge direction is perpendicular to gradient: θ_edge = atan2(gx, gy)
                 let edgeAngle = atan2(gxD, gyD)
-                // Double-angle trick for 180° ambiguity
                 cosSum    += cos(2 * edgeAngle) * mag
                 sinSum    += sin(2 * edgeAngle) * mag
                 weightSum += mag
@@ -225,7 +235,6 @@ struct ExperimentalClubPathFaceEstimator {
         let dominantEdgeAngle = atan2(sinSum, cosSum) / 2.0
         let coherence         = sqrt(cosSum * cosSum + sinSum * sinSum) / weightSum
 
-        // Project face direction onto ref/perp axes
         let theta   = zeroDeg * .pi / 180.0
         let refX    = cos(theta);  let refY  = -sin(theta)
         let perpX   = sin(theta);  let perpY =  cos(theta)
@@ -240,8 +249,8 @@ struct ExperimentalClubPathFaceEstimator {
 
     // MARK: - Helper
 
-    private func unavailableFaceAngle(reason: String, warning: String) -> ExperimentalFaceAngleEstimate {
-        ExperimentalFaceAngleEstimate(
+    private func unavailableFaceAngle(reason: String, warning: String) -> FaceAngleEstimate {
+        FaceAngleEstimate(
             faceAngleDegreesSigned: nil, faceAngleDisplay: "—",
             faceToPathDegreesSigned: nil, faceToPathDisplay: "—",
             confidence: "unavailable", method: reason,
@@ -249,4 +258,3 @@ struct ExperimentalClubPathFaceEstimator {
         )
     }
 }
-#endif

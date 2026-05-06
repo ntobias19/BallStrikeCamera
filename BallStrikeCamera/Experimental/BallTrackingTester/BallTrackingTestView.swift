@@ -557,7 +557,8 @@ struct BallTrackingTestView: View {
                            formula: "atan2(lateral, forward) — image-space ref \(String(format: "%.0f°", metrics.zeroDegreeReferenceAngleDegrees))",
                            note: "3D raw: \(degrees(metrics.ballLaunch.hla3DRawDegrees))")
                 metricsRow("VLA", value: degrees(metrics.ballLaunch.vlaDegrees),
-                           formula: "atan2(vy, √(vx²+vz²))", note: "vertical launch angle")
+                           formula: "atan2(vy, √(vx²+vz²)) · clamped ≥ 0",
+                           note: metrics.ballLaunch.vlaRawDegrees.map { String(format: "raw %.1f° (clamped)", $0) } ?? "vertical launch angle")
                 if let dx = metrics.ballLaunch.ballMovementDx, let dy = metrics.ballLaunch.ballMovementDy {
                     metricsRow("2D movement",
                                value: String(format: "(%.4f, %.4f)", dx, dy),
@@ -792,6 +793,14 @@ struct BallTrackingTestView: View {
                             .font(.system(size: 10, design: .monospaced))
                             .foregroundColor(.secondary)
                     }
+                    if let lf = r.ballLaunchedAtFrameIndex {
+                        Text("launch@\(lf)").font(.system(size: 10, design: .monospaced)).foregroundColor(.mint)
+                    }
+                    if r.ballTrackTerminated {
+                        let tf = r.ballTerminatedAtFrameIndex.map { "@\($0)" } ?? ""
+                        Text("TERM\(tf)").font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundColor(Color(red: 0.8, green: 0.2, blue: 0.2))
+                    }
                 }
                 .padding(.horizontal, 12).padding(.vertical, 5)
                 .background(Color(white: 0.08))
@@ -888,11 +897,14 @@ struct BallTrackingTestView: View {
                         $0.frameIndex == seq.frames[currentIndex].frameIndex
                     }
                     let showCandBounds = settings.showOriginalCandidateBounds
+                    let showCandIDs    = settings.showCandidateIDs
                     Canvas { ctx, size in
                         drawOverlay(ctx: ctx, containerSize: size, image: img,
                                     obs: obs, metrics: result?.metrics,
                                     clubObs: clubObs,
-                                    showCandidateBounds: showCandBounds)
+                                    showCandidateBounds: showCandBounds,
+                                    showCandidateIDs: showCandIDs,
+                                    exclusionZones: settings.scoring.exclusionZones)
                     }
                     .frame(width: geo.size.width, height: geo.size.height)
                     .allowsHitTesting(false)
@@ -922,10 +934,20 @@ struct BallTrackingTestView: View {
                               image: UIImage, obs: BallTrackingTestObservation?,
                               metrics: ExperimentalShotMetricsResult?,
                               clubObs: ExperimentalClubObservation?,
-                              showCandidateBounds: Bool) {
+                              showCandidateBounds: Bool,
+                              showCandidateIDs: Bool = false,
+                              exclusionZones: [CGRect] = []) {
         let dr = aspectFitRect(imageSize: image.size, in: containerSize)
         guard dr.width > 0, dr.height > 0 else { return }
         let dbg = obs?.frameDebug
+
+        // Exclusion zones — translucent red fill (Part E)
+        for zone in exclusionZones {
+            let zr = normToView(zone, dr: dr)
+            ctx.fill(Path(zr), with: .color(.red.opacity(0.18)))
+            ctx.stroke(Path(zr), with: .color(.red.opacity(0.7)),
+                       style: StrokeStyle(lineWidth: 1.5, dash: [5, 3]))
+        }
 
         // Cyan dashed ROI
         if let roi = dbg?.searchROI {
@@ -933,18 +955,82 @@ struct BallTrackingTestView: View {
                        style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
         }
 
-        // Rejected candidates — red dashed rects
-        for cand in dbg?.candidates ?? [] where !cand.accepted {
-            ctx.stroke(Path(normToView(cand.rect, dr: dr)), with: .color(.red.opacity(0.6)),
-                       style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+        // Predicted position crosshair (Part B)
+        if let pred = dbg?.predictedPosition {
+            let pt = normPointToView(pred, dr: dr)
+            let arm: CGFloat = 6
+            var cross = Path()
+            cross.move(to: CGPoint(x: pt.x - arm, y: pt.y)); cross.addLine(to: CGPoint(x: pt.x + arm, y: pt.y))
+            cross.move(to: CGPoint(x: pt.x, y: pt.y - arm)); cross.addLine(to: CGPoint(x: pt.x, y: pt.y + arm))
+            ctx.stroke(cross, with: .color(.cyan.opacity(0.85)), lineWidth: 1.5)
         }
 
-        // Accepted-but-not-selected — yellow circles (candidate diameter)
+        // Rejected candidates — backward-rejected in dark red, others in red dashed rects
+        let allCands = dbg?.candidates ?? []
+        for (i, cand) in allCands.enumerated() where !cand.accepted {
+            let isBackward = cand.backwardRejected
+            let rejectColor: Color = isBackward ? Color(red: 0.7, green: 0, blue: 0) : .red.opacity(0.6)
+            ctx.stroke(Path(normToView(cand.rect, dr: dr)), with: .color(rejectColor),
+                       style: StrokeStyle(lineWidth: isBackward ? 1.5 : 1, dash: [4, 3]))
+            if isBackward {
+                let pt = normPointToView(CGPoint(x: cand.centerX, y: cand.centerY), dr: dr)
+                ctx.fill(Path(ellipseIn: CGRect(x: pt.x - 3, y: pt.y - 3, width: 6, height: 6)),
+                         with: .color(rejectColor))
+            }
+            if showCandidateIDs {
+                let pt = normPointToView(CGPoint(x: cand.centerX, y: cand.centerY), dr: dr)
+                ctx.draw(Text("\(i)").font(.system(size: 8, design: .monospaced)).foregroundColor(rejectColor.opacity(0.85)),
+                         at: CGPoint(x: pt.x + 4, y: pt.y - 4), anchor: .leading)
+            }
+        }
+
+        // Accepted-but-not-selected — yellow circles
         if let selected = dbg?.selectedCandidate {
-            for cand in dbg?.candidates ?? [] where cand.accepted && cand.centerX != selected.centerX {
+            for (i, cand) in allCands.enumerated() where cand.accepted && !cand.isSelected {
+                let samePos = cand.centerX == selected.centerX && cand.centerY == selected.centerY
+                guard !samePos else { continue }
                 strokeCircle(ctx: ctx, dr: dr, cx: cand.centerX, cy: cand.centerY,
                              d: cand.diameter, color: .yellow, lineWidth: 1.5)
+                if showCandidateIDs {
+                    let pt = normPointToView(CGPoint(x: cand.centerX, y: cand.centerY), dr: dr)
+                    ctx.draw(Text("\(i)").font(.system(size: 8, design: .monospaced)).foregroundColor(.yellow.opacity(0.9)),
+                             at: CGPoint(x: pt.x + 4, y: pt.y - 4), anchor: .leading)
+                }
             }
+        }
+
+        // Launch direction arrow — drawn even on missed/terminated frames (Part D)
+        if settings.showLaunchDirection, let launchDir = dbg?.launchDirectionVector, dbg?.ballHasLaunched == true {
+            let originNorm = result?.initialBallCenter ?? CGPoint(x: 0.5, y: 0.5)
+            let origin = normPointToView(originNorm, dr: dr)
+            let arrowLen: CGFloat = min(dr.width, dr.height) * 0.20
+            let tipX = origin.x + launchDir.x * arrowLen
+            let tipY = origin.y + launchDir.y * arrowLen
+            var arrow = Path()
+            arrow.move(to: origin)
+            arrow.addLine(to: CGPoint(x: tipX, y: tipY))
+            ctx.stroke(arrow, with: .color(.mint.opacity(0.9)), style: StrokeStyle(lineWidth: 2.0))
+            let headLen: CGFloat = 8
+            let angle: CGFloat = .pi / 6
+            let perp = CGPoint(x: -launchDir.y, y: launchDir.x)
+            let back = CGPoint(x: -launchDir.x, y: -launchDir.y)
+            let h1 = CGPoint(x: tipX + (back.x * cos(angle) + perp.x * sin(angle)) * headLen,
+                             y: tipY + (back.y * cos(angle) + perp.y * sin(angle)) * headLen)
+            let h2 = CGPoint(x: tipX + (back.x * cos(angle) - perp.x * sin(angle)) * headLen,
+                             y: tipY + (back.y * cos(angle) - perp.y * sin(angle)) * headLen)
+            var head = Path()
+            head.move(to: CGPoint(x: tipX, y: tipY))
+            head.addLine(to: h1)
+            head.move(to: CGPoint(x: tipX, y: tipY))
+            head.addLine(to: h2)
+            ctx.stroke(head, with: .color(.mint.opacity(0.9)), lineWidth: 2.0)
+        }
+
+        // Termination indicator — dark red dot in top-right corner (Part D)
+        if dbg?.ballTrackTerminated == true {
+            let r: CGFloat = 6
+            ctx.fill(Path(ellipseIn: CGRect(x: dr.maxX - r * 2 - 4, y: dr.minY + 4, width: r * 2, height: r * 2)),
+                     with: .color(Color(red: 0.65, green: 0, blue: 0).opacity(0.95)))
         }
 
         guard let cx = obs?.centerX, let cy = obs?.centerY else { return }
@@ -1155,10 +1241,48 @@ struct BallTrackingTestView: View {
                         Text(obs.debugReason).foregroundColor(.orange).lineLimit(1)
                     }
                 }
-                // Line 4: ROI debug
+                // Line 4: ROI debug + scoring
                 if let dbg = obs.frameDebug {
-                    Text("roi: \(dbg.searchCenterSource)  scale=\(String(format:"%.2f",dbg.searchScale))  cands=\(dbg.candidates.count)  acc=\(dbg.candidates.filter{$0.accepted}.count)")
+                    let acc = dbg.candidates.filter { $0.accepted }.count
+                    Text("roi: \(dbg.searchCenterSource)  scale=\(String(format:"%.2f",dbg.searchScale))  cands=\(dbg.candidates.count)  acc=\(acc)")
                         .foregroundColor(.white.opacity(0.45))
+                    if let sel = dbg.selectedCandidate {
+                        Text(String(format: "score=%.2f  bright=%.2f  size=%.2f  dist=%.2f  motion=%.2f  dir=%.2f  shape=%.2f  pen=%.2f",
+                                    sel.totalScore, sel.brightnessScore, sel.sizeScore,
+                                    sel.distanceScore, sel.motionScore, sel.directionScore,
+                                    sel.shapeScore, sel.penaltyScore))
+                            .foregroundColor(.green.opacity(0.75))
+                    }
+                    if let pred = dbg.predictedPosition {
+                        let j = dbg.jumpDistance.map { String(format:" jump=%.4f", $0) } ?? ""
+                        Text(String(format: "pred=(%.4f,%.4f)%@", pred.x, pred.y, j))
+                            .foregroundColor(.cyan.opacity(0.65))
+                    }
+                    // Launch direction / termination state (Parts A–C)
+                    if dbg.ballHasLaunched, let ld = dbg.launchDirectionVector {
+                        let prog = dbg.selectedCandidate?.progress.map { String(format:" prog=%.4f",$0) } ?? ""
+                        let maxP = dbg.maxProgress.map { String(format:" maxP=%.4f",$0) } ?? ""
+                        Text(String(format: "launched dir=(%.3f,%.3f)%@%@", ld.x, ld.y, prog, maxP))
+                            .foregroundColor(.mint.opacity(0.85))
+                    }
+                    if dbg.ballTrackTerminated {
+                        Text("⛔ BALL TRACK TERMINATED").foregroundColor(Color(red: 0.8, green: 0.2, blue: 0.2))
+                    }
+                    // Top-3 candidate table (Part G)
+                    if settings.showScoreTable {
+                        let top3 = dbg.candidates.filter { $0.accepted }
+                            .sorted { $0.totalScore > $1.totalScore }.prefix(3)
+                        ForEach(Array(top3.enumerated()), id: \.offset) { rank, c in
+                            let sel = c.isSelected ? "★" : " "
+                            Text(String(format: "%@#%d (%.3f,%.3f) d=%.4f tot=%.2f sz=%.2f dst=%.2f",
+                                        sel, rank+1, c.centerX, c.centerY, c.diameter,
+                                        c.totalScore, c.sizeScore, c.distanceScore))
+                                .foregroundColor(c.isSelected ? .green : .yellow.opacity(0.8))
+                        }
+                        if let expD = dbg.expectedDiameter {
+                            Text(String(format: "expDiam=%.4f", expD)).foregroundColor(.white.opacity(0.4))
+                        }
+                    }
                 }
 
                 if let clubObs {
@@ -1287,9 +1411,11 @@ struct BallTrackingTestView: View {
                             $0.frameIndex == fi && $0.isDetected
                         } != nil
 
+                        let isTerminated = obs?.debugReason == "ball_track_terminated"
                         let blockColor: Color = isDetImp  ? .yellow
                             : isFallImp ? .yellow.opacity(0.35)
                             : obs?.centerX != nil ? .green
+                            : isTerminated ? Color(red: 0.45, green: 0, blue: 0)
                             : result != nil ? .red
                             : Color(white: 0.25)
 
@@ -1442,6 +1568,8 @@ struct BallTrackingTestView: View {
                     TunerToggle(label: "enabled",          value: $settings.diameter.enabled)
                     TunerSlider(label: "maskWindowScale",  value: $settings.diameter.localMaskWindowScale,
                                 range: 0.5...4.0, format: "%.2f")
+                    TunerSlider(label: "absBrightThresh",  value: $settings.diameter.maskBrightness,
+                                range: 5...200, format: "%.0f", isInt: true)
                     TunerSlider(label: "minDiameter",      value: $settings.diameter.minDiameterNorm,
                                 range: 0.001...0.10, format: "%.3f")
                     TunerSlider(label: "maxDiameter",      value: $settings.diameter.maxDiameterNorm,
@@ -1450,6 +1578,22 @@ struct BallTrackingTestView: View {
                     TunerToggle(label: "smoothing",        value: $settings.diameter.smoothingEnabled)
                     TunerSlider(label: "medianWindow",     value: $settings.diameter.smoothingWindowSize,
                                 range: 2...15, format: "%.0f", isInt: true)
+                    // Part A — percentile mask threshold
+                    TunerToggle(label: "percentile threshold", value: $settings.diameter.usePercentileMaskThreshold)
+                    TunerSlider(label: "whiteness %ile",   value: $settings.diameter.maskWhitenessPercentile,
+                                range: 50...99, format: "%.0f")
+                    TunerSlider(label: "pct minBright",    value: $settings.diameter.maskPercentileMinBrightness,
+                                range: 20...150, format: "%.0f", isInt: true)
+                    TunerSlider(label: "pct maxBright",    value: $settings.diameter.maskPercentileMaxBrightness,
+                                range: 150...255, format: "%.0f", isInt: true)
+                    TunerSlider(label: "bg suppress Δ",   value: $settings.diameter.maskBackgroundSuppressionDelta,
+                                range: 0...50, format: "%.0f", isInt: true)
+                    // Part B — diameter growth gates
+                    TunerToggle(label: "hard clamp diameter", value: $settings.diameter.hardClampDiameter)
+                    TunerSlider(label: "maxGrowth/frame",  value: $settings.diameter.maxDiameterGrowthRatioPerFrame,
+                                range: 1.0...3.0, format: "%.2f")
+                    TunerSlider(label: "maxRatio/preImpact", value: $settings.diameter.maxDiameterRatioToPreImpactMedian,
+                                range: 1.0...5.0, format: "%.2f")
                     TunerToggle(label: "show candidate rect", value: $settings.showOriginalCandidateBounds)
                     TunerToggle(label: "show mask preview",  value: $settings.showMaskPreview)
                     TunerToggle(label: "show ball path",     value: $settings.showBallPath)
@@ -1458,15 +1602,366 @@ struct BallTrackingTestView: View {
                                 range: -45...45, format: "%.1f")
                 }
 
+                TunerSection(title: "Ball Candidate Scoring") {
+                    TunerToggle(label: "show candidate IDs",  value: $settings.showCandidateIDs)
+                    TunerToggle(label: "show score table",    value: $settings.showScoreTable)
+                    TunerSlider(label: "brightness wt",  value: $settings.scoring.brightnessScoreWeight,
+                                range: 0...5, format: "%.2f")
+                    TunerSlider(label: "size wt",        value: $settings.scoring.sizeScoreWeight,
+                                range: 0...5, format: "%.2f")
+                    TunerSlider(label: "distance wt",    value: $settings.scoring.distanceScoreWeight,
+                                range: 0...5, format: "%.2f")
+                    TunerSlider(label: "motion wt",      value: $settings.scoring.motionScoreWeight,
+                                range: 0...5, format: "%.2f")
+                    TunerSlider(label: "direction wt",   value: $settings.scoring.directionScoreWeight,
+                                range: 0...5, format: "%.2f")
+                    TunerSlider(label: "shape wt",       value: $settings.scoring.shapeScoreWeight,
+                                range: 0...5, format: "%.2f")
+                    TunerSlider(label: "jump penalty wt", value: $settings.scoring.jumpPenaltyWeight,
+                                range: 0...10, format: "%.2f")
+                    TunerSlider(label: "maxJump norm",   value: $settings.scoring.maxJumpDistanceNorm,
+                                range: 0.01...0.50, format: "%.3f")
+                    TunerToggle(label: "motion prediction",       value: $settings.scoring.useMotionPrediction)
+                    TunerSlider(label: "lookback frames",  value: $settings.scoring.predictionLookbackFrames,
+                                range: 2...6, format: "%.0f", isInt: true)
+                    TunerToggle(label: "direction constraint",     value: $settings.scoring.useDirectionConstraint)
+                    TunerSlider(label: "direction penalty wt", value: $settings.scoring.directionPenaltyWeight,
+                                range: 0...5, format: "%.2f")
+                    TunerToggle(label: "diameter constraint",      value: $settings.scoring.useExpectedDiameterConstraint)
+                    TunerSlider(label: "min diam ratio",  value: $settings.scoring.minDiameterRatioToExpected,
+                                range: 0.1...1.0, format: "%.2f")
+                    TunerSlider(label: "max diam ratio",  value: $settings.scoring.maxDiameterRatioToExpected,
+                                range: 1.0...5.0, format: "%.2f")
+                    TunerToggle(label: "hard reject extreme diam", value: $settings.scoring.hardRejectExtremeDiameter)
+                    TunerSlider(label: "extreme diam ratio", value: $settings.scoring.extremeMaxDiameterRatio,
+                                range: 1.5...8.0, format: "%.2f")
+                    TunerToggle(label: "reject club-like",         value: $settings.scoring.rejectClubLikeCandidates)
+                    TunerSlider(label: "club max aspect",  value: $settings.scoring.clubLikeMaxAspect,
+                                range: 1.5...10.0, format: "%.1f")
+                    TunerToggle(label: "exclusion zones",          value: $settings.scoring.useExclusionZones)
+                    TunerToggle(label: "zone 1 enabled",           value: $settings.scoring.exclusionZone1Enabled)
+                    TunerSlider(label: "zone1 y",  value: $settings.scoring.exclusionZone1Y,  range: 0...1, format: "%.2f")
+                    TunerSlider(label: "zone1 h",  value: $settings.scoring.exclusionZone1H,  range: 0...1, format: "%.2f")
+                    TunerSlider(label: "zone1 x",  value: $settings.scoring.exclusionZone1X,  range: 0...1, format: "%.2f")
+                    TunerSlider(label: "zone1 w",  value: $settings.scoring.exclusionZone1W,  range: 0...1, format: "%.2f")
+                    TunerToggle(label: "zone 2 enabled",           value: $settings.scoring.exclusionZone2Enabled)
+                    TunerSlider(label: "zone2 x",  value: $settings.scoring.exclusionZone2X,  range: 0...1, format: "%.2f")
+                    TunerSlider(label: "zone2 y",  value: $settings.scoring.exclusionZone2Y,  range: 0...1, format: "%.2f")
+                    TunerSlider(label: "zone2 w",  value: $settings.scoring.exclusionZone2W,  range: 0...1, format: "%.2f")
+                    TunerSlider(label: "zone2 h",  value: $settings.scoring.exclusionZone2H,  range: 0...1, format: "%.2f")
+                    TunerToggle(label: "hard reject in zone",      value: $settings.scoring.hardRejectInsideExclusion)
+                    Button(action: { settings.scoring.resetDefaults() }) {
+                        Text("Reset scoring defaults")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(.orange)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 12).padding(.vertical, 6)
+                    }
+                }
+
+                TunerSection(title: "Launch & Termination") {
+                    TunerToggle(label: "monotonic progress",   value: $settings.scoring.useMonotonicProgressConstraint)
+                    TunerSlider(label: "lock distance",  value: $settings.scoring.minLaunchProgressToLockDirection,
+                                range: 0.005...0.10, format: "%.3f")
+                    TunerSlider(label: "allowed backward", value: $settings.scoring.allowedBackwardProgressNorm,
+                                range: 0...0.05, format: "%.4f")
+                    TunerSlider(label: "backward penalty", value: $settings.scoring.backwardPenaltyWeight,
+                                range: 0...10, format: "%.2f")
+                    TunerToggle(label: "hard reject backward", value: $settings.scoring.hardRejectBackwardAfterLaunch)
+                    TunerToggle(label: "lost-ball termination", value: $settings.scoring.enableLostBallTermination)
+                    TunerSlider(label: "miss frame limit",  value: $settings.scoring.lostBallMissFrameLimit,
+                                range: 1...10, format: "%.0f", isInt: true)
+                    TunerSlider(label: "min progress req",  value: $settings.scoring.lostBallMinProgressBeforeTermination,
+                                range: 0...0.30, format: "%.3f")
+                    TunerToggle(label: "reacquire after term", value: $settings.scoring.allowReacquireAfterTermination)
+                    TunerToggle(label: "show launch arrow",   value: $settings.showLaunchDirection)
+                }
+
+                TunerSection(title: "Pre-Launch Rejection (Part A)") {
+                    TunerToggle(label: "hard reject behind start", value: $settings.scoring.hardRejectBehindStart)
+                    TunerToggle(label: "use ref progress", value: $settings.scoring.useReferenceProgressBeforeLaunch)
+                    TunerSlider(label: "min progress norm", value: $settings.scoring.minAllowedProgressBeforeLaunch,
+                                range: -0.05...0.0, format: "%.4f")
+                }
+
+                TunerSection(title: "Pre-Impact ROI (Part F)") {
+                    TunerToggle(label: "asymmetric ROI", value: $settings.useAsymmetricPreImpactROI)
+                    TunerSlider(label: "fwd scale", value: $settings.preImpactForwardExpansionScale,
+                                range: 1...20, format: "%.1f")
+                    TunerSlider(label: "bwd scale", value: $settings.preImpactBackwardExpansionScale,
+                                range: 0.5...8, format: "%.1f")
+                    TunerSlider(label: "vert scale", value: $settings.preImpactVerticalExpansionScale,
+                                range: 0.5...8, format: "%.1f")
+                    TunerSlider(label: "near fwd scale", value: $settings.nearImpactForwardExpansionScale,
+                                range: 1...25, format: "%.1f")
+                    TunerSlider(label: "near bwd scale", value: $settings.nearImpactBackwardExpansionScale,
+                                range: 0.5...8, format: "%.1f")
+                    TunerSlider(label: "near vert scale", value: $settings.nearImpactVerticalExpansionScale,
+                                range: 0.5...8, format: "%.1f")
+                    TunerSlider(label: "near window frames", value: $settings.nearImpactWindowFrames,
+                                range: 1...10, format: "%.0f", isInt: true)
+                }
+
+                TunerSection(title: "Post-Impact ROI (Part A)") {
+                    TunerSlider(label: "fwd scale", value: $settings.postImpactForwardExpansionScale,
+                                range: 1...20, format: "%.1f")
+                    TunerSlider(label: "bwd scale", value: $settings.postImpactBackwardExpansionScale,
+                                range: 0.5...5, format: "%.1f")
+                    TunerSlider(label: "vert (untracked)", value: $settings.postImpactVerticalScaleUntracked,
+                                range: 0.5...5, format: "%.1f")
+                    TunerSlider(label: "vert (tracked)", value: $settings.postImpactVerticalScaleTracked,
+                                range: 0.5...8, format: "%.1f")
+                    TunerSlider(label: "reliable track min pts", value: $settings.reliableTrackMinPostImpactPoints,
+                                range: 1...6, format: "%.0f", isInt: true)
+                }
+
+                TunerSection(title: "Near-Impact Diam Guard (Part C)") {
+                    TunerToggle(label: "enable guard", value: $settings.enableNearImpactDiameterJumpGuard)
+                    TunerSlider(label: "guard window frames", value: $settings.nearImpactDiameterGuardWindow,
+                                range: 1...5, format: "%.0f", isInt: true)
+                    TunerSlider(label: "max growth ratio", value: $settings.maxNearImpactDiameterGrowth,
+                                range: 1.0...3.0, format: "%.2f")
+                    TunerSlider(label: "min shrink ratio", value: $settings.minNearImpactDiameterShrink,
+                                range: 0.3...1.0, format: "%.2f")
+                }
+
+                TunerSection(title: "Prelim Mask Scoring (Part D)") {
+                    TunerToggle(label: "enable prelim mask", value: $settings.enablePrelimMaskScoring)
+                    TunerSlider(label: "roundness weight", value: $settings.prelimRoundnessWeight,
+                                range: 0...10, format: "%.1f")
+                    TunerToggle(label: "reject line-like", value: $settings.prelimRejectLineLike)
+                }
+
+                TunerSection(title: "Clean First Point (Part E)") {
+                    TunerToggle(label: "require clean first pt for prediction",
+                                value: $settings.requireCleanFirstPointForPrediction)
+                }
+
+                TunerSection(title: "HLA Closeness (Part H)") {
+                    TunerSlider(label: "closeness weight", value: $settings.scoring.hlaClosenessWeight,
+                                range: 0...8, format: "%.1f")
+                    TunerSlider(label: "max cand HLA °", value: $settings.scoring.maxCandidateHLADegrees,
+                                range: 5...90, format: "%.0f", isInt: true)
+                }
+
+                TunerSection(title: "Prediction Boost (new session C)") {
+                    TunerToggle(label: "enable pred boost", value: $settings.scoring.enablePredictionBoost)
+                    TunerSlider(label: "inside bonus", value: $settings.scoring.predictionInsideBonus,
+                                range: 0...8, format: "%.1f")
+                    TunerSlider(label: "near bonus", value: $settings.scoring.predictionNearBonus,
+                                range: 0...6, format: "%.1f")
+                    TunerSlider(label: "boost radius", value: $settings.scoring.predictionBoostRadiusNorm,
+                                range: 0.005...0.15, format: "%.3f")
+                    TunerSlider(label: "dist penalty w", value: $settings.scoring.predictionDistPenaltyWeight,
+                                range: 0...8, format: "%.1f")
+                }
+
+                TunerSection(title: "Merged Club-Ball (new session B)") {
+                    TunerToggle(label: "enable merged reject", value: $settings.scoring.enableMergedClubBallReject)
+                    TunerSlider(label: "max diam ratio", value: $settings.scoring.maxFirstPostImpactDiameterRatio,
+                                range: 1.0...4.0, format: "%.2f")
+                    TunerSlider(label: "window frames", value: $settings.scoring.mergedCandidateFrameWindow,
+                                range: 1...8, format: "%.0f", isInt: true)
+                }
+
+                TunerSection(title: "Off-Path Reject (new session E)") {
+                    TunerToggle(label: "hard reject far off-path", value: $settings.scoring.hardRejectFarOffPath)
+                    TunerSlider(label: "max off-path dist", value: $settings.scoring.maxOffPathDistNorm,
+                                range: 0...0.2, format: "%.3f")
+                }
+
+                TunerSection(title: "Prediction Termination (new session F)") {
+                    TunerToggle(label: "disable pred after miss", value: $settings.scoring.disablePredictionAfterMiss)
+                    TunerSlider(label: "miss limit", value: $settings.scoring.predictionMissLimit,
+                                range: 1...8, format: "%.0f", isInt: true)
+                }
+
+                TunerSection(title: "VLA from Diameter (Part A/D)") {
+                    TunerToggle(label: "use diam growth VLA", value: $settings.useDiameterGrowthForVLA)
+                    TunerSlider(label: "growth→VLA scale", value: $settings.diameterGrowthToVLAScale,
+                                range: 10...300, format: "%.0f")
+                    TunerSlider(label: "diam growth weight", value: $settings.diameterGrowthVLAWeight,
+                                range: 0...1, format: "%.2f")
+                    TunerSlider(label: "image-Y VLA weight", value: $settings.imageYVLAWeight,
+                                range: 0...1, format: "%.2f")
+                }
+
+                TunerSection(title: "VLA Model (new session)") {
+                    Picker("VLA Mode", selection: $settings.vlaEstimationMode) {
+                        Text("Legacy").tag(VLAEstimationMode.legacy)
+                        Text("Pinhole2DSize").tag(VLAEstimationMode.pinhole2DSize)
+                        Text("Blended").tag(VLAEstimationMode.blended)
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.vertical, 4)
+                    TunerSlider(label: "img-Y weight", value: $settings.vlaImageYWeight,
+                                range: 0...1, format: "%.2f")
+                    TunerSlider(label: "depth weight", value: $settings.vlaDiameterDepthWeight,
+                                range: 0...1, format: "%.2f")
+                    TunerSlider(label: "depth sign", value: $settings.vlaDepthSign,
+                                range: -1...1, format: "%.1f")
+                    TunerSlider(label: "persp. strength", value: $settings.rightwardSizeCorrectionStrength,
+                                range: 0...1, format: "%.2f")
+                    TunerSlider(label: "max VLA pinhole", value: $settings.maxVLAPinholeDegrees,
+                                range: 0...70, format: "%.0f")
+                }
+
+                TunerSection(title: "Diameter Shrink (Part C)") {
+                    TunerToggle(label: "hard clamp shrink", value: $settings.diameter.hardClampDiameterShrink)
+                    TunerSlider(label: "min shrink ratio", value: $settings.diameter.minDiameterShrinkRatioPerFrame,
+                                range: 0.30...1.0, format: "%.2f")
+                }
+
+                TunerSection(title: "Face Prior (Part A)") {
+                    TunerToggle(label: "use ball HLA face prior", value: $settings.scoring.useBallHLAFacePrior)
+                    TunerSlider(label: "ball HLA weight", value: $settings.scoring.facePriorBallHLAWeight,
+                                range: 0...1, format: "%.2f")
+                    TunerSlider(label: "club path weight", value: $settings.scoring.facePriorClubPathWeight,
+                                range: 0...1, format: "%.2f")
+                    TunerSlider(label: "max prior dev °", value: $settings.scoring.maxFacePriorDeviationDegrees,
+                                range: 5...90, format: "%.0f")
+                    TunerSlider(label: "prior score weight", value: $settings.scoring.facePriorScoreWeight,
+                                range: 0...10, format: "%.1f")
+                    TunerToggle(label: "suppress if far from HLA", value: $settings.scoring.suppressFaceIfFarFromBallHLA)
+                    TunerSlider(label: "max face-HLA diff °", value: $settings.scoring.maxFaceBallHLADifferenceDegrees,
+                                range: 5...60, format: "%.0f")
+                }
+
+                TunerSection(title: "Early Merged Shape (Part B)") {
+                    TunerToggle(label: "enable early merged stopper", value: $settings.scoring.enableEarlyMergedShapeStopper)
+                    TunerSlider(label: "frame window", value: Binding(
+                        get: { Double(settings.scoring.mergedShapeFrameWindowAfterImpact) },
+                        set: { settings.scoring.mergedShapeFrameWindowAfterImpact = Int($0.rounded()) }
+                    ), range: 1...8, format: "%.0f", isInt: true)
+                    TunerSlider(label: "max diam spike ratio", value: $settings.scoring.maxEarlyDiameterSpikeRatio,
+                                range: 1.0...3.0, format: "%.2f")
+                    TunerSlider(label: "max impact spike ratio", value: $settings.scoring.maxImpactDiameterSpikeRatio,
+                                range: 1.0...3.0, format: "%.2f")
+                    TunerSlider(label: "max area spike ratio", value: $settings.scoring.maxEarlyAreaSpikeRatio,
+                                range: 1.0...5.0, format: "%.2f")
+                    TunerToggle(label: "require spike then drop", value: $settings.scoring.requireSpikeThenDropCheck)
+                    TunerSlider(label: "spike-drop ratio thr", value: $settings.scoring.spikeDropRatioThreshold,
+                                range: 0...1, format: "%.2f")
+                    TunerSlider(label: "max gradual growth/fr", value: $settings.scoring.maxGradualGrowthRatioPerFrame,
+                                range: 1.0...2.0, format: "%.2f")
+                }
+
+                TunerSection(title: "Cone Search (Part C)") {
+                    TunerToggle(label: "use cone search region", value: $settings.scoring.useConeSearchRegion)
+                    TunerSlider(label: "half angle °", value: $settings.scoring.coneHalfAngleDegrees,
+                                range: 5...60, format: "%.0f")
+                    TunerSlider(label: "initial length norm", value: $settings.scoring.coneInitialLengthNorm,
+                                range: 0.01...0.5, format: "%.3f")
+                    TunerSlider(label: "length growth/frame", value: $settings.scoring.coneLengthGrowthPerFrameNorm,
+                                range: 0.005...0.1, format: "%.3f")
+                    TunerSlider(label: "max length norm", value: $settings.scoring.coneMaxLengthNorm,
+                                range: 0.2...1.0, format: "%.2f")
+                    TunerSlider(label: "backward allowance", value: $settings.scoring.coneBackwardAllowanceNorm,
+                                range: 0...0.05, format: "%.3f")
+                    TunerToggle(label: "use launch direction", value: $settings.scoring.coneUseLaunchDirectionWhenAvailable)
+                }
+
+                TunerSection(title: "Full Frame Recovery (Part D)") {
+                    TunerToggle(label: "enable after cone miss", value: $settings.scoring.enableFullFrameRecoveryAfterConeMiss)
+                    TunerSlider(label: "min mask pixels", value: Binding(
+                        get: { Double(settings.scoring.recoveryMinMaskWhitePixels) },
+                        set: { settings.scoring.recoveryMinMaskWhitePixels = Int($0.rounded()) }
+                    ), range: 5...50, format: "%.0f", isInt: true)
+                    TunerSlider(label: "min fill ratio", value: $settings.scoring.recoveryMinMaskFillRatio,
+                                range: 0...0.5, format: "%.2f")
+                    TunerSlider(label: "max line residual", value: $settings.scoring.recoveryMaxLineResidualNorm,
+                                range: 0...0.1, format: "%.3f")
+                }
+
+                TunerSection(title: "Vertical Jump Gate (Part F)") {
+                    TunerToggle(label: "hard reject large down jump", value: $settings.scoring.hardRejectLargeDownwardJumpAfterLaunch)
+                    TunerSlider(label: "max down jump/frame", value: $settings.scoring.maxDownwardJumpPerFrameNorm,
+                                range: 0.01...0.15, format: "%.3f")
+                    TunerToggle(label: "use fitted path gate", value: $settings.scoring.useFittedPathForVerticalGate)
+                    TunerSlider(label: "max vert from path", value: $settings.scoring.maxVerticalJumpFromPathNorm,
+                                range: 0.01...0.15, format: "%.3f")
+                    TunerSlider(label: "vert jump penalty", value: $settings.scoring.verticalJumpPenaltyWeight,
+                                range: 0...10, format: "%.1f")
+                }
+
+                TunerSection(title: "Prediction Cross Rescue") {
+                    TunerToggle(label: "enable", value: $settings.scoring.enablePredictionCrossRescue)
+                    TunerSlider(label: "radius norm", value: $settings.scoring.predictionRescueRadiusNorm,
+                                range: 0.01...0.15, format: "%.3f")
+                    TunerSlider(label: "window frames", value: $settings.scoring.predictionRescueWindowAfterLaunch,
+                                range: 1...20, format: "%.0f", isInt: true)
+                    TunerSlider(label: "max consec misses", value: $settings.scoring.predictionRescueMaxConsecMisses,
+                                range: 1...5, format: "%.0f", isInt: true)
+                    TunerSlider(label: "inside bonus", value: $settings.scoring.predictionRescueInsideBonus,
+                                range: 0...15, format: "%.1f")
+                    TunerSlider(label: "near bonus", value: $settings.scoring.predictionRescueNearBonus,
+                                range: 0...10, format: "%.1f")
+                    TunerToggle(label: "allow borderline mask", value: $settings.scoring.predictionRescueAllowBorderlineMask)
+                    TunerSlider(label: "min mask pixels", value: $settings.scoring.predictionRescueMinMaskPixels,
+                                range: 2...30, format: "%.0f", isInt: true)
+                    TunerSlider(label: "min fill ratio", value: $settings.scoring.predictionRescueMinFillRatio,
+                                range: 0.01...0.2, format: "%.3f")
+                    TunerToggle(label: "require fwd progress", value: $settings.scoring.predictionRescueRequireFwdProgress)
+                    TunerToggle(label: "disable after termination", value: $settings.scoring.predictionRescueDisableAfterTerm)
+                }
+
+                TunerSection(title: "Offscreen/Edge Rejection (Part C)") {
+                    TunerToggle(label: "reject partial offscreen ball", value: $settings.scoring.rejectEdgePartialBall)
+                    TunerSlider(label: "min ball margin norm", value: $settings.scoring.minBallMarginNorm,
+                                range: 0.002...0.05, format: "%.4f")
+                }
+
+                TunerSection(title: "Final Edge Ball Filter (Post-Rescue)") {
+                    TunerToggle(label: "enable final edge filter", value: $settings.scoring.enableFinalEdgeBallFilter)
+                    TunerSlider(label: "edge margin norm", value: $settings.scoring.finalEdgeMarginNorm,
+                                range: 0.002...0.05, format: "%.4f")
+                    TunerSlider(label: "radius margin scale", value: $settings.scoring.finalEdgeRadiusMarginScale,
+                                range: 0.5...2.0, format: "%.2f")
+                    TunerToggle(label: "exclude from metrics", value: $settings.scoring.excludeEdgeBallFromMetrics)
+                }
+
+                TunerSection(title: "Line-Like Mask Rejection (Part D)") {
+                    TunerToggle(label: "reject line-like mask", value: $settings.diameter.rejectLineLikeMask)
+                    TunerSlider(label: "max mask aspect", value: $settings.diameter.maxMaskAspectForBall,
+                                range: 1.0...5.0, format: "%.1f")
+                    TunerSlider(label: "min mask aspect", value: $settings.diameter.minMaskAspectForBall,
+                                range: 0.1...1.0, format: "%.2f")
+                    TunerSlider(label: "line-like aspect threshold", value: $settings.diameter.lineLikeAspectThreshold,
+                                range: 1.5...8.0, format: "%.1f")
+                    TunerSlider(label: "line-like fill max", value: $settings.diameter.lineLikeFillMax,
+                                range: 0.01...0.5, format: "%.3f")
+                    TunerSlider(label: "min component pixels", value: $settings.diameter.minMaskComponentPixelsForBall,
+                                range: 2...30, format: "%.0f", isInt: true)
+                }
+
+                TunerSection(title: "Single-Point Prediction (Part E)") {
+                    TunerToggle(label: "enable single-point prediction", value: $settings.scoring.enableSinglePointPrediction)
+                    TunerSlider(label: "max step", value: $settings.scoring.singlePointPredictionMaxStep,
+                                range: 0.005...0.3, format: "%.3f")
+                    TunerSlider(label: "min step", value: $settings.scoring.singlePointPredictionMinStep,
+                                range: 0.001...0.05, format: "%.4f")
+                }
+
+                TunerSection(title: "Impact Detection — Diameter Change (Part A)") {
+                    TunerToggle(label: "use diameter change detection", value: $settings.impact.useDiameterChange)
+                    TunerSlider(label: "diam change ratio", value: $settings.impact.diameterChangeRatio,
+                                range: 1.0...3.0, format: "%.2f")
+                    TunerSlider(label: "diam shrink ratio", value: $settings.impact.diameterShrinkRatio,
+                                range: 0.3...1.0, format: "%.2f")
+                    TunerToggle(label: "return one frame before", value: $settings.impact.returnOneFrameBefore)
+                    TunerSlider(label: "min stable frames", value: $settings.impact.minimumStableFrames,
+                                range: 2...12, format: "%.0f", isInt: true)
+                }
+
                 TunerSection(title: "Club Tracking") {
                     TunerToggle(label: "enabled", value: $settings.club.enabled)
                     TunerToggle(label: "search behind ball", value: $settings.club.searchBehindBallEnabled)
                     TunerSlider(label: "ball exclusion x", value: $settings.club.ballExclusionRadiusScale,
                                 range: 0.5...5.0, format: "%.2f")
                     TunerSlider(label: "roi scale X", value: $settings.club.clubSearchROIScaleX,
-                                range: 1...16, format: "%.2f")
+                                range: 1...20, format: "%.1f")
                     TunerSlider(label: "roi scale Y", value: $settings.club.clubSearchROIScaleY,
-                                range: 1...12, format: "%.2f")
+                                range: 1...15, format: "%.1f")
                     TunerToggle(label: "frame difference", value: $settings.club.useFrameDifference)
                     TunerSlider(label: "diff threshold", value: $settings.club.frameDifferenceThreshold,
                                 range: 1...120, format: "%.0f", isInt: true)
@@ -1563,10 +2058,13 @@ struct BallTrackingTestView: View {
         exportStatus = nil
         let cfg = settings.toConfiguration()
         let currentSettings = settings
+        print("Settings: Sc: Size W = \(settings.scoring.sizeScoreWeight)  |  Mask Percentile = \(settings.diameter.maskWhitenessPercentile)  |  Post Bright >= \(settings.postBrightnessThreshold)  |  Post MinW = \(settings.postMinNormWidth)")
         Task.detached(priority: .userInitiated) {
             let tracker = ExperimentalBallTracker(configuration: cfg)
             let r = tracker.run(on: seq)
-            let metrics = ExperimentalShotMetricsCalculator().calculate(
+            let metrics = ExperimentalShotMetricsCalculator(
+                configuration: currentSettings.toMetricsCalculatorConfig()
+            ).calculate(
                 sequence: seq,
                 ballResult: r,
                 calibrationSettings: currentSettings.calibration,
@@ -1590,7 +2088,11 @@ struct BallTrackingTestView: View {
                 impactDetectionReason: r.impactDetectionReason,
                 initialBallCenter: r.initialBallCenter,
                 movementThresholdNorm: r.movementThresholdNorm,
-                metrics: metrics
+                metrics: metrics,
+                launchDirectionVector: r.launchDirectionVector,
+                ballLaunchedAtFrameIndex: r.ballLaunchedAtFrameIndex,
+                ballTrackTerminated: r.ballTrackTerminated,
+                ballTerminatedAtFrameIndex: r.ballTerminatedAtFrameIndex
             )
             await MainActor.run { self.result = finalResult; self.isRunning = false }
         }

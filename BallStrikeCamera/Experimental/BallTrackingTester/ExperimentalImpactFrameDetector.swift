@@ -4,6 +4,12 @@ struct ImpactDetectionConfig {
     var movementThresholdNorm: CGFloat = 0.006
     var confirmFrames:         Int     = 2
     var stableWindowCount:     Int     = 10
+    // Part A: diameter change detection
+    var useDiameterChange:    Bool    = true
+    var diameterChangeRatio:  CGFloat = 1.35
+    var diameterShrinkRatio:  CGFloat = 0.80
+    var returnOneFrameBefore: Bool    = true
+    var minimumStableFrames:  Int     = 6
 }
 
 struct ImpactDetectionResult {
@@ -36,8 +42,9 @@ struct ExperimentalImpactFrameDetector {
 
         print("  Stable window: frames 0..<\(cutoff), found \(stableObs.count) tracked")
 
-        guard stableObs.count >= 3 else {
-            print("  Insufficient stable frames (\(stableObs.count)) → fallback")
+        let minStable = max(3, config.minimumStableFrames)
+        guard stableObs.count >= minStable else {
+            print("  Insufficient stable frames (\(stableObs.count), need \(minStable)) → fallback")
             return fallback(fallbackImpactIndex, center: nil, threshold: config.movementThresholdNorm,
                             jitter: 0, reason: "fallback_insufficient_stable_frames(\(stableObs.count))")
         }
@@ -79,14 +86,23 @@ struct ExperimentalImpactFrameDetector {
         var consecutiveCount = 0
         var firstMovingFrame: Int? = nil
         var lastFrameIdx = scanStartFrame - 2  // sentinel
+        var eventFrame: Int? = nil
+        var eventReason = "fallback_no_movement_detected"
+        var diameterChangedFirst = false
 
         for obs in scanObs {
             guard let cx = obs.centerX, let cy = obs.centerY else {
-                consecutiveCount = 0; firstMovingFrame = nil; continue
+                // bad detection — treat as event
+                if eventFrame == nil {
+                    eventFrame = obs.frameIndex
+                    eventReason = "bad_detection_minus_one"
+                }
+                break
             }
             let displacement = hypot(cx - medCX, cy - medCY)
             let isConsec = (obs.frameIndex == lastFrameIdx + 1)
 
+            // Position movement check
             if displacement > threshold {
                 if consecutiveCount == 0 {
                     firstMovingFrame = obs.frameIndex
@@ -101,28 +117,53 @@ struct ExperimentalImpactFrameDetector {
                 if consecutiveCount >= config.confirmFrames, let first = firstMovingFrame {
                     print(String(format: "  Detected impact frame: %d (disp=%.4f, confirmed over %d frames)",
                                  first, displacement, consecutiveCount))
-                    print("  Impact detection reason: first_movement")
-                    return ImpactDetectionResult(
-                        detectedImpactFrameIndex: first,
-                        fallbackImpactFrameIndex: fallbackImpactIndex,
-                        impactDetectionReason:    "first_movement",
-                        initialBallCenter:        initialCenter,
-                        movementThresholdNorm:    threshold,
-                        initialJitter:            jitter)
+                    eventFrame = first
+                    eventReason = "first_movement_minus_one"
+                    break
                 }
             } else {
                 consecutiveCount = 0
                 firstMovingFrame = nil
             }
+
+            // Diameter change check (Part A)
+            if config.useDiameterChange && !diameterChangedFirst && eventFrame == nil {
+                if let dia = obs.diameter, medDia > 0 {
+                    let diamRatio = dia / medDia
+                    let diamSpiked = diamRatio > config.diameterChangeRatio
+                    let diamShrunk = diamRatio < config.diameterShrinkRatio
+                    if diamSpiked || diamShrunk {
+                        eventFrame = obs.frameIndex
+                        eventReason = diamSpiked ? "first_size_change_minus_one" : "first_size_shrink_minus_one"
+                        diameterChangedFirst = true
+                        break
+                    }
+                }
+            }
+
             lastFrameIdx = obs.frameIndex
+        }
+
+        if let ef = eventFrame {
+            let resultFrame = config.returnOneFrameBefore ? max(0, ef - 1) : ef
+            print(String(format: "  Detected impact frame: %d (event=%d, reason=%@)",
+                         resultFrame, ef, eventReason))
+            return ImpactDetectionResult(
+                detectedImpactFrameIndex: resultFrame,
+                fallbackImpactFrameIndex: fallbackImpactIndex,
+                impactDetectionReason:    eventReason,
+                initialBallCenter:        initialCenter,
+                movementThresholdNorm:    threshold,
+                initialJitter:            jitter)
         }
 
         // Single-frame movement detected but not confirmed
         if let single = firstMovingFrame, config.confirmFrames <= 1 {
             print("  Detected impact frame: \(single) (unconfirmed, confirmFrames≤1)")
             print("  Impact detection reason: first_movement_unconfirmed")
+            let resultFrame = config.returnOneFrameBefore ? max(0, single - 1) : single
             return ImpactDetectionResult(
-                detectedImpactFrameIndex: single,
+                detectedImpactFrameIndex: resultFrame,
                 fallbackImpactFrameIndex: fallbackImpactIndex,
                 impactDetectionReason:    "first_movement_unconfirmed",
                 initialBallCenter:        initialCenter,
@@ -131,11 +172,11 @@ struct ExperimentalImpactFrameDetector {
         }
 
         print("  No confirmed movement → fallback to \(fallbackImpactIndex)")
-        print("  Impact detection reason: fallback_no_movement_detected")
+        print("  Impact detection reason: \(eventReason)")
         return ImpactDetectionResult(
             detectedImpactFrameIndex: fallbackImpactIndex,
             fallbackImpactFrameIndex: fallbackImpactIndex,
-            impactDetectionReason:    "fallback_no_movement_detected",
+            impactDetectionReason:    eventReason,
             initialBallCenter:        initialCenter,
             movementThresholdNorm:    threshold,
             initialJitter:            jitter)

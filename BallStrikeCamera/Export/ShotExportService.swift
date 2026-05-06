@@ -110,6 +110,7 @@ final class ShotExportService {
     private func metricsJSON(analysis: ShotAnalysisResult) -> [String: Any] {
         guard let metrics = analysis.metrics else {
             return [
+                "schema": "ballstrike.shot_metrics.v2",
                 "metrics_available": false,
                 "detectedImpactFrameIndex": analysis.detectedImpactFrameIndex,
                 "fallbackImpactFrameIndex": analysis.fallbackImpactFrameIndex,
@@ -118,16 +119,41 @@ final class ShotExportService {
         }
 
         return [
+            "schema": "ballstrike.shot_metrics.v2",
             "metrics_available": true,
             "detectedImpactFrameIndex": metrics.detectedImpactFrameIndex,
             "fallbackImpactFrameIndex": metrics.fallbackImpactFrameIndex,
+            "zeroDegreeReferenceAngleDegrees": metrics.zeroDegreeReferenceAngleDegrees,
             "ballSpeedMph": jsonNumber(metrics.ballLaunch.ballSpeedMph),
             "hlaDegrees": jsonNumber(metrics.ballLaunch.hlaDegrees),
+            "hlaDisplay": metrics.ballLaunch.hlaDisplay,
+            "hla3DRawDegrees": jsonNumber(metrics.ballLaunch.hla3DRawDegrees),
+            "hlaReferenceAngleDegrees": metrics.ballLaunch.hlaReferenceAngleDegrees,
+            "hlaForwardComponent": jsonNumber(metrics.ballLaunch.hlaForwardComponent),
+            "hlaLateralComponent": jsonNumber(metrics.ballLaunch.hlaLateralComponent),
             "vlaDegrees": jsonNumber(metrics.ballLaunch.vlaDegrees),
             "clubSpeedMph": jsonNumber(metrics.club.clubSpeedMph),
             "smashFactor": jsonNumber(metrics.smashFactor),
+            "idealCarryYards": jsonNumber(metrics.distance.idealCarryYards),
+            "carryCorrectionFactor": metrics.distance.carryCorrectionFactor,
             "carryYards": jsonNumber(metrics.distance.carryYards),
+            "rolloutYards": jsonNumber(metrics.distance.rolloutYards),
             "totalYards": jsonNumber(metrics.distance.totalYards),
+            "rolloutFraction": jsonNumber(metrics.distance.rolloutFraction),
+            "vlaBucket": metrics.distance.vlaBucket,
+            "estimatedBackspinRpm": jsonNumber(metrics.spin.estimatedBackspinRpm),
+            "estimatedSidespinRpmSigned": jsonNumber(metrics.spin.estimatedSidespinRpmSigned),
+            "estimatedSidespinDisplay": metrics.spin.estimatedSidespinDisplay,
+            "estimatedSpinAxisDegreesSigned": jsonNumber(metrics.spin.estimatedSpinAxisDegreesSigned),
+            "estimatedSpinAxisDisplay": metrics.spin.estimatedSpinAxisDisplay,
+            "spinEstimateMethod": metrics.spin.spinEstimateMethod,
+            "clubPathDegreesSigned": jsonNumber(metrics.clubPath.clubPathDegreesSigned),
+            "clubPathDisplay": metrics.clubPath.clubPathDisplay,
+            "estimatedFaceAngleDegreesSigned": jsonNumber(metrics.faceAngle.faceAngleDegreesSigned),
+            "estimatedFaceAngleDisplay": metrics.faceAngle.faceAngleDisplay,
+            "faceAngleConfidence": metrics.faceAngle.confidence,
+            "faceToPathDegreesSigned": jsonNumber(metrics.faceAngle.faceToPathDegreesSigned),
+            "faceToPathDisplay": metrics.faceAngle.faceToPathDisplay,
             "ballQuality": metrics.ballLaunch.quality,
             "clubQuality": metrics.club.quality,
             "ballPointsUsed": metrics.ballLaunch.pointsUsed,
@@ -135,6 +161,7 @@ final class ShotExportService {
             "ballMethod": metrics.ballLaunch.method,
             "clubMethod": metrics.club.method,
             "distanceMethod": metrics.distance.method,
+            "clubSpeedFrameIndices": metrics.club.speedFrameIndices,
             "warnings": metrics.warnings,
             "calibration": calibrationJSON(metrics.calibration),
             "ball3DObservations": metrics.ball3DObservations.map(ball3DJSON),
@@ -183,9 +210,16 @@ final class ShotExportService {
             "centerY": jsonNumber(observation.centerY.map(Double.init)),
             "leadingEdgeX": jsonNumber(observation.leadingEdgeX.map(Double.init)),
             "leadingEdgeY": jsonNumber(observation.leadingEdgeY.map(Double.init)),
+            "clubBoundingBox": rectJSON(observation.clubBoundingBox),
             "confidence": observation.confidence,
             "searchROI": rectJSON(observation.searchROI),
-            "debugReason": observation.debugReason
+            "ballExclusionCenterX": jsonNumber(observation.ballExclusionCenterX.map(Double.init)),
+            "ballExclusionCenterY": jsonNumber(observation.ballExclusionCenterY.map(Double.init)),
+            "ballExclusionDiameter": jsonNumber(observation.ballExclusionDiameter.map(Double.init)),
+            "debugReason": observation.debugReason,
+            "detectionMode": observation.detectionMode,
+            "ballExclusionWasApplied": observation.ballExclusionWasApplied,
+            "frameDifferenceWasUsed": observation.frameDifferenceWasUsed
         ]
     }
 

@@ -330,12 +330,22 @@ struct ShotTrackingReviewView: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 14) {
                     metricCell("Ball Speed", value: mph(metrics.ballLaunch.ballSpeedMph))
-                    metricCell("HLA", value: degrees(metrics.ballLaunch.hlaDegrees))
+                    metricCell("HLA", value: metrics.ballLaunch.hlaDisplay)
                     metricCell("VLA", value: degrees(metrics.ballLaunch.vlaDegrees))
                     metricCell("Club Speed", value: mph(metrics.club.clubSpeedMph))
                     metricCell("Smash", value: plain(metrics.smashFactor, digits: 2))
-                    metricCell("Estimated Carry", value: yards(metrics.distance.carryYards))
-                    metricCell("Estimated Total", value: yards(metrics.distance.totalYards))
+                    metricCell("Carry", value: yards(metrics.distance.carryYards))
+                    metricCell("Total", value: yards(metrics.distance.totalYards))
+                }
+
+                HStack(spacing: 14) {
+                    metricCell("Backspin", value: rpm(metrics.spin.estimatedBackspinRpm))
+                    metricCell("Sidespin", value: metrics.spin.estimatedSidespinDisplay)
+                    metricCell("Club Path", value: metrics.clubPath.clubPathDisplay)
+                    metricCell("Face", value: metrics.faceAngle.faceAngleDisplay)
+                    metricCell("F-to-P", value: metrics.faceAngle.faceToPathDisplay)
+                    metricCell("Ideal Carry", value: yards(metrics.distance.idealCarryYards))
+                    metricCell("Rollout", value: metrics.distance.rolloutFraction.map { String(format: "%.0f%%", $0 * 100) } ?? "--")
                 }
 
                 HStack(spacing: 12) {
@@ -459,6 +469,10 @@ struct ShotTrackingReviewView: View {
 
     private func mph(_ value: Double?) -> String {
         value.map { String(format: "%.1f mph", $0) } ?? "--"
+    }
+
+    private func rpm(_ value: Double?) -> String {
+        value.map { String(format: "%.0f rpm", $0) } ?? "--"
     }
 
     private func degrees(_ value: Double?) -> String {

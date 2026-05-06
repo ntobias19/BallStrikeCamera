@@ -9,9 +9,16 @@ struct ClubObservation {
     let centerY: CGFloat?
     let leadingEdgeX: CGFloat?
     let leadingEdgeY: CGFloat?
+    let clubBoundingBox: CGRect?
     let confidence: Double
     let searchROI: CGRect?
+    let ballExclusionCenterX: CGFloat?
+    let ballExclusionCenterY: CGFloat?
+    let ballExclusionDiameter: CGFloat?
     let debugReason: String
+    let detectionMode: String
+    let ballExclusionWasApplied: Bool
+    let frameDifferenceWasUsed: Bool
 }
 
 struct ClubTracker {
@@ -27,6 +34,7 @@ struct ClubTracker {
         var frameDifferenceThreshold: Int = 34
         var minClubBlobArea: Int = 5
         var maxClubBlobArea: Int = 6000
+        var minClubConfidence: Double = 0.20
         var sampleStride: Int = 2
         var debugLoggingEnabled: Bool = true
     }
@@ -81,20 +89,41 @@ struct ClubTracker {
                 previous = nil
             }
 
-            let roi = clubSearchROI(
-                ballCenter: CGPoint(x: ballX, y: ballY),
-                ballDiameter: ballDiameter
-            )
+            let ballCenter = CGPoint(x: ballX, y: ballY)
+            let roi = clubSearchROI(ballCenter: ballCenter, ballDiameter: ballDiameter)
+            let exclusionDiameter = ballDiameter * configuration.ballExclusionRadiusScale
 
             let selected = findClubBlob(
                 current: current,
                 previous: previous,
                 roi: roi,
-                ballCenter: CGPoint(x: ballX, y: ballY),
+                ballCenter: ballCenter,
                 ballDiameter: ballDiameter
             )
 
             if let selected {
+                let conf = confidence(for: selected)
+                if conf < configuration.minClubConfidence {
+                    let obs = emptyObservation(
+                        frame,
+                        roi: roi,
+                        ballCenter: ballCenter,
+                        ballExclusionDiameter: exclusionDiameter,
+                        reason: String(format: "club_conf_low(%.2f<%.2f)", conf, configuration.minClubConfidence)
+                    )
+                    observations.append(obs)
+                    log(obs)
+                    continue
+                }
+
+                let bboxNorm = CGRect(
+                    x: CGFloat(selected.minX) / CGFloat(current.width),
+                    y: CGFloat(selected.minY) / CGFloat(current.height),
+                    width: CGFloat(max(1, selected.maxX - selected.minX + 1)) / CGFloat(current.width),
+                    height: CGFloat(max(1, selected.maxY - selected.minY + 1)) / CGFloat(current.height)
+                )
+                let usedDiff = configuration.useFrameDifference && previous != nil
+
                 let obs = ClubObservation(
                     frameIndex: frame.frameIndex,
                     timestamp: frame.timestamp,
@@ -103,14 +132,27 @@ struct ClubTracker {
                     centerY: CGFloat(selected.sumY) / CGFloat(selected.count) / CGFloat(current.height),
                     leadingEdgeX: CGFloat(selected.closestX) / CGFloat(current.width),
                     leadingEdgeY: CGFloat(selected.closestY) / CGFloat(current.height),
-                    confidence: confidence(for: selected),
+                    clubBoundingBox: bboxNorm,
+                    confidence: conf,
                     searchROI: roi,
-                    debugReason: "club_blob_frame_diff_or_dark"
+                    ballExclusionCenterX: ballX,
+                    ballExclusionCenterY: ballY,
+                    ballExclusionDiameter: exclusionDiameter,
+                    debugReason: "club_blob_frame_diff_or_dark",
+                    detectionMode: usedDiff ? "frameDifference_or_dark" : "dark",
+                    ballExclusionWasApplied: true,
+                    frameDifferenceWasUsed: usedDiff
                 )
                 observations.append(obs)
                 log(obs)
             } else {
-                let obs = emptyObservation(frame, roi: roi, reason: "no_club_blob")
+                let obs = emptyObservation(
+                    frame,
+                    roi: roi,
+                    ballCenter: ballCenter,
+                    ballExclusionDiameter: exclusionDiameter,
+                    reason: "no_club_blob"
+                )
                 observations.append(obs)
                 log(obs)
             }
@@ -311,7 +353,13 @@ struct ClubTracker {
             .observation
     }
 
-    private func emptyObservation(_ frame: AnalyzedShotFrame, roi: CGRect? = nil, reason: String) -> ClubObservation {
+    private func emptyObservation(
+        _ frame: AnalyzedShotFrame,
+        roi: CGRect? = nil,
+        ballCenter: CGPoint? = nil,
+        ballExclusionDiameter: CGFloat? = nil,
+        reason: String
+    ) -> ClubObservation {
         ClubObservation(
             frameIndex: frame.frameIndex,
             timestamp: frame.timestamp,
@@ -320,9 +368,16 @@ struct ClubTracker {
             centerY: nil,
             leadingEdgeX: nil,
             leadingEdgeY: nil,
+            clubBoundingBox: nil,
             confidence: 0,
             searchROI: roi,
-            debugReason: reason
+            ballExclusionCenterX: ballCenter?.x,
+            ballExclusionCenterY: ballCenter?.y,
+            ballExclusionDiameter: ballExclusionDiameter,
+            debugReason: reason,
+            detectionMode: "none",
+            ballExclusionWasApplied: ballCenter != nil,
+            frameDifferenceWasUsed: false
         )
     }
 

@@ -3,12 +3,48 @@ import Foundation
 import UIKit
 import simd
 
+enum VLAEstimationMode: String {
+    case legacy        = "legacy"
+    case pinhole2DSize = "pinhole2DSize"
+    case blended       = "blended"
+}
+
 struct ExperimentalShotMetricsCalculator {
     struct Configuration {
         var minimumBallPoints: Int = 2
         var preferredBallPointLimit: Int = 6
         var minimumClubPoints: Int = 2
         var lowConfidenceWarningThreshold: Double = 0.45
+        // Part F — metrics point filtering
+        var minMetricPointConfidence: Double = 0.35
+        var maxMetricDiameterRatioToMedian: Double = 1.75
+        var maxMetricPositionResidualNorm: Double = 0.025
+        // Part A/D — VLA from apparent diameter growth (updated defaults)
+        var useDiameterGrowthForVLA: Bool = true
+        var diameterGrowthToVLAScale: Double = 140.0
+        var diameterGrowthVLAWeight: Double = 0.75
+        var imageYVLAWeight: Double = 0.25
+        var maxVLAClampDegrees: Double = 75.0
+        // Part A — slow-horizontal VLA boost
+        var slowHorizontalProgressBoost: Bool = true
+        var slowHorizontalThreshold: Double = 0.035
+        var slowHorizontalVLABoostMultiplier: Double = 1.4
+        var significantDiamGrowthThreshold: Double = 0.10
+        var veryHighLaunchDiamGrowthThreshold: Double = 0.25
+        // New VLA model (pinhole2DSize)
+        var vlaEstimationMode: VLAEstimationMode = .pinhole2DSize
+        var vlaImageYWeight: Double = 0.45
+        var vlaDiameterDepthWeight: Double = 0.55
+        var vlaDepthSign: Double = 1.0
+        var vlaDepthScale: Double = 1.0
+        var useRightwardPerspectiveSizeCorrection: Bool = true
+        var rightwardSizeCorrectionStrength: Double = 0.35
+        var maxSizeCorrectionRatio: Double = 1.35
+        var vlaGrowthBoostDiameterScale: Double = 140.0
+        var vlaSignificantGrowthThreshold: Double = 0.10
+        var vlaVeryHighGrowthThreshold: Double = 0.25
+        var vlaMinFromVeryHighGrowth: Double = 30.0
+        var maxVLAPinholeDegrees: Double = 70.0
     }
 
     let configuration: Configuration
@@ -157,19 +193,21 @@ struct ExperimentalShotMetricsCalculator {
         calibration: ExperimentalCameraCalibration
     ) -> ExperimentalBallLaunchMetrics {
         var warnings: [String] = []
-        let selected = Array(
+        let raw = Array(
             ball3DObservations
                 .filter { $0.frameIndex > impactFrameIndex }
                 .sorted { $0.frameIndex < $1.frameIndex }
                 .prefix(configuration.preferredBallPointLimit)
         )
+        // Part F: filter metric points by confidence, diameter, path residual
+        let selected = filterMetricPoints(raw, warnings: &warnings)
 
         guard selected.count >= configuration.minimumBallPoints else {
             warnings.append("Not enough post-impact ball points for speed/HLA/VLA.")
             return ExperimentalBallLaunchMetrics(
                 ballSpeedMph: nil, hlaDegrees: nil, hlaDisplay: "—",
                 hla3DRawDegrees: nil,
-                vlaDegrees: nil, hlaReferenceAngleDegrees: zeroDegreeAngleDegrees,
+                vlaDegrees: nil, vlaRawDegrees: nil, hlaReferenceAngleDegrees: zeroDegreeAngleDegrees,
                 ballMovementDx: nil, ballMovementDy: nil,
                 hlaForwardComponent: nil, hlaLateralComponent: nil,
                 pointsUsed: selected.count, quality: 0,
@@ -194,7 +232,7 @@ struct ExperimentalShotMetricsCalculator {
             return ExperimentalBallLaunchMetrics(
                 ballSpeedMph: nil, hlaDegrees: nil, hlaDisplay: "—",
                 hla3DRawDegrees: nil,
-                vlaDegrees: nil, hlaReferenceAngleDegrees: zeroDegreeAngleDegrees,
+                vlaDegrees: nil, vlaRawDegrees: nil, hlaReferenceAngleDegrees: zeroDegreeAngleDegrees,
                 ballMovementDx: nil, ballMovementDy: nil,
                 hlaForwardComponent: nil, hlaLateralComponent: nil,
                 pointsUsed: selected.count, quality: 0,
@@ -206,7 +244,96 @@ struct ExperimentalShotMetricsCalculator {
         let ballSpeedMph = speed * 2.23694
         let hla3D = atan2(velocity.x, velocity.z) * 180 / .pi
         let horizontal = sqrt(velocity.x * velocity.x + velocity.z * velocity.z)
-        let vla = atan2(velocity.y, horizontal) * 180 / .pi
+        // Part E: VLA clamped to ≥ 0 (ball cannot launch downward)
+        let vlaRaw = atan2(velocity.y, horizontal) * 180 / .pi
+        let vla3D = max(0.0, vlaRaw)
+        if vlaRaw < 0 {
+            warnings.append(String(format: "VLA was negative (%.1f°); clamped to 0.", vlaRaw))
+        }
+
+        // Part A/D: VLA from apparent diameter growth with slow-horizontal boost
+        var vlaDiamEst: Double? = nil
+        var diamGrowth: Double? = nil
+        if configuration.useDiameterGrowthForVLA && selected.count >= 2 {
+            let diaFirst = Double(selected.first!.diameterNorm)
+            let diaLast  = Double(selected.last!.diameterNorm)
+            if diaFirst > 1e-6 {
+                let growth = (diaLast - diaFirst) / diaFirst
+                diamGrowth = growth
+                var est = max(0.0, min(configuration.maxVLAClampDegrees,
+                                      growth * configuration.diameterGrowthToVLAScale))
+                // Part A: slow-horizontal boost — if ball moved little horizontally, it went more upward
+                if configuration.slowHorizontalProgressBoost && growth > 0 {
+                    let cx0 = Double(selected.first!.imageX)
+                    let cy0 = Double(selected.first!.imageY)
+                    let cx1 = Double(selected.last!.imageX)
+                    let cy1 = Double(selected.last!.imageY)
+                    let dxPx = (cx1 - cx0) * Double(calibration.imageWidthPixels)
+                    let dyPx = (cy1 - cy0) * Double(calibration.imageHeightPixels)
+                    let horizProg = sqrt(dxPx * dxPx + dyPx * dyPx) /
+                                    Double(max(calibration.imageWidthPixels, calibration.imageHeightPixels))
+                    if horizProg < configuration.slowHorizontalThreshold {
+                        est = min(configuration.maxVLAClampDegrees, est * configuration.slowHorizontalVLABoostMultiplier)
+                    }
+                }
+                // Part A: VLA floor for significant diameter growth
+                let sigThresh = configuration.significantDiamGrowthThreshold
+                let vhThresh  = configuration.veryHighLaunchDiamGrowthThreshold
+                if growth > vhThresh {
+                    let floor = min(configuration.maxVLAClampDegrees, vhThresh * configuration.diameterGrowthToVLAScale * 0.8)
+                    est = max(est, floor)
+                } else if growth > sigThresh {
+                    let floor = min(configuration.maxVLAClampDegrees, sigThresh * configuration.diameterGrowthToVLAScale * 0.8)
+                    est = max(est, floor)
+                }
+                if est > 0 { vlaDiamEst = est }
+            }
+        }
+        let vla: Double
+        switch configuration.vlaEstimationMode {
+        case .pinhole2DSize:
+            let pinhole = calculatePinhole2DVla(
+                selected: selected, calibration: calibration, warnings: &warnings)
+            if let p = pinhole {
+                vla = max(0.0, min(configuration.maxVLAPinholeDegrees, p))
+            } else {
+                vla = vla3D  // fallback
+            }
+        case .blended:
+            let pinhole = calculatePinhole2DVla(
+                selected: selected, calibration: calibration, warnings: &warnings)
+            if let est = vlaDiamEst, let p = pinhole {
+                vla = max(0.0, min(configuration.maxVLAPinholeDegrees, (est + p) / 2.0))
+            } else if let p = pinhole {
+                vla = max(0.0, min(configuration.maxVLAPinholeDegrees, p))
+            } else if let est = vlaDiamEst {
+                let wDiam = configuration.diameterGrowthVLAWeight
+                let w3D   = configuration.imageYVLAWeight
+                if vla3D < 5.0 && est > 10.0 {
+                    let combined = est * wDiam + vla3D * w3D
+                    warnings.append(String(format: "VLA: 3D=%.1f° near zero; diameter growth → combined=%.1f°.", vla3D, combined))
+                    vla = max(0.0, min(configuration.maxVLAClampDegrees, combined))
+                } else {
+                    vla = max(0.0, min(configuration.maxVLAClampDegrees, max(vla3D, est * wDiam)))
+                }
+            } else {
+                vla = vla3D
+            }
+        case .legacy:
+            if let est = vlaDiamEst {
+                let wDiam = configuration.diameterGrowthVLAWeight
+                let w3D   = configuration.imageYVLAWeight
+                if vla3D < 5.0 && est > 10.0 {
+                    let combined = est * wDiam + vla3D * w3D
+                    warnings.append(String(format: "VLA: 3D=%.1f° near zero; diameter growth → combined=%.1f°.", vla3D, combined))
+                    vla = max(0.0, min(configuration.maxVLAClampDegrees, combined))
+                } else {
+                    vla = max(0.0, min(configuration.maxVLAClampDegrees, max(vla3D, est * wDiam)))
+                }
+            } else {
+                vla = vla3D
+            }
+        }
 
         let imageHLA = computeImageSpaceHLA(observations: selected,
                                             zeroDegreeAngleDegrees: zeroDegreeAngleDegrees,
@@ -231,6 +358,9 @@ struct ExperimentalShotMetricsCalculator {
             hlaDisplay: hlaDisplay,
             hla3DRawDegrees: hla3D,
             vlaDegrees: vla,
+            vlaRawDegrees: vlaRaw < 0 ? vlaRaw : nil,
+            vlaDiameterEstDegrees: vlaDiamEst,
+            diameterGrowthFraction: diamGrowth,
             hlaReferenceAngleDegrees: zeroDegreeAngleDegrees,
             ballMovementDx: imageHLA.dx,
             ballMovementDy: imageHLA.dy,
@@ -241,6 +371,179 @@ struct ExperimentalShotMetricsCalculator {
             method: method,
             warnings: warnings
         )
+    }
+
+    // MARK: - Part F: Metrics point filtering
+
+    private func filterMetricPoints(
+        _ input: [ExperimentalBall3DObservation],
+        warnings: inout [String]
+    ) -> [ExperimentalBall3DObservation] {
+        let minPts = configuration.minimumBallPoints
+        guard input.count >= minPts else { return input }
+        var filtered = input
+
+        // Step 1: confidence filter
+        let confStep = filtered.filter { $0.confidence >= configuration.minMetricPointConfidence }
+        if confStep.count >= minPts {
+            if confStep.count < filtered.count {
+                warnings.append("Filtered \(filtered.count - confStep.count) low-confidence metric points.")
+            }
+            filtered = confStep
+        }
+
+        // Step 2: diameter outlier filter
+        let sortedDiam = filtered.map(\.diameterNorm).sorted()
+        let medDiam = sortedDiam[sortedDiam.count / 2]
+        let maxDiam = medDiam * CGFloat(configuration.maxMetricDiameterRatioToMedian)
+        let diamStep = filtered.filter { $0.diameterNorm <= maxDiam }
+        if diamStep.count >= minPts {
+            if diamStep.count < filtered.count {
+                warnings.append("Filtered \(filtered.count - diamStep.count) outlier-diameter metric points.")
+            }
+            filtered = diamStep
+        }
+
+        // Step 3: perpendicular path-residual filter (requires ≥3 points to fit a line)
+        guard filtered.count >= 3 else { return filtered }
+        let times = filtered.map(\.relativeTime)
+        let xs    = filtered.map { Double($0.imageX) }
+        let ys    = filtered.map { Double($0.imageY) }
+        let meanT = times.reduce(0, +) / Double(times.count)
+        let cx0   = xs.reduce(0, +) / Double(xs.count)
+        let cy0   = ys.reduce(0, +) / Double(ys.count)
+        let denom = times.map { pow($0 - meanT, 2) }.reduce(0, +)
+        guard denom > 0 else { return filtered }
+        let dx = zip(times, xs).map { ($0 - meanT) * $1 }.reduce(0, +) / denom
+        let dy = zip(times, ys).map { ($0 - meanT) * $1 }.reduce(0, +) / denom
+        let dirLen = sqrt(dx * dx + dy * dy)
+        guard dirLen > 1e-6 else { return filtered }
+        let ndx = dx / dirLen, ndy = dy / dirLen
+        let residStep = filtered.filter { obs in
+            let ox = Double(obs.imageX) - cx0
+            let oy = Double(obs.imageY) - cy0
+            return abs(ox * ndy - oy * ndx) <= configuration.maxMetricPositionResidualNorm
+        }
+        if residStep.count >= minPts {
+            if residStep.count < filtered.count {
+                warnings.append("Filtered \(filtered.count - residStep.count) path-outlier metric points.")
+            }
+            filtered = residStep
+        }
+
+        return filtered
+    }
+
+    // MARK: - Pinhole2DSize VLA
+
+    /// New VLA model: use image coordinates + apparent diameter (pinhole depth) to estimate VLA.
+    /// Returns nil if insufficient data.
+    private func calculatePinhole2DVla(
+        selected: [ExperimentalBall3DObservation],
+        calibration: ExperimentalCameraCalibration,
+        warnings: inout [String]
+    ) -> Double? {
+        let W = Double(calibration.imageWidthPixels)
+        let H = Double(calibration.imageHeightPixels)
+        let fovXRad = calibration.horizontalFOVDegrees * .pi / 180.0
+        let fovYRad = calibration.verticalFOVDegrees * .pi / 180.0
+        let fx = W / (2.0 * tan(fovXRad / 2.0))
+        let fy = H / (2.0 * tan(fovYRad / 2.0))
+        let fAvg = (fx + fy) / 2.0
+        let ballDiamM = calibration.realBallDiameterMeters
+
+        let valid = selected.filter { $0.diameterNorm > 0 }
+        guard valid.count >= 2 else {
+            warnings.append("Pinhole2DSize VLA: fewer than 2 valid diameter points.")
+            return nil
+        }
+        let pts = Array(valid.prefix(6))
+
+        let initCx = Double(pts[0].imageX)
+        let usePersp = configuration.useRightwardPerspectiveSizeCorrection
+        let strength = configuration.rightwardSizeCorrectionStrength
+        let maxCorr  = configuration.maxSizeCorrectionRatio
+
+        func correctedDia(_ obs: ExperimentalBall3DObservation) -> Double {
+            let dia = Double(obs.diameterNorm)
+            guard usePersp else { return dia }
+            let dxNorm = Double(obs.imageX) - initCx
+            let scale = 1.0 / max(1e-6, 1.0 + strength * max(0.0, dxNorm))
+            let corrected = dia / scale
+            return min(corrected, dia * maxCorr)
+        }
+
+        struct EnrichedPoint {
+            let obs: ExperimentalBall3DObservation
+            let cDia: Double
+            let Z: Double
+        }
+
+        var enriched: [EnrichedPoint] = []
+        for o in pts {
+            let cDia = correctedDia(o)
+            let diaPx = cDia * W
+            guard diaPx > 0 else { continue }
+            let Z = ballDiamM * fAvg / diaPx
+            enriched.append(EnrichedPoint(obs: o, cDia: cDia, Z: Z))
+        }
+
+        guard enriched.count >= 2 else {
+            warnings.append("Pinhole2DSize VLA: not enough points after perspective correction.")
+            return nil
+        }
+
+        let first = enriched.first!
+        let last  = enriched.last!
+
+        let dxPx = (Double(last.obs.imageX) - Double(first.obs.imageX)) * W
+        let dyPx = (Double(last.obs.imageY) - Double(first.obs.imageY)) * H
+        let dz   = last.Z - first.Z
+        let avgZ = (first.Z + last.Z) / 2.0
+
+        let dXm =  dxPx * avgZ / max(fx, 1e-6)
+        let dYm = -dyPx * avgZ / max(fy, 1e-6)
+        let dZm =  dz
+
+        let imgYW   = configuration.vlaImageYWeight
+        let diaDW   = configuration.vlaDiameterDepthWeight
+        let depthSgn = configuration.vlaDepthSign
+        let depthScl = configuration.vlaDepthScale
+
+        let vertFromImageY = dYm
+        let vertFromDepth  = -dZm * depthSgn * depthScl
+        let vertCombined   = imgYW * vertFromImageY + diaDW * vertFromDepth
+        let horizComponent = max(abs(dXm), 1e-6)
+
+        let rawVLA = atan2(max(0.0, vertCombined), horizComponent) * 180.0 / .pi
+
+        // Diameter growth boost
+        let obsGrowth  = (Double(last.obs.diameterNorm) - Double(first.obs.diameterNorm)) / max(Double(first.obs.diameterNorm), 1e-6)
+        let corrGrowth = (last.cDia - first.cDia) / max(first.cDia, 1e-6)
+
+        let sigThresh   = configuration.vlaSignificantGrowthThreshold
+        let vhThresh    = configuration.vlaVeryHighGrowthThreshold
+        let minVLAVH    = configuration.vlaMinFromVeryHighGrowth
+        let growthScale = configuration.vlaGrowthBoostDiameterScale
+
+        var boostedVLA = rawVLA
+        if corrGrowth > sigThresh {
+            let growthVLA = corrGrowth * growthScale
+            boostedVLA = max(rawVLA, growthVLA)
+        }
+        if corrGrowth > vhThresh {
+            boostedVLA = max(boostedVLA, minVLAVH)
+        }
+
+        let finalVLA = max(0.0, min(configuration.maxVLAPinholeDegrees, boostedVLA))
+
+        if rawVLA < 0 {
+            warnings.append(String(format: "Pinhole2DSize VLA raw=%.1f° (negative clamped to 0)", rawVLA))
+        }
+        if corrGrowth < obsGrowth - 0.01 {
+            warnings.append(String(format: "Perspective correction applied: obs_growth=%+.3f corrected_growth=%+.3f", obsGrowth, corrGrowth))
+        }
+        return finalVLA
     }
 
     // MARK: - Image-space HLA

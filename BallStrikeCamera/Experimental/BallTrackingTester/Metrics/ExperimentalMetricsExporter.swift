@@ -75,6 +75,9 @@ struct ExperimentalMetricsExporter {
             "hlaForwardComponent":   jsonNumber(metrics.ballLaunch.hlaForwardComponent),
             "hlaLateralComponent":   jsonNumber(metrics.ballLaunch.hlaLateralComponent),
             "vlaDegrees":            jsonNumber(metrics.ballLaunch.vlaDegrees),
+            "vlaRaw3DDegrees":        jsonNumber(metrics.ballLaunch.vlaRawDegrees),
+            "vlaDiameterEstDegrees":  jsonNumber(metrics.ballLaunch.vlaDiameterEstDegrees),
+            "diameterGrowthFraction": jsonNumber(metrics.ballLaunch.diameterGrowthFraction),
             // Club
             "clubSpeedMph":          jsonNumber(metrics.club.clubSpeedMph),
             "smashFactor":           jsonNumber(metrics.smashFactor),
