@@ -56,6 +56,8 @@
 		BF0000010000000000000036 /* ExperimentalSpinEstimator.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000000136 /* ExperimentalSpinEstimator.swift */; };
 		BF0000010000000000000037 /* ExperimentalDirectionalFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000000137 /* ExperimentalDirectionalFormat.swift */; };
 		BF0000010000000000000038 /* ExperimentalClubPathFaceEstimator.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000000138 /* ExperimentalClubPathFaceEstimator.swift */; };
+		BF0000010000000000000039 /* VLAModelPredictor.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000000139 /* VLAModelPredictor.swift */; };
+		BF000001000000000000003A /* ExperimentalVLAModelPredictor.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF000001000000000000013A /* ExperimentalVLAModelPredictor.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -110,6 +112,8 @@
 		BF0000010000000000000136 /* ExperimentalSpinEstimator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExperimentalSpinEstimator.swift; sourceTree = "<group>"; };
 		BF0000010000000000000137 /* ExperimentalDirectionalFormat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExperimentalDirectionalFormat.swift; sourceTree = "<group>"; };
 		BF0000010000000000000138 /* ExperimentalClubPathFaceEstimator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExperimentalClubPathFaceEstimator.swift; sourceTree = "<group>"; };
+		BF0000010000000000000139 /* VLAModelPredictor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VLAModelPredictor.swift; sourceTree = "<group>"; };
+		BF000001000000000000013A /* ExperimentalVLAModelPredictor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExperimentalVLAModelPredictor.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -194,6 +198,7 @@
 				BF0000010000000000000133 /* DirectionalFormat.swift */,
 				BF0000010000000000000134 /* SpinEstimator.swift */,
 				BF0000010000000000000135 /* ClubPathFaceEstimator.swift */,
+				BF0000010000000000000139 /* VLAModelPredictor.swift */,
 			);
 			path = Analysis;
 			sourceTree = "<group>";
@@ -272,6 +277,7 @@
 				BF0000010000000000000136 /* ExperimentalSpinEstimator.swift */,
 				BF0000010000000000000137 /* ExperimentalDirectionalFormat.swift */,
 				BF0000010000000000000138 /* ExperimentalClubPathFaceEstimator.swift */,
+				BF000001000000000000013A /* ExperimentalVLAModelPredictor.swift */,
 			);
 			path = Metrics;
 			sourceTree = "<group>";
@@ -401,6 +407,8 @@
 				BF0000010000000000000036 /* ExperimentalSpinEstimator.swift in Sources */,
 				BF0000010000000000000037 /* ExperimentalDirectionalFormat.swift in Sources */,
 				BF0000010000000000000038 /* ExperimentalClubPathFaceEstimator.swift in Sources */,
+				BF0000010000000000000039 /* VLAModelPredictor.swift in Sources */,
+				BF000001000000000000003A /* ExperimentalVLAModelPredictor.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

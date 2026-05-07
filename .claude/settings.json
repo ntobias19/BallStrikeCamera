@@ -77,7 +77,12 @@
       "Bash(python3 -c \"import ast; ast.parse\\(open\\('/tmp/shot_tester.py'\\).read\\(\\)\\); print\\('Syntax OK'\\)\")",
       "Bash(git -C /Users/noahtobias/Downloads/BallStrikeCamera diff --name-only HEAD)",
       "Bash(git -C /Users/noahtobias/Downloads/BallStrikeCamera status --short)",
-      "Bash(python3 -c \"import ast, sys; ast.parse\\(open\\('/tmp/shot_tester.py'\\).read\\(\\)\\); print\\('syntax OK'\\)\")"
+      "Bash(python3 -c \"import ast, sys; ast.parse\\(open\\('/tmp/shot_tester.py'\\).read\\(\\)\\); print\\('syntax OK'\\)\")",
+      "Bash(xcodebuild -scheme BallStrikeCamera -destination \"generic/platform=iOS\" -quiet)",
+      "Bash(xcodebuild -scheme BallStrikeCamera -destination \"generic/platform=iOS\")",
+      "Bash(xcodebuild -project BallStrikeCamera.xcodeproj -scheme BallStrikeCamera -destination 'generic/platform=iOS' -configuration Debug build)",
+      "Bash(zip -r BallStrikeCamera_export.zip BallStrikeCamera/ --exclude \"*.git*\" --exclude \"*DerivedData*\" --exclude \"*.xcuserstate\")",
+      "Bash(xcodebuild -scheme BallStrikeCamera -destination 'generic/platform=iOS' build)"
     ],
     "additionalDirectories": [
       "/tmp",

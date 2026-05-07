@@ -45,7 +45,7 @@ final class CameraController: NSObject, ObservableObject {
     private var rollingBuffer: [CapturedFrame] = []
     private let rollingBufferLimit = 120
     private let preHitFrames = 20
-    private let postHitFrames = 80
+    private let postHitFrames = 20
 
     private var stableRect: CGRect?
     private var stableFrameCount = 0
@@ -64,6 +64,7 @@ final class CameraController: NSObject, ObservableObject {
     private var eventFrames: [CapturedFrame] = []
     private var remainingPostFrames = 0
     private var lastPublishedDetectionTime = CACurrentMediaTime()
+    private var reviewTriggerLogCount: Int = 0
 
     // Plausibility thresholds — based on observed good rects (w≈0.021–0.038, h≈0.037–0.067)
     // and bad false locks (w≈0.21–0.24, h≈0.37–0.43).
@@ -345,6 +346,15 @@ extension CameraController: AVCaptureVideoDataOutputSampleBufferDelegate {
             return
         }
 
+        // While review screen is open, block all shot triggers.
+        if phase == .reviewingShot {
+            reviewTriggerLogCount += 1
+            if reviewTriggerLogCount % 240 == 1 {
+                print("Shot trigger ignored: review screen active")
+            }
+            return
+        }
+
         // Handle the .ready phase before the observation guard so we can apply the
         // lost-frame counter regardless of whether the detector returned anything.
         if phase == .ready {
@@ -424,6 +434,9 @@ extension CameraController: AVCaptureVideoDataOutputSampleBufferDelegate {
 
         case .ready:
             break  // handled above
+
+        case .reviewingShot:
+            break  // blocked above
         }
     }
 
@@ -603,7 +616,17 @@ extension CameraController: AVCaptureVideoDataOutputSampleBufferDelegate {
         analysisStatusText = "Analysis complete"
         print("Shot analysis complete: \(result.frames.count) frames, impact at index \(result.impactFrameIndex)")
         print("Showing ShotTrackingReviewView with \(result.frames.count) frames")
+        print("Review screen active; shot pipeline disarmed")
         showReview = true
+        phase = .reviewingShot
+        reviewTriggerLogCount = 0
+    }
+
+    @MainActor
+    func dismissReview() {
+        showReview = false
+        print("Review dismissed; shot pipeline re-armed")
+        resetShotPipeline(to: .searching, status: "Looking for ball")
     }
 
     @MainActor

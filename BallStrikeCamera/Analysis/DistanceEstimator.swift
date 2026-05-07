@@ -42,7 +42,7 @@ struct DistanceEstimator {
             warnings.append("HLA unavailable; distance model ignores lateral curve.")
         }
 
-        let clampedVLA = min(max(vlaDegrees, 0.5), 45)
+        let clampedVLA = min(max(vlaDegrees, 0.5), 65)
         if clampedVLA != vlaDegrees {
             warnings.append(String(format: "VLA %.1f° clamped to %.1f° for distance estimate.", vlaDegrees, clampedVLA))
         }
@@ -71,8 +71,12 @@ struct DistanceEstimator {
             baseRollout = 0.12; vlaBucket = "15°≤vla<22°"
         } else if clampedVLA < 30 {
             baseRollout = 0.07; vlaBucket = "22°≤vla<30°"
+        } else if clampedVLA < 40 {
+            baseRollout = 0.04; vlaBucket = "30°≤vla<40°"
+        } else if clampedVLA < 50 {
+            baseRollout = 0.03; vlaBucket = "40°≤vla<50°"
         } else {
-            baseRollout = 0.03; vlaBucket = "vla≥30°"
+            baseRollout = 0.01; vlaBucket = "vla≥50°"
         }
 
         let speedAdjust: Double

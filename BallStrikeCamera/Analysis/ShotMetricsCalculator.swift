@@ -7,7 +7,7 @@ struct BallLaunchMetrics {
     let hlaDegrees: Double?
     let hlaDisplay: String
     let hla3DRawDegrees: Double?
-    let vlaDegrees: Double?
+    var vlaDegrees: Double?
     let hlaReferenceAngleDegrees: Double
     let ballMovementDx: Double?
     let ballMovementDy: Double?
@@ -17,6 +17,16 @@ struct BallLaunchMetrics {
     let quality: Double
     let method: String
     let warnings: [String]
+    // VLA model fields
+    var vlaLegacyDegrees: Double? = nil
+    var vlaTrainedModelDegrees: Double? = nil
+    var vlaFinalDegrees: Double? = nil
+    var vlaModelUsed: String = "physics_3d"
+    var vlaModelFile: String? = nil
+    var vlaModelFeaturesUsed: [String] = []
+    var vlaModelFeatureValues: [String: Double] = [:]
+    var vlaModelWarnings: [String] = []
+    var vlaWasClamped: Bool = false
 }
 
 struct ClubMetrics {
@@ -36,6 +46,10 @@ struct ShotMetricsResult {
     let ballLaunch: BallLaunchMetrics
     let club: ClubMetrics
     let smashFactor: Double?
+    var rawSmashFactor: Double? = nil
+    var smashFactorClamped: Bool = false
+    var faceFrameIndex: Int = 0
+    var faceFrameReason: String = "detectedImpactFrameIndex_plus_one"
     let distance: DistanceEstimate
     let spin: SpinEstimate
     let clubPath: ClubPathEstimate
@@ -95,12 +109,49 @@ struct ShotMetricsCalculator {
         let ball3DObservations = makeBall3DObservations(from: analysis, calibration: calibration)
         print("3D ball observations: \(ball3DObservations.count)")
 
-        let ballLaunch = calculateBallLaunch(
+        var ballLaunch = calculateBallLaunch(
             ball3DObservations: ball3DObservations,
             impactFrameIndex: analysis.detectedImpactFrameIndex,
             zeroDegreeAngleDegrees: zeroDegreeReferenceAngleDegrees,
             calibration: calibration
         )
+
+        // VLA model: try trained ridge regression
+        let postImpactObs = ball3DObservations
+            .filter { $0.frameIndex > analysis.detectedImpactFrameIndex }
+            .sorted { $0.frameIndex < $1.frameIndex }
+            .prefix(configuration.preferredBallPointLimit)
+            .map { $0 }
+        if let model = VLAModelPredictor.autoLoad() {
+            let feats = VLAModelPredictor.extractFeatures(
+                from: postImpactObs,
+                hlaDegrees: ballLaunch.hlaDegrees,
+                ballSpeedMph: ballLaunch.ballSpeedMph,
+                impactFrameIndex: analysis.detectedImpactFrameIndex,
+                totalFrames: analysis.frames.count
+            )
+            let (rawPred, clampedPred, featVals, mdlWarns) = VLAModelPredictor.predict(
+                features: feats, model: model
+            )
+            ballLaunch.vlaLegacyDegrees      = ballLaunch.vlaDegrees
+            ballLaunch.vlaTrainedModelDegrees = clampedPred
+            ballLaunch.vlaFinalDegrees        = clampedPred
+            ballLaunch.vlaDegrees             = clampedPred
+            ballLaunch.vlaModelUsed           = "trainedModel"
+            ballLaunch.vlaModelFile           = model.filePath
+            ballLaunch.vlaModelFeaturesUsed   = model.featureSearchTopSubset.isEmpty
+                ? model.features : model.featureSearchTopSubset
+            ballLaunch.vlaModelFeatureValues  = featVals
+            ballLaunch.vlaModelWarnings       = mdlWarns
+            ballLaunch.vlaWasClamped          = abs(rawPred - clampedPred) > 0.01
+            print(String(format: "[VLA] trained model: %.1f° (raw=%.1f°) file=%@",
+                         clampedPred, rawPred, model.filePath))
+        } else {
+            ballLaunch.vlaLegacyDegrees  = ballLaunch.vlaDegrees
+            ballLaunch.vlaFinalDegrees   = ballLaunch.vlaDegrees
+            ballLaunch.vlaModelUsed      = "physics_3d"
+            ballLaunch.vlaModelWarnings  = ["vla_model.json not found — using physics 3D VLA."]
+        }
 
         let clubObservations = clubTracker.track(analysis: analysis)
         let clubMetrics = calculateClubMetrics(
@@ -110,13 +161,20 @@ struct ShotMetricsCalculator {
             impactFrameIndex: analysis.detectedImpactFrameIndex
         )
 
-        let smashFactor: Double?
+        // Smash factor with 1.50 cap
+        let rawSmashFactor: Double?
         if let ballSpeed = ballLaunch.ballSpeedMph,
            let clubSpeed = clubMetrics.clubSpeedMph,
            clubSpeed > 0 {
-            smashFactor = ballSpeed / clubSpeed
+            rawSmashFactor = ballSpeed / clubSpeed
         } else {
-            smashFactor = nil
+            rawSmashFactor = nil
+        }
+        let smashFactorClamped = rawSmashFactor.map { $0 > 1.50 } ?? false
+        let smashFactor = rawSmashFactor.map { min($0, 1.50) }
+        var smashWarnings = [String]()
+        if smashFactorClamped {
+            smashWarnings.append(String(format: "Smash factor clamped to 1.50 (raw: %.2f).", rawSmashFactor!))
         }
 
         let clubPath = clubPathFaceEstimator.estimateClubPath(
@@ -126,23 +184,29 @@ struct ShotMetricsCalculator {
             impactFrameIndex: analysis.detectedImpactFrameIndex
         )
 
+        // Face frame = detectedImpactFrameIndex + 1 (no min clamp)
+        let faceFrameIndex = analysis.detectedImpactFrameIndex + 1
+        print("[ShotMetrics] Clubface detection frame: \(faceFrameIndex)  reason: detectedImpactFrameIndex_plus_one")
+        print("[ShotMetrics]   detectedImpactFrameIndex: \(analysis.detectedImpactFrameIndex)  fallbackImpactFrameIndex: \(analysis.fallbackImpactFrameIndex)")
         let impactFrame = analysis.frames
-            .first { $0.frameIndex == analysis.detectedImpactFrameIndex }?
+            .first { $0.frameIndex == faceFrameIndex }?
             .originalFrame.image
         let faceAngle = clubPathFaceEstimator.estimateFaceAngle(
             clubObservations: clubObservations,
             impactFrame: impactFrame,
             zeroDegreeAngleDegrees: zeroDegreeReferenceAngleDegrees,
             calibration: calibration,
-            impactFrameIndex: analysis.detectedImpactFrameIndex,
-            clubPathDegrees: clubPath.clubPathDegreesSigned
+            impactFrameIndex: faceFrameIndex,
+            clubPathDegrees: clubPath.clubPathDegreesSigned,
+            ballHLADegrees: ballLaunch.hlaDegrees
         )
 
         let spin = spinEstimator.estimate(
             ballSpeedMph: ballLaunch.ballSpeedMph,
             vlaDegrees: ballLaunch.vlaDegrees,
             hlaDegrees: ballLaunch.hlaDegrees,
-            clubPathDegrees: clubPath.clubPathDegreesSigned
+            clubPathDegrees: clubPath.clubPathDegreesSigned,
+            smashFactor: smashFactor
         )
 
         let distance = distanceEstimator.estimate(
@@ -153,7 +217,9 @@ struct ShotMetricsCalculator {
         )
 
         var warnings: [String] = [calibration.calibrationWarning]
+        warnings.append(contentsOf: smashWarnings)
         warnings.append(contentsOf: ballLaunch.warnings)
+        warnings.append(contentsOf: ballLaunch.vlaModelWarnings)
         warnings.append(contentsOf: clubMetrics.warnings)
         warnings.append(contentsOf: distance.warnings)
         warnings.append(contentsOf: spin.warnings)
@@ -163,7 +229,7 @@ struct ShotMetricsCalculator {
             warnings.append("Smash factor unavailable until both ball speed and club speed are available.")
         }
 
-        let result = ShotMetricsResult(
+        var result = ShotMetricsResult(
             detectedImpactFrameIndex: analysis.detectedImpactFrameIndex,
             fallbackImpactFrameIndex: analysis.fallbackImpactFrameIndex,
             calibration: calibration,
@@ -179,6 +245,10 @@ struct ShotMetricsCalculator {
             clubObservations: clubObservations,
             warnings: Array(Set(warnings)).sorted()
         )
+        result.rawSmashFactor    = rawSmashFactor
+        result.smashFactorClamped = smashFactorClamped
+        result.faceFrameIndex    = faceFrameIndex
+        result.faceFrameReason   = "detectedImpactFrameIndex_plus_one"
 
         printMetricsSummary(result)
         return result
@@ -467,7 +537,10 @@ struct ShotMetricsCalculator {
         print(result.ballLaunch.hla3DRawDegrees.map { String(format: "HLA (3D raw): %.1f°", $0) } ?? "HLA 3D: unavailable")
         print(result.ballLaunch.vlaDegrees.map { String(format: "VLA: %.1f°", $0) } ?? "VLA: unavailable")
         print(result.club.clubSpeedMph.map { String(format: "Club speed: %.1f mph", $0) } ?? "Club speed: unavailable")
-        print(result.smashFactor.map { String(format: "Smash factor: %.2f", $0) } ?? "Smash factor: unavailable")
+        print(result.smashFactor.map { String(format: "Smash factor: %.2f%@", $0, result.smashFactorClamped ? " (clamped)" : "") } ?? "Smash factor: unavailable")
+        print(result.ballLaunch.vlaModelUsed == "trainedModel"
+            ? String(format: "VLA (trained model): %.1f°", result.ballLaunch.vlaDegrees ?? 0)
+            : "VLA model: not used")
         print(result.distance.carryYards.map { String(format: "Est. carry: %.0f yd (ideal: %.0f yd × cf=%.2f)", $0, result.distance.idealCarryYards ?? 0, result.distance.carryCorrectionFactor) } ?? "Est. carry: unavailable")
         print(result.distance.totalYards.map { String(format: "Est. total: %.0f yd (rollout %.0f%%)", $0, (result.distance.rolloutFraction ?? 0) * 100) } ?? "Est. total: unavailable")
         print(result.spin.estimatedBackspinRpm.map { String(format: "Est. backspin: %.0f rpm", $0) } ?? "Backspin: unavailable")

@@ -5,6 +5,7 @@ enum CameraPhase: String, CaseIterable {
     case tracking = "Tracking"
     case ready = "Ready"
     case captured = "Captured"
+    case reviewingShot = "ReviewingShot"
 }
 
 enum ShutterPreset: CaseIterable, Identifiable {

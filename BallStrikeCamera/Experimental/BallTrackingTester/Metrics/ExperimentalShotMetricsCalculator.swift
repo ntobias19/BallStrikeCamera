@@ -107,7 +107,7 @@ struct ExperimentalShotMetricsCalculator {
         // Apply trained VLA model if mode is .trainedModel
         var finalBallLaunch = ballLaunch
         if configuration.vlaEstimationMode == .trainedModel {
-            let modelData = ExperimentalVLAModelPredictor.autoLoad(
+            let modelData = VLAModelPredictor.autoLoad(
                 overridePath: configuration.vlaModelFilePath
             )
             if let model = modelData {
@@ -121,7 +121,7 @@ struct ExperimentalShotMetricsCalculator {
                     impactFrameIndex: ballResult.detectedImpactFrameIndex,
                     totalFrames: sequence.frames.count
                 )
-                let (rawPred, clampedPred, featVals, mdlWarns) = ExperimentalVLAModelPredictor.predict(
+                let (rawPred, clampedPred, featVals, mdlWarns) = VLAModelPredictor.predict(
                     features: featureDict, model: model
                 )
                 finalBallLaunch.vlaLegacyDegrees       = ballLaunch.vlaDegrees

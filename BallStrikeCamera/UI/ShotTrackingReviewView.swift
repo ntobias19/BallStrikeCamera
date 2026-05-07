@@ -29,10 +29,8 @@ struct ShotTrackingReviewView: View {
     var body: some View {
         VStack(spacing: 0) {
             topBar
-            imageArea
-            infoPanel
+            imageArea   // slider is overlaid inside
             metricsPanel
-            navigationBar
         }
         .background(Color.black.ignoresSafeArea())
         .preferredColorScheme(.dark)
@@ -141,6 +139,7 @@ struct ShotTrackingReviewView: View {
                         .resizable()
                         .scaledToFit()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .allowsHitTesting(false)
 
                     Canvas { ctx, size in
                         drawOverlays(ctx: ctx, containerSize: size, image: img)
@@ -148,19 +147,38 @@ struct ShotTrackingReviewView: View {
                     .frame(width: geo.size.width, height: geo.size.height)
                     .allowsHitTesting(false)
 
-                    if currentFrame.frameIndex == analysis.detectedImpactFrameIndex {
-                        VStack {
-                            Text("IMPACT FRAME")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundColor(.black)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Color.yellow.opacity(0.90))
-                                .clipShape(Capsule())
+                    // Top overlays: frame index + detection badge (left), impact badge (right)
+                    VStack {
+                        HStack(alignment: .top) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                frameIndexOverlay
+                                detectionBadge
+                            }
+                            .padding(.leading, 12)
+                            .padding(.top, 10)
                             Spacer()
+                            if currentFrame.frameIndex == analysis.detectedImpactFrameIndex {
+                                Text("IMPACT FRAME")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundColor(.black)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Color.yellow.opacity(0.90))
+                                    .clipShape(Capsule())
+                                    .padding(.trailing, 12)
+                                    .padding(.top, 10)
+                            }
                         }
-                        .padding(.top, 10)
-                        .allowsHitTesting(false)
+                        Spacer()
+                    }
+                    .allowsHitTesting(false)
+
+                    // Slider overlaid at bottom of image
+                    VStack {
+                        Spacer()
+                        sliderOverlay
+                            .padding(.horizontal, 12)
+                            .padding(.bottom, 14)
                     }
                 } else {
                     Text("No image")
@@ -170,6 +188,83 @@ struct ShotTrackingReviewView: View {
         }
         .frame(maxWidth: .infinity)
         .layoutPriority(1)
+    }
+
+    private var frameIndexOverlay: some View {
+        let frame = currentFrame
+        let isImpact = frame.frameIndex == analysis.detectedImpactFrameIndex
+        let isPost   = frame.frameIndex >  analysis.detectedImpactFrameIndex
+        return HStack(spacing: 6) {
+            Text("Frame \(currentIndex)/\(lastIndex)")
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+            Text(String(format: "t=%+.3fs", frame.relativeTime))
+                .font(.system(size: 10, design: .monospaced))
+            if isImpact {
+                Text("IMPACT")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(.black)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(Color.yellow)
+                    .clipShape(Capsule())
+            } else if isPost {
+                Text("post")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(.orange)
+            }
+        }
+        .foregroundColor(.white)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(.black.opacity(0.5))
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+
+    private var detectionBadge: some View {
+        let detected = currentFrame.ballObservation?.centerX != nil
+        return HStack(spacing: 5) {
+            Image(systemName: detected ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .font(.system(size: 10, weight: .semibold))
+            Text(detected ? "Detected" : "Not detected")
+                .font(.system(size: 10, weight: .semibold))
+        }
+        .foregroundColor(detected ? .green : Color(white: 0.70))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(.black.opacity(0.45))
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+
+    private var sliderOverlay: some View {
+        HStack(spacing: 8) {
+            Button(action: { if currentIndex > 0 { currentIndex -= 1 } }) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(currentIndex > 0 ? .white : .white.opacity(0.25))
+            }
+            .frame(width: 36, height: 36)
+
+            Slider(
+                value: Binding(
+                    get: { Double(currentIndex) },
+                    set: { currentIndex = Int($0.rounded()) }
+                ),
+                in: 0...Double(max(1, lastIndex)),
+                step: 1
+            )
+            .tint(.white)
+
+            Button(action: { if currentIndex < lastIndex { currentIndex += 1 } }) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(currentIndex < lastIndex ? .white : .white.opacity(0.25))
+            }
+            .frame(width: 36, height: 36)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.black.opacity(0.45))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     // MARK: - Overlay Drawing
@@ -212,123 +307,11 @@ struct ShotTrackingReviewView: View {
         }
     }
 
-    // MARK: - Info Panel
-
-    private var infoPanel: some View {
-        let frame    = currentFrame
-        let obs      = frame.ballObservation
-        let debug    = frame.debugInfo
-        let isImpact = frame.frameIndex == analysis.detectedImpactFrameIndex
-        let isPost   = frame.frameIndex > analysis.detectedImpactFrameIndex
-
-        return VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 12) {
-                Text("Frame \(currentIndex) / \(lastIndex)")
-                    .fontWeight(.semibold)
-
-                Text(isImpact ? "IMPACT" : isPost ? "post" : "pre")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundColor(isImpact ? .yellow : isPost ? .orange : .secondary)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background((isImpact ? Color.yellow : isPost ? Color.orange : Color.secondary).opacity(0.15))
-                    .clipShape(Capsule())
-
-                Text(displayMode.displayName)
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
-
-                Spacer()
-
-                Text(String(format: "t = %+.4f s", frame.relativeTime))
-                    .foregroundColor(.secondary)
-            }
-
-            HStack(spacing: 16) {
-                if let cx = obs?.centerX, let cy = obs?.centerY {
-                    Text(String(format: "x=%.4f  y=%.4f", cx, cy))
-                } else {
-                    Text("x=nil  y=nil")
-                        .foregroundColor(.secondary)
-                }
-                Spacer()
-                if let d = obs?.finalDiameter ?? obs?.diameter {
-                    Text(String(format: "finalD=%.4f", d))
-                }
-                if let obs, obs.centerX != nil {
-                    Text(String(format: "conf=%.2f", obs.confidence))
-                        .foregroundColor(.green)
-                }
-            }
-
-            HStack(spacing: 10) {
-                if obs?.centerX != nil {
-                    Label("Detected", systemImage: "checkmark.circle.fill")
-                        .foregroundColor(.green)
-                        .font(.system(size: 11, weight: .semibold))
-                } else {
-                    Label("No ball detected", systemImage: "xmark.circle.fill")
-                        .foregroundColor(.red)
-                        .font(.system(size: 11, weight: .semibold))
-                }
-
-                Spacer()
-
-                if let debug {
-                    Text("bright px: \(debug.candidateCount)")
-                        .foregroundColor(.secondary)
-                    if let reason = debug.rejectionReason {
-                        Text(reason)
-                            .foregroundColor(.orange)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                    }
-                }
-            }
-
-            HStack(spacing: 10) {
-                Text("impact detected=\(analysis.detectedImpactFrameIndex) fallback=\(analysis.fallbackImpactFrameIndex)")
-                    .foregroundColor(.secondary)
-                Text(analysis.impactDetectionReason)
-                    .foregroundColor(.yellow)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                Spacer()
-                if let obs {
-                    let candidate = obs.candidateDiameter.map { String(format: "%.4f", $0) } ?? "n/a"
-                    let refined = obs.refinedDiameter.map { String(format: "%.4f", $0) } ?? "n/a"
-                    let smoothed = obs.smoothedDiameter.map { String(format: "%.4f", $0) } ?? "n/a"
-                    Text("candD=\(candidate) refinedD=\(refined) smoothD=\(smoothed)")
-                        .foregroundColor(.secondary)
-                }
-            }
-
-            HStack(spacing: 10) {
-                if let reason = obs?.diameterDebugReason, !reason.isEmpty {
-                    Text("diam: \(reason)")
-                        .foregroundColor(.green.opacity(0.85))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-                if let obs, obs.maskWhitePixelCount > 0 {
-                    Text("mask px: \(obs.maskWhitePixelCount)")
-                        .foregroundColor(.secondary)
-                }
-                Spacer()
-            }
-        }
-        .font(.system(size: 12, design: .monospaced))
-        .foregroundColor(.white)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(Color(white: 0.08))
-    }
-
     @ViewBuilder
     private var metricsPanel: some View {
         if let metrics = analysis.metrics {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 14) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 0) {
                     metricCell("Ball Speed", value: mph(metrics.ballLaunch.ballSpeedMph))
                     metricCell("HLA", value: metrics.ballLaunch.hlaDisplay)
                     metricCell("VLA", value: degrees(metrics.ballLaunch.vlaDegrees))
@@ -338,85 +321,43 @@ struct ShotTrackingReviewView: View {
                     metricCell("Total", value: yards(metrics.distance.totalYards))
                 }
 
-                HStack(spacing: 14) {
+                HStack(spacing: 0) {
                     metricCell("Backspin", value: rpm(metrics.spin.estimatedBackspinRpm))
-                    metricCell("Sidespin", value: metrics.spin.estimatedSidespinDisplay)
                     metricCell("Club Path", value: metrics.clubPath.clubPathDisplay)
                     metricCell("Face", value: metrics.faceAngle.faceAngleDisplay)
-                    metricCell("F-to-P", value: metrics.faceAngle.faceToPathDisplay)
-                    metricCell("Ideal Carry", value: yards(metrics.distance.idealCarryYards))
-                    metricCell("Rollout", value: metrics.distance.rolloutFraction.map { String(format: "%.0f%%", $0 * 100) } ?? "--")
-                }
-
-                HStack(spacing: 12) {
-                    Text("ball pts \(metrics.ballLaunch.pointsUsed)")
-                    Text("club pts \(metrics.club.pointsUsed)")
-                    Text(String(format: "ball q %.2f", metrics.ballLaunch.quality))
-                    Text(String(format: "club q %.2f", metrics.club.quality))
-                    Text("impact \(metrics.detectedImpactFrameIndex)")
-                    Spacer()
+                    metricCell("Face-to-Path", value: metrics.faceAngle.faceToPathDisplay)
                     if let warning = metrics.warnings.first {
                         Text(warning)
+                            .font(.system(size: 10))
                             .foregroundColor(.yellow.opacity(0.9))
                             .lineLimit(1)
                             .truncationMode(.tail)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.leading, 8)
+                    } else {
+                        Spacer()
                     }
                 }
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundColor(.white.opacity(0.65))
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 8)
+            .padding(.vertical, 14)
             .background(Color(white: 0.065))
         }
     }
 
     private func metricCell(_ label: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 3) {
             Text(label)
-                .font(.system(size: 9, weight: .semibold))
+                .font(.system(size: 10, weight: .semibold))
                 .foregroundColor(.white.opacity(0.55))
                 .lineLimit(1)
             Text(value)
-                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                .font(.system(size: 17, weight: .bold, design: .monospaced))
                 .foregroundColor(.white)
                 .lineLimit(1)
-                .minimumScaleFactor(0.75)
+                .minimumScaleFactor(0.65)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    // MARK: - Navigation Bar
-
-    private var navigationBar: some View {
-        HStack(spacing: 12) {
-            Button(action: { if currentIndex > 0 { currentIndex -= 1 } }) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(currentIndex > 0 ? .white : .white.opacity(0.25))
-            }
-            .frame(width: 44, height: 44)
-
-            Slider(
-                value: Binding(
-                    get: { Double(currentIndex) },
-                    set: { currentIndex = Int($0.rounded()) }
-                ),
-                in: 0...Double(lastIndex),
-                step: 1
-            )
-            .tint(.white)
-
-            Button(action: { if currentIndex < lastIndex { currentIndex += 1 } }) {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(currentIndex < lastIndex ? .white : .white.opacity(0.25))
-            }
-            .frame(width: 44, height: 44)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(Color(white: 0.10))
     }
 
     // MARK: - Export

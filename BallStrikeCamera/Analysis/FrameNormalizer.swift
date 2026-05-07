@@ -24,7 +24,7 @@ final class FrameNormalizer {
         let gammaPower:  Float
 
         // Primary analysis mode — makes white ball pop against darkened background.
-        static let darkenedHighContrast = Preset(exposureEV: -0.6, contrast: 1.35, gammaPower: 1.10)
+        static let darkenedHighContrast = Preset(exposureEV: -0.6, contrast: 1.35, gammaPower: 0.909)
         // Visual comparison only — over-brightens mats, not used for tracking.
         static let brightened           = Preset(exposureEV:  1.0, contrast: 1.20, gammaPower: 0.90)
 

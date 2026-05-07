@@ -9,9 +9,10 @@ final class PostImpactBallTracker {
         var enabled: Bool = true
         var localMaskWindowScale: CGFloat = 1.8
         var maskBrightnessThreshold: Int = 30
-        // Kept for parity with the experimental settings object. The current tuned
-        // mask path is brightness-only.
         var maskMaxChannelSpread: Int = 65
+        var maskPercentile: Int = 85
+        var maskPercentileMinBright: Int = 80
+        var maskBgDelta: Int = 15
         var smoothingEnabled: Bool = true
         var smoothingWindowSize: Int = 5
     }
@@ -35,10 +36,10 @@ final class PostImpactBallTracker {
         var preMinAspect: CGFloat = 0.30
         var preMaxAspect: CGFloat = 2.00
 
-        var postBrightnessThreshold: Int = 115
+        var postBrightnessThreshold: Int = 92
         var postMaxChannelSpread: Int = 110
         var postMinBrightSamples: Int = 4
-        var postMinNormWidth: CGFloat = 0.005
+        var postMinNormWidth: CGFloat = 0.018
         var postMaxNormWidth: CGFloat = 0.120
         var postMinNormHeight: CGFloat = 0.005
         var postMaxNormHeight: CGFloat = 0.150
@@ -48,12 +49,15 @@ final class PostImpactBallTracker {
         var preImpactSearchScale: CGFloat = 5.67
         var impactSearchScale: CGFloat = 8.66
         var postImpactBaseScale: CGFloat = 5.03
-        var postImpactScaleGrowth: CGFloat = 5.00
-        var postImpactMaxScale: CGFloat = 30.0
+        var postImpactScaleGrowth: CGFloat = 2.00
+        var postImpactMaxScale: CGFloat = 12.0
+        var postImpactMaxVerticalScale: CGFloat = 3.0
 
         var diameterRefinement: DiameterRefinementConfig = DiameterRefinementConfig()
         var impactDetection: ImpactDetectionConfiguration = ImpactDetectionConfiguration()
         var isPostImpactDebugLoggingEnabled: Bool = true
+        var enableStrictImpactDiameterGate: Bool = true
+        var impactFrameMaxDiameterGrowthRatio: CGFloat = 1.25
     }
 
     struct TrackingResult {
@@ -270,6 +274,7 @@ final class PostImpactBallTracker {
         var observations: [ShotBallObservation] = []
         var debugInfos: [ShotFrameDebugInfo] = []
         var lastPreCenter = lockedBallRect.center
+        var postImpactSeedCenter = lockedBallRect.center
         var lastPostCenter: CGPoint?
 
         for (i, frame) in frames.enumerated() {
@@ -299,6 +304,7 @@ final class PostImpactBallTracker {
                 if let c = chosen {
                     observations.append(makeHit(frame, c, pd: pd))
                     lastPreCenter = c.center
+                    postImpactSeedCenter = c.center
                 } else {
                     observations.append(miss(frame, reason: reason ?? "no_candidate"))
                 }
@@ -312,13 +318,32 @@ final class PostImpactBallTracker {
                 ))
             } else if idx == impactFrameIndex {
                 let roi = expanded(lockedBallRect, scale: cfg.impactSearchScale)
-                let (candidates, chosen) = findCandidates(
+                let (candidates, chosenRaw) = findCandidates(
                     pd,
                     roi: roi,
                     config: preConfig,
                     preferredCenter: lastPreCenter
                 )
-                let reason = chosen == nil ? firstRejectionReason(candidates) : nil
+                var chosen = chosenRaw
+                // Strict impact diameter gate: reject if candidate is >1.25× pre-impact median diameter
+                if cfg.enableStrictImpactDiameterGate, let c = chosen {
+                    let preImpactDiameters = observations.compactMap { $0.finalDiameter ?? $0.diameter }
+                    if !preImpactDiameters.isEmpty {
+                        let sorted = preImpactDiameters.sorted()
+                        let median = sorted[sorted.count / 2]
+                        let ratio = c.diameter / median
+                        if median > 1e-6 && ratio > cfg.impactFrameMaxDiameterGrowthRatio {
+                            print("[PostImpactBallTracker] Strict impact gate: frame=\(idx) ratio=\(String(format:"%.2f",ratio)) > \(cfg.impactFrameMaxDiameterGrowthRatio), rejecting merged candidate")
+                            chosen = nil
+                        }
+                    }
+                }
+                let reason: String?
+                if chosen == nil && chosenRaw != nil {
+                    reason = "rejected_strict_impact_diameter_gate"
+                } else {
+                    reason = chosen == nil ? firstRejectionReason(candidates) : nil
+                }
                 if let c = chosen {
                     observations.append(makeHit(frame, c, pd: pd))
                     lastPreCenter = c.center
@@ -339,6 +364,7 @@ final class PostImpactBallTracker {
                     frame: frame,
                     postOffset: idx - impactFrameIndex,
                     lockedBallRect: lockedBallRect,
+                    seedCenter: postImpactSeedCenter,
                     lastPostCenter: lastPostCenter,
                     postConfig: postConfig
                 )
@@ -358,6 +384,7 @@ final class PostImpactBallTracker {
         frame: AnalyzedShotFrame,
         postOffset: Int,
         lockedBallRect: CGRect,
+        seedCenter: CGPoint,
         lastPostCenter: CGPoint?,
         postConfig: ScanConfig
     ) -> (observation: ShotBallObservation, debugInfo: ShotFrameDebugInfo) {
@@ -365,12 +392,13 @@ final class PostImpactBallTracker {
             cfg.postImpactMaxScale,
             cfg.postImpactBaseScale + CGFloat(postOffset) * cfg.postImpactScaleGrowth
         )
-        let roiCenter = lastPostCenter ?? lockedBallRect.center
-        let centerSource = lastPostCenter == nil ? "lockedBall_fallback" : "previousDetection"
+        let roiCenter = lastPostCenter ?? seedCenter
+        let centerSource = lastPostCenter == nil ? "seedCenter_fallback" : "previousDetection"
         let scalePass1 = min(maxScale, max(cfg.postImpactBaseScale, maxScale * 0.5))
+        let vCap = cfg.postImpactMaxVerticalScale
         let passes: [(roi: CGRect, scale: CGFloat)] = [
-            (expandedAround(roiCenter, rect: lockedBallRect, scale: scalePass1), scalePass1),
-            (expandedAround(roiCenter, rect: lockedBallRect, scale: maxScale), maxScale)
+            (expandedAround(roiCenter, rect: lockedBallRect, scale: scalePass1, verticalScaleCap: vCap), scalePass1),
+            (expandedAround(roiCenter, rect: lockedBallRect, scale: maxScale, verticalScaleCap: vCap), maxScale)
         ]
 
         var allCandidates: [Candidate] = []
@@ -672,6 +700,28 @@ final class PostImpactBallTracker {
         let y0 = max(0, cy - radiusPx)
         let y1 = min(height - 1, cy + radiusPx)
 
+        var patchBrightness: [Int] = []
+        for py in y0...y1 {
+            for px in x0...x1 {
+                let pixelIndex = py * width * 4 + px * 4
+                let r = Int(bytes[pixelIndex])
+                let g = Int(bytes[pixelIndex + 1])
+                let b = Int(bytes[pixelIndex + 2])
+                patchBrightness.append((r + g + b) / 3)
+            }
+        }
+        let effectiveMaskThreshold: Int
+        if config.maskPercentile > 0, !patchBrightness.isEmpty {
+            let sorted = patchBrightness.sorted()
+            let pctIdx = min(Int(Double(sorted.count) * Double(config.maskPercentile) / 100.0), sorted.count - 1)
+            let pctThresh = sorted[pctIdx]
+            let medianThresh = sorted[sorted.count / 2] + config.maskBgDelta
+            let rawThresh = max(config.maskBrightnessThreshold, max(pctThresh, medianThresh))
+            effectiveMaskThreshold = max(config.maskPercentileMinBright, min(245, rawThresh))
+        } else {
+            effectiveMaskThreshold = config.maskBrightnessThreshold
+        }
+
         var thresholdMask = [Bool](repeating: false, count: cropSize * cropSize)
         for py in y0...y1 {
             for px in x0...x1 {
@@ -684,7 +734,7 @@ final class PostImpactBallTracker {
                 let g = Int(bytes[pixelIndex + 1])
                 let b = Int(bytes[pixelIndex + 2])
                 let brightness = (r + g + b) / 3
-                thresholdMask[row * cropSize + col] = brightness >= config.maskBrightnessThreshold
+                thresholdMask[row * cropSize + col] = brightness >= effectiveMaskThreshold
             }
         }
 
@@ -712,7 +762,7 @@ final class PostImpactBallTracker {
         return MaskRefineOutput(
             diameter: refinedDiameter,
             whitePixelCount: component.count,
-            reason: "mask_refined_threshold_\(config.maskBrightnessThreshold)_connected"
+            reason: "mask_refined_threshold_\(effectiveMaskThreshold)_connected"
         )
     }
 
@@ -1012,7 +1062,13 @@ final class PostImpactBallTracker {
                      cfg.diameterRefinement.maskBrightnessThreshold,
                      cfg.diameterRefinement.localMaskWindowScale,
                      cfg.diameterRefinement.smoothingWindowSize))
-        print("PostImpactBallTracker analysis mode: DarkenedHighContrast")
+        print(String(format: "PostImpactBallTracker parity config: postMinNormWidth=%.4f postImpactMaxVerticalScale=%.2f maskPercentile=%d maskPercentileMinBright=%d maskBgDelta=%d",
+                     cfg.postMinNormWidth,
+                     cfg.postImpactMaxVerticalScale,
+                     cfg.diameterRefinement.maskPercentile,
+                     cfg.diameterRefinement.maskPercentileMinBright,
+                     cfg.diameterRefinement.maskBgDelta))
+        print("PostImpactBallTracker analysis mode: DarkenedHighContrast (gamma=0.909 matches Python)")
     }
 
     private func pixelBytes(from image: UIImage) -> (bytes: [UInt8], width: Int, height: Int)? {
@@ -1043,9 +1099,10 @@ final class PostImpactBallTracker {
         expandedAround(rect.center, rect: rect, scale: scale)
     }
 
-    private func expandedAround(_ center: CGPoint, rect: CGRect, scale: CGFloat) -> CGRect {
+    private func expandedAround(_ center: CGPoint, rect: CGRect, scale: CGFloat, verticalScaleCap: CGFloat? = nil) -> CGRect {
         let width = rect.width * scale
-        let height = rect.height * scale
+        let effectiveVertScale = verticalScaleCap.map { min(scale, $0) } ?? scale
+        let height = rect.height * effectiveVertScale
         return CGRect(
             x: center.x - width / 2,
             y: center.y - height / 2,

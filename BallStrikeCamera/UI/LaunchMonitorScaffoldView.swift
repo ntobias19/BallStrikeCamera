@@ -95,12 +95,12 @@ struct LaunchMonitorScaffoldView: View {
                         .layoutPriority(1)
                         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
 
-                        ShotSummaryPanelView()
+                        ShotSummaryPanelView(metrics: camera.latestShotAnalysis?.metrics)
                             .frame(width: summaryWidth)
                     }
                     .frame(width: geo.size.width, height: mainHeight, alignment: .leading)
 
-                    CompactMetricsBarView()
+                    CompactMetricsBarView(metrics: camera.latestShotAnalysis?.metrics)
                         .frame(width: geo.size.width, height: bottomHeight)
                 }
                 .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
@@ -115,8 +115,7 @@ struct LaunchMonitorScaffoldView: View {
         .fullScreenCover(isPresented: $camera.showReview) {
             if let analysis = camera.latestShotAnalysis {
                 ShotTrackingReviewView(analysis: analysis) {
-                    camera.showReview = false
-                    print("ShotTrackingReviewView dismissed")
+                    camera.dismissReview()
                 }
             }
         }

@@ -27,8 +27,8 @@ struct ClubTracker {
         var approachDirectionX: CGFloat = -1
         var approachDirectionY: CGFloat = 0
         var ballExclusionRadiusScale: CGFloat = 1.8
-        var clubSearchROIScaleX: CGFloat = 6.0
-        var clubSearchROIScaleY: CGFloat = 4.0
+        var clubSearchROIScaleX: CGFloat = 8.0
+        var clubSearchROIScaleY: CGFloat = 5.0
         var minClubDarknessOrEdgeThreshold: Int = 85
         var useFrameDifference: Bool = true
         var frameDifferenceThreshold: Int = 34

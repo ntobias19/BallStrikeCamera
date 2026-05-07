@@ -107,7 +107,8 @@ struct ClubPathFaceEstimator {
         zeroDegreeAngleDegrees: Double,
         calibration: CameraCalibration,
         impactFrameIndex: Int,
-        clubPathDegrees: Double?
+        clubPathDegrees: Double?,
+        ballHLADegrees: Double? = nil
     ) -> FaceAngleEstimate {
         let nearImpact = clubObservations
             .filter { $0.clubBoundingBox != nil && $0.frameIndex <= impactFrameIndex }
@@ -118,10 +119,44 @@ struct ClubPathFaceEstimator {
                                         warning: "Face angle unavailable: no clubhead bounding box near impact.")
         }
 
+        // Face prior from ball HLA (D'Arcy rule: face is ~85% of HLA direction)
+        let facePrior: Double
+        let facePriorSource: String
+        if let hla = ballHLADegrees, let path = clubPathDegrees {
+            facePrior = 0.85 * hla + 0.15 * path
+            facePriorSource = "ball_hla_0.85_club_path_0.15"
+        } else if let hla = ballHLADegrees {
+            facePrior = hla
+            facePriorSource = "ball_hla_only"
+        } else if let path = clubPathDegrees {
+            facePrior = path
+            facePriorSource = "club_path_only"
+        } else {
+            facePrior = 0.0
+            facePriorSource = "none"
+        }
+        let maxDeviationDeg = 25.0
+
         if let frame = impactFrame,
            let result = gradientFaceAngle(image: frame, bbox: bbox,
                                           zeroDeg: zeroDegreeAngleDegrees, calibration: calibration) {
-            let (faceAngle, pixelConf) = result
+            let (rawFaceAngle, pixelConf) = result
+            var faceWarnings = [
+                "Face angle is ESTIMATED from edge gradients in clubhead bounding box.",
+                "Motion blur at impact typically reduces reliability. Treat as indicative only."
+            ]
+            // Clamp PCA result to within ±25° of face prior
+            let faceAngle: Double
+            let deviation = abs(rawFaceAngle - facePrior)
+            let wrappedDeviation = min(deviation, 360 - deviation)
+            if wrappedDeviation > maxDeviationDeg {
+                faceAngle = facePrior + (rawFaceAngle > facePrior ? maxDeviationDeg : -maxDeviationDeg)
+                faceWarnings.append(String(format: "Face PCA %.1f° clamped: %.1f° from prior %.1f° (%@).",
+                                           rawFaceAngle, wrappedDeviation, facePrior, facePriorSource))
+            } else {
+                faceAngle = rawFaceAngle
+            }
+            faceWarnings.append("Face prior: \(facePriorSource) = \(String(format: "%.1f°", facePrior))")
             let faceDisplay = DirectionalFormat.angleLR(faceAngle)
             let ftp         = clubPathDegrees.map { faceAngle - $0 }
             let ftpDisplay  = ftp.map { DirectionalFormat.angleLR($0) } ?? "—"
@@ -133,14 +168,11 @@ struct ClubPathFaceEstimator {
                 faceToPathDisplay: ftpDisplay,
                 confidence: pixelConf < 0.25 ? "low_gradient" : "moderate_gradient",
                 method: "bbox_edge_gradient_pca",
-                warnings: [
-                    "Face angle is ESTIMATED from edge gradients in clubhead bounding box.",
-                    "Motion blur at impact typically reduces reliability. Treat as indicative only."
-                ]
+                warnings: faceWarnings
             )
         }
 
-        // Fallback: bbox aspect ratio heuristic
+        // Fallback: bbox aspect ratio heuristic, clamped to prior
         let W = Double(calibration.imageWidthPixels)
         let H = Double(calibration.imageHeightPixels)
         let bboxW = bbox.width  * CGFloat(W)
@@ -156,7 +188,17 @@ struct ClubPathFaceEstimator {
         let fDirY   = sin(faceAngleRad)
         let forward = fDirX * refX + fDirY * refY
         let lateral = fDirX * perpX + fDirY * perpY
-        let faceAngle  = atan2(lateral, forward) * 180.0 / .pi
+        let rawFaceAngleFallback = atan2(lateral, forward) * 180.0 / .pi
+
+        let deviationFb = abs(rawFaceAngleFallback - facePrior)
+        let wrappedDeviationFb = min(deviationFb, 360 - deviationFb)
+        let faceAngle: Double
+        if wrappedDeviationFb > maxDeviationDeg {
+            faceAngle = facePrior + (rawFaceAngleFallback > facePrior ? maxDeviationDeg : -maxDeviationDeg)
+        } else {
+            faceAngle = rawFaceAngleFallback
+        }
+
         let faceDisplay = DirectionalFormat.angleLR(faceAngle)
         let ftp         = clubPathDegrees.map { faceAngle - $0 }
         let ftpDisplay  = ftp.map { DirectionalFormat.angleLR($0) } ?? "—"
@@ -170,7 +212,8 @@ struct ClubPathFaceEstimator {
             method: "bbox_aspect_ratio_heuristic",
             warnings: [
                 "Face angle is a rough heuristic based on bounding box aspect ratio. Very low confidence.",
-                "No pixel data was available for gradient analysis."
+                "No pixel data was available for gradient analysis.",
+                "Face prior: \(facePriorSource) = \(String(format: "%.1f°", facePrior))"
             ]
         )
     }
