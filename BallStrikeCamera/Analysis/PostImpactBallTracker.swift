@@ -48,10 +48,18 @@ final class PostImpactBallTracker {
 
         var preImpactSearchScale: CGFloat = 5.67
         var impactSearchScale: CGFloat = 8.66
+        // Legacy symmetric-scale ROI params (kept for fallback / unused by default)
         var postImpactBaseScale: CGFloat = 5.03
         var postImpactScaleGrowth: CGFloat = 2.00
         var postImpactMaxScale: CGFloat = 12.0
         var postImpactMaxVerticalScale: CGFloat = 3.0
+
+        // Forward-biased oriented ROI (matches Python asymmetric post-impact search)
+        var postFwdScale: CGFloat = 10.0            // ball-widths forward along launch direction
+        var postBwdScale: CGFloat = 1.2             // ball-widths backward
+        var postVertScaleUntracked: CGFloat = 1.5   // ball-widths lateral when no prior post-hit
+        var postVertScaleTracked: CGFloat = 2.5     // ball-widths lateral once tracking started
+        var launchAngleDegrees: CGFloat = 0.0       // 0 = ball goes right (positive x)
 
         var diameterRefinement: DiameterRefinementConfig = DiameterRefinementConfig()
         var impactDetection: ImpactDetectionConfiguration = ImpactDetectionConfiguration()
@@ -277,6 +285,17 @@ final class PostImpactBallTracker {
         var postImpactSeedCenter = lockedBallRect.center
         var lastPostCenter: CGPoint?
 
+        // Python-matching accumulated post-impact tracking state
+        let initCenter = lockedBallRect.center
+        var launchDir: (dx: CGFloat, dy: CGFloat)? = nil
+        var ballLaunched = false
+        var ballTerminated = false
+        var consecutiveMissesAfterLaunch = 0
+        var expectedDiameter: CGFloat? = nil
+        var preFinalDiameters: [CGFloat] = []
+        var recentPostPoints: [(x: CGFloat, y: CGFloat, t: Double)] = []
+        let maxRecentPostPoints = 4  // Python: deque(maxlen=sc_lookback+1=4)
+
         for (i, frame) in frames.enumerated() {
             let idx = frame.frameIndex
             guard i < pixelData.count, let pd = pixelData[i] else {
@@ -302,11 +321,24 @@ final class PostImpactBallTracker {
                 )
                 let reason = chosen == nil ? firstRejectionReason(candidates) : nil
                 if let c = chosen {
-                    observations.append(makeHit(frame, c, pd: pd))
+                    let obs = makeHit(frame, c, pd: pd)
+                    observations.append(obs)
                     lastPreCenter = c.center
                     postImpactSeedCenter = c.center
+                    if let d = obs.finalDiameter ?? obs.diameter { preFinalDiameters.append(d) }
                 } else {
                     observations.append(miss(frame, reason: reason ?? "no_candidate"))
+                }
+                // Part G: parity diagnostic — detailed logging near impact
+                if cfg.isPostImpactDebugLoggingEnabled && idx >= impactFrameIndex - 4 {
+                    let topCand = candidates.max(by: { $0.brightPixelCount < $1.brightPixelCount })
+                    print(String(format: "PARITY frame=%02d phase=pre minBrightPx=%d stride=%d roiW=%.3f topCandPx=%d topCandW=%.4f topCandH=%.4f reason=%@",
+                                 idx, preConfig.minimumBrightSamples, cfg.sampleStride,
+                                 roi.width,
+                                 topCand?.brightPixelCount ?? 0,
+                                 topCand?.rect.width ?? 0,
+                                 topCand?.rect.height ?? 0,
+                                 reason ?? (chosen != nil ? "ok" : "no_blobs")))
                 }
                 debugInfos.append(ShotFrameDebugInfo(
                     frameIndex: idx,
@@ -345,8 +377,10 @@ final class PostImpactBallTracker {
                     reason = chosen == nil ? firstRejectionReason(candidates) : nil
                 }
                 if let c = chosen {
-                    observations.append(makeHit(frame, c, pd: pd))
+                    let obs = makeHit(frame, c, pd: pd)
+                    observations.append(obs)
                     lastPreCenter = c.center
+                    if let d = obs.finalDiameter ?? obs.diameter { preFinalDiameters.append(d) }
                 } else {
                     observations.append(miss(frame, reason: reason ?? "no_candidate"))
                 }
@@ -359,95 +393,270 @@ final class PostImpactBallTracker {
                     searchScale: cfg.impactSearchScale
                 ))
             } else {
-                let result = trackPostImpact(
-                    pd: pd,
-                    frame: frame,
-                    postOffset: idx - impactFrameIndex,
-                    lockedBallRect: lockedBallRect,
-                    seedCenter: postImpactSeedCenter,
-                    lastPostCenter: lastPostCenter,
-                    postConfig: postConfig
-                )
-                observations.append(result.observation)
-                debugInfos.append(result.debugInfo)
-                if let cx = result.observation.centerX, let cy = result.observation.centerY {
-                    lastPostCenter = CGPoint(x: cx, y: cy)
+                // === Python-matching post-impact tracking ===
+
+                // Set expectedDiameter from pre-impact median on first post-impact frame
+                if expectedDiameter == nil, !preFinalDiameters.isEmpty {
+                    let sorted = preFinalDiameters.sorted()
+                    expectedDiameter = sorted[sorted.count / 2]
                 }
+
+                // After termination, emit miss for all remaining frames
+                if ballTerminated {
+                    observations.append(miss(frame, reason: "terminated"))
+                    debugInfos.append(ShotFrameDebugInfo(
+                        frameIndex: idx, searchROI: nil, candidateCount: 0,
+                        rejectionReason: "terminated", searchCenterSource: "terminated", searchScale: 0
+                    ))
+                    continue
+                }
+
+                // ROI center: last tracked post position, or pre-impact seed
+                let roiCenter = lastPostCenter ?? postImpactSeedCenter
+                let hasTracking = lastPostCenter != nil
+
+                // Linear prediction from recent post points (Python: compute_predicted)
+                let predictedPos = computePredictedPosition(recentPostPoints, initCenter: initCenter)
+
+                // Forward-biased oriented ROI using tracked launch direction when known
+                let roi = forwardBiasedPostROI(
+                    center: roiCenter,
+                    base: lockedBallRect.width,
+                    hasTracking: hasTracking,
+                    launchDir: launchDir
+                )
+
+                // Find all candidates (accepted + rejected) for rescue
+                let (allCandidates, chosen0) = findCandidates(
+                    pd, roi: roi, config: postConfig, preferredCenter: roiCenter
+                )
+                var chosen: Candidate? = chosen0
+
+                // Prediction cross rescue: if no normal candidate, search ALL raw candidates
+                // near the predicted position — including size-rejected blobs (Python: enable_prediction_cross_rescue)
+                if chosen == nil, let pred = predictedPos {
+                    chosen = predictionCrossRescue(
+                        allCandidates: allCandidates,
+                        predictedPos: pred,
+                        launchDir: launchDir,
+                        initCenter: initCenter,
+                        ballLaunched: ballLaunched,
+                        expectedDiameter: expectedDiameter,
+                        pd: pd,
+                        frameIndex: idx
+                    )
+                }
+
+                // Debug log (Part G: detailed parity diagnostics for early post-impact frames)
+                if cfg.isPostImpactDebugLoggingEnabled {
+                    let roiStr = String(format: "(x=%.3f y=%.3f w=%.3f h=%.3f)",
+                                       roi.minX, roi.minY, roi.width, roi.height)
+                    let predStr = predictedPos.map { String(format: "pred=(%.4f,%.4f)", $0.x, $0.y) } ?? "pred=nil"
+                    if let c = chosen {
+                        print(String(format: "frame=%02d postROI=%@ %@ selected=(x=%.4f y=%.4f d=%.4f conf=%.2f)",
+                                     idx, roiStr, predStr, c.center.x, c.center.y, c.diameter, c.confidence))
+                    } else {
+                        let bright = allCandidates.reduce(0) { $0 + $1.brightPixelCount }
+                        print(String(format: "frame=%02d postROI=%@ %@ selected=nil reason=%@ bright=%d",
+                                     idx, roiStr, predStr, firstRejectionReason(allCandidates), bright))
+                    }
+                    // Part G: extended per-candidate diagnostics for early frames
+                    let postOffset = idx - impactFrameIndex
+                    if postOffset <= 6 {
+                        for cand in allCandidates {
+                            let passesPython = cand.brightPixelCount >= 4
+                                && cand.rect.width >= 0.018
+                                && cand.rect.height >= 0.005
+                            print(String(format: "  PARITY frame=%02d phase=post%d minPx=%d stride=%d cand=(x=%.4f y=%.4f nw=%.4f nh=%.4f px=%d) reason=%@ wouldPassPython=%@",
+                                         idx, postOffset, postConfig.minimumBrightSamples, cfg.sampleStride,
+                                         cand.center.x, cand.center.y,
+                                         cand.rect.width, cand.rect.height,
+                                         cand.brightPixelCount,
+                                         cand.rejectionReason ?? "ok",
+                                         passesPython ? "yes" : "no"))
+                        }
+                        if allCandidates.isEmpty {
+                            print(String(format: "  PARITY frame=%02d phase=post%d minPx=%d stride=%d NO_BLOBS_FOUND",
+                                         idx, postOffset, postConfig.minimumBrightSamples, cfg.sampleStride))
+                        }
+                    }
+                }
+
+                // Build observation and update state
+                let observation: ShotBallObservation
+                if let c = chosen {
+                    observation = makeHit(frame, c, pd: pd)
+                    lastPostCenter = c.center
+
+                    // Accumulate recent post points for prediction (Python: sc_lookback=3 → maxlen=4)
+                    recentPostPoints.append((x: c.center.x, y: c.center.y, t: frame.relativeTime))
+                    if recentPostPoints.count > maxRecentPostPoints { recentPostPoints.removeFirst() }
+                    consecutiveMissesAfterLaunch = 0
+
+                    // Lock launch direction once ball has traveled ≥ sc_lock_dist (0.02) from impact position
+                    if !ballLaunched {
+                        let ddx = c.center.x - initCenter.x
+                        let ddy = c.center.y - initCenter.y
+                        let dist = hypot(ddx, ddy)
+                        if dist >= 0.02 {
+                            launchDir = (dx: ddx / dist, dy: ddy / dist)
+                            ballLaunched = true
+                            print(String(format: "Ball launched at frame %d dir=(%.3f,%.3f)", idx, ddx / dist, ddy / dist))
+                        }
+                    }
+                } else {
+                    observation = miss(frame, reason: firstRejectionReason(allCandidates))
+                    if ballLaunched {
+                        consecutiveMissesAfterLaunch += 1
+                        // Termination: Python sc_term_miss_limit=3, sc_term_min_progress=0.05
+                        let maxProgress: CGFloat = lastPostCenter.map {
+                            hypot($0.x - initCenter.x, $0.y - initCenter.y)
+                        } ?? 0
+                        if consecutiveMissesAfterLaunch >= 3 && maxProgress >= 0.05 {
+                            ballTerminated = true
+                            print(String(format: "Ball track terminated at frame %d after %d misses maxProgress=%.4f",
+                                         idx, consecutiveMissesAfterLaunch, maxProgress))
+                        }
+                    }
+                }
+
+                observations.append(observation)
+                debugInfos.append(ShotFrameDebugInfo(
+                    frameIndex: idx,
+                    searchROI: roi,
+                    candidateCount: allCandidates.reduce(0) { $0 + $1.brightPixelCount },
+                    rejectionReason: chosen == nil ? firstRejectionReason(allCandidates) : nil,
+                    searchCenterSource: hasTracking ? "previousDetection" : "seedCenter_fallback",
+                    searchScale: hasTracking ? cfg.postVertScaleTracked : cfg.postVertScaleUntracked
+                ))
             }
         }
 
         return TrackingPassResult(observations: observations, debugInfos: debugInfos)
     }
 
-    private func trackPostImpact(
+    // MARK: - Prediction (Python: compute_predicted)
+
+    private func computePredictedPosition(
+        _ points: [(x: CGFloat, y: CGFloat, t: Double)],
+        initCenter: CGPoint
+    ) -> CGPoint? {
+        if points.count >= 2 {
+            let last = points[points.count - 1]
+            let prev = points[points.count - 2]
+            let dt = last.t - prev.t
+            if abs(dt) < 1e-9 {
+                return CGPoint(x: last.x + (last.x - prev.x), y: last.y + (last.y - prev.y))
+            }
+            let vx = CGFloat((last.x - prev.x) / CGFloat(dt))
+            let vy = CGFloat((last.y - prev.y) / CGFloat(dt))
+            return CGPoint(x: last.x + vx * CGFloat(dt), y: last.y + vy * CGFloat(dt))
+        }
+        // Single-point prediction: project from initCenter through first post point
+        if let p = points.first {
+            let dx = p.x - initCenter.x
+            let dy = p.y - initCenter.y
+            let dist = hypot(dx, dy)
+            guard dist > 1e-6 else { return nil }
+            let step = min(max(dist, 0.006), 0.12)
+            return CGPoint(x: p.x + dx / dist * step, y: p.y + dy / dist * step)
+        }
+        return nil
+    }
+
+    // MARK: - Prediction Cross Rescue (Python: enable_prediction_cross_rescue)
+    // Searches ALL raw candidates (including size-rejected blobs with count≥4) near the
+    // predicted position. This is Python's primary recovery mechanism for frames where the
+    // ball produces a faint/narrow detection that fails normal quality gates.
+
+    private func predictionCrossRescue(
+        allCandidates: [Candidate],
+        predictedPos: CGPoint,
+        launchDir: (dx: CGFloat, dy: CGFloat)?,
+        initCenter: CGPoint,
+        ballLaunched: Bool,
+        expectedDiameter: CGFloat?,
         pd: (bytes: [UInt8], width: Int, height: Int),
-        frame: AnalyzedShotFrame,
-        postOffset: Int,
-        lockedBallRect: CGRect,
-        seedCenter: CGPoint,
-        lastPostCenter: CGPoint?,
-        postConfig: ScanConfig
-    ) -> (observation: ShotBallObservation, debugInfo: ShotFrameDebugInfo) {
-        let maxScale = min(
-            cfg.postImpactMaxScale,
-            cfg.postImpactBaseScale + CGFloat(postOffset) * cfg.postImpactScaleGrowth
-        )
-        let roiCenter = lastPostCenter ?? seedCenter
-        let centerSource = lastPostCenter == nil ? "seedCenter_fallback" : "previousDetection"
-        let scalePass1 = min(maxScale, max(cfg.postImpactBaseScale, maxScale * 0.5))
-        let vCap = cfg.postImpactMaxVerticalScale
-        let passes: [(roi: CGRect, scale: CGFloat)] = [
-            (expandedAround(roiCenter, rect: lockedBallRect, scale: scalePass1, verticalScaleCap: vCap), scalePass1),
-            (expandedAround(roiCenter, rect: lockedBallRect, scale: maxScale, verticalScaleCap: vCap), maxScale)
-        ]
+        frameIndex: Int
+    ) -> Candidate? {
+        let rescueRadius: CGFloat = 0.055       // prediction_rescue_radius_norm
+        let circleScale: CGFloat = 1.25         // prediction_rescue_inside_circle_scale
+        let maxLineResidX3: CGFloat = 0.075     // prediction_rescue_max_line_residual * 3 (generous)
+        let rescueMinDr: CGFloat = 0.35         // prediction_rescue_min_diam_ratio
+        let rescueMinPx = 8                     // prediction_rescue_min_mask_pixels
 
-        var allCandidates: [Candidate] = []
-        var chosen: Candidate?
-        var usedROI = passes.last?.roi ?? .zero
-        var usedScale = passes.last?.scale ?? maxScale
+        var bestCandidate: Candidate? = nil
+        var bestScore: CGFloat = -999
 
-        for pass in passes {
-            usedROI = pass.roi
-            usedScale = pass.scale
-            let (candidates, selected) = findCandidates(
-                pd,
-                roi: pass.roi,
-                config: postConfig,
-                preferredCenter: roiCenter
+        for candidate in allCandidates {
+            // Python: skip extremely tiny blobs (1-3 pixels)
+            guard candidate.brightPixelCount >= 4 else { continue }
+
+            // Python: skip if diameter is wildly wrong vs expected
+            if let exp = expectedDiameter, exp > 0 {
+                let dr = candidate.diameter / exp
+                guard dr >= 0.20 && dr <= 5.0 else { continue }
+            }
+
+            // Proximity checks to predicted position
+            let predDist = hypot(candidate.center.x - predictedPos.x, candidate.center.y - predictedPos.y)
+            let candRadius = candidate.diameter / 2.0
+            let insideRect = candidate.rect.contains(predictedPos)
+            let insideCircle = predDist <= candRadius * circleScale
+            let nearPred = predDist <= rescueRadius
+            guard insideRect || insideCircle || nearPred else { continue }
+
+            // Forward progress gate (Python: prediction_rescue_require_forward_progress)
+            if let ld = launchDir, ballLaunched {
+                let fwd = (candidate.center.x - initCenter.x) * ld.dx
+                    + (candidate.center.y - initCenter.y) * (-ld.dy)
+                guard fwd >= -0.015 else { continue }  // cone_backward_allowance
+            }
+
+            // Line residual gate — generous 3× threshold (Python: prediction_rescue_max_line_residual)
+            if let ld = launchDir, ballLaunched {
+                let dx = candidate.center.x - initCenter.x
+                let dy = candidate.center.y - initCenter.y
+                let perp = abs(dx * ld.dy - dy * ld.dx)
+                guard perp <= maxLineResidX3 else { continue }
+            }
+
+            // Run mask refinement
+            let maskOutput = maskRefineDiameter(
+                pd, center: candidate.center,
+                candidateDiameter: candidate.diameter,
+                config: cfg.diameterRefinement
             )
-            allCandidates = candidates
-            if let selected {
-                chosen = selected
-                break
+
+            // Hard minimum: mask must have ≥ 4 white pixels
+            guard maskOutput.whitePixelCount >= 4 else { continue }
+
+            // Quality gate: relaxed for strong prediction (inside rect or circle)
+            let predStrong = insideRect || insideCircle
+            if maskOutput.whitePixelCount < rescueMinPx && !predStrong { continue }
+
+            // Diameter ratio gate
+            let refDia = maskOutput.diameter ?? candidate.diameter
+            if let exp = expectedDiameter, exp > 0, refDia / exp < rescueMinDr { continue }
+
+            // Compute rescue score (Python: inside bonus + near bonus + quality)
+            var score: CGFloat = 0
+            if insideRect { score += 12.0 }
+            if insideCircle { score += 12.0 * 0.7 }
+            if nearPred { score += 7.0 * (1.0 - predDist / max(rescueRadius, 1e-6)) }
+            score += min(1.0, CGFloat(maskOutput.whitePixelCount) / 20.0)
+
+            if score > bestScore {
+                bestScore = score
+                bestCandidate = candidate
             }
         }
 
-        if cfg.isPostImpactDebugLoggingEnabled {
-            let roiStr = String(format: "(x=%.3f y=%.3f w=%.3f h=%.3f)",
-                                usedROI.minX, usedROI.minY, usedROI.width, usedROI.height)
-            if let chosen {
-                print(String(format: "frame=%02d postROI=%@ selected=(x=%.4f y=%.4f d=%.4f conf=%.2f)",
-                             frame.frameIndex, roiStr, chosen.center.x, chosen.center.y,
-                             chosen.diameter, chosen.confidence))
-            } else {
-                print(String(format: "frame=%02d postROI=%@ selected=nil reason=%@ bright=%d",
-                             frame.frameIndex, roiStr, firstRejectionReason(allCandidates),
-                             allCandidates.reduce(0) { $0 + $1.brightPixelCount }))
-            }
+        if let best = bestCandidate {
+            print(String(format: "frame=%02d pred_cross_rescue: (%.4f,%.4f) score=%.2f count=%d",
+                         frameIndex, best.center.x, best.center.y, bestScore, best.brightPixelCount))
         }
-
-        let reason = chosen == nil ? firstRejectionReason(allCandidates) : nil
-        let observation = chosen.map { makeHit(frame, $0, pd: pd) }
-            ?? miss(frame, reason: reason)
-        let debugInfo = ShotFrameDebugInfo(
-            frameIndex: frame.frameIndex,
-            searchROI: usedROI,
-            candidateCount: allCandidates.reduce(0) { $0 + $1.brightPixelCount },
-            rejectionReason: reason,
-            searchCenterSource: centerSource,
-            searchScale: usedScale
-        )
-        return (observation, debugInfo)
+        return bestCandidate
     }
 
     // MARK: - Connected-Components Candidate Scanner
@@ -905,19 +1114,31 @@ final class PostImpactBallTracker {
                      threshold, cfg.impactDetection.movementThresholdNorm))
 
         let scanStartFrame = stableObs.last.map { $0.frameIndex + 1 } ?? cutoff
-        let scanObs = observations
-            .filter { $0.frameIndex >= scanStartFrame && $0.centerX != nil }
+        // Python: scan ALL frames from scan_start, including misses.
+        // First miss = bad_detection_minus_one (Python fires immediately and breaks).
+        let allScanFrames = observations
+            .filter { $0.frameIndex >= scanStartFrame }
             .sorted { $0.frameIndex < $1.frameIndex }
 
         var consecutiveCount = 0
         var firstMovingFrame: Int?
         var lastFrameIndex = scanStartFrame - 2
 
-        for observation in scanObs {
+        for observation in allScanFrames {
             guard let cx = observation.centerX, let cy = observation.centerY else {
-                consecutiveCount = 0
-                firstMovingFrame = nil
-                continue
+                // Python detect_impact_frame lines 304-309:
+                // if not chosen: event_frame = idx; event_reason = "bad_detection_minus_one"; break
+                let detectedFrame = max(0, observation.frameIndex - 1)
+                print(String(format: "  Detected impact: bad_detection at frame %d -> minus_one -> frame %d",
+                             observation.frameIndex, detectedFrame))
+                return ImpactDetectionResult(
+                    detectedImpactFrameIndex: detectedFrame,
+                    fallbackImpactFrameIndex: fallbackImpactIndex,
+                    impactDetectionReason: "bad_detection_minus_one",
+                    initialBallCenter: initialCenter,
+                    movementThresholdNorm: threshold,
+                    initialJitter: jitter
+                )
             }
 
             let displacement = hypot(cx - medianX, cy - medianY)
@@ -936,12 +1157,13 @@ final class PostImpactBallTracker {
 
                 if consecutiveCount >= cfg.impactDetection.confirmFrames,
                    let firstMovingFrame {
-                    print(String(format: "  Detected impact frame: %d (disp=%.4f, confirmed over %d frames)",
-                                 firstMovingFrame, displacement, consecutiveCount))
+                    let detectedFrame = max(0, firstMovingFrame - 1)
+                    print(String(format: "  Detected impact: first_movement at frame %d -> minus_one -> frame %d (disp=%.4f, confirmed over %d frames)",
+                                 firstMovingFrame, detectedFrame, displacement, consecutiveCount))
                     return ImpactDetectionResult(
-                        detectedImpactFrameIndex: firstMovingFrame,
+                        detectedImpactFrameIndex: detectedFrame,
                         fallbackImpactFrameIndex: fallbackImpactIndex,
-                        impactDetectionReason: "first_movement",
+                        impactDetectionReason: "first_movement_minus_one",
                         initialBallCenter: initialCenter,
                         movementThresholdNorm: threshold,
                         initialJitter: jitter
@@ -1046,28 +1268,36 @@ final class PostImpactBallTracker {
     }
 
     private func logConfiguration() {
-        print(String(format: "PostImpactBallTracker live config: sampleStride=%d preBrightnessThreshold=%d preMaxChannelSpread=%d preMinBrightSamples=%d postBrightnessThreshold=%d postMaxChannelSpread=%d postMinBrightSamples=%d preImpactSearchScale=%.2f impactSearchScale=%.2f postImpactBaseScale=%.2f postImpactScaleGrowth=%.2f postImpactMaxScale=%.2f maskBrightnessThreshold=%d localMaskWindowScale=%.2f smoothingWindow=%d",
+        // SWIFT/PYTHON PARITY CHECK
+        // Expected Python result on SampleShot_001 / ShotExport_20260504_141936:
+        //   tracked=23/41  impact=18  fallback=20  reason=first_movement_minus_one
+        //   ball_speed=99.2 mph  HLA=7.9° R  VLA=22.2° (if model loaded)  carry=141 yd  total=147 yd
+        print("SWIFT/PYTHON PARITY CHECK")
+        print("  sample = SampleShot_001 / ShotExport_20260504_141936")
+        print("  expected_python_tracked = 23/41")
+        print("  expected_python_impact = 18 (first_movement_minus_one)")
+        print("  expected_python_launch_frames = 19/21")
+        print("  expected_python_termination = 25 (3 misses after launch)")
+
+        print(String(format: "PostImpactBallTracker live config: sampleStride=%d preBrightnessThreshold=%d preMinBrightSamples=%d postBrightnessThreshold=%d postMinBrightSamples=%d preImpactSearchScale=%.2f impactSearchScale=%.2f",
                      cfg.sampleStride,
                      cfg.preBrightnessThreshold,
-                     cfg.preMaxChannelSpread,
                      cfg.preMinBrightSamples,
                      cfg.postBrightnessThreshold,
-                     cfg.postMaxChannelSpread,
                      cfg.postMinBrightSamples,
                      cfg.preImpactSearchScale,
-                     cfg.impactSearchScale,
-                     cfg.postImpactBaseScale,
-                     cfg.postImpactScaleGrowth,
-                     cfg.postImpactMaxScale,
-                     cfg.diameterRefinement.maskBrightnessThreshold,
-                     cfg.diameterRefinement.localMaskWindowScale,
-                     cfg.diameterRefinement.smoothingWindowSize))
-        print(String(format: "PostImpactBallTracker parity config: postMinNormWidth=%.4f postImpactMaxVerticalScale=%.2f maskPercentile=%d maskPercentileMinBright=%d maskBgDelta=%d",
+                     cfg.impactSearchScale))
+        print(String(format: "PostImpactBallTracker ROI config (Python-parity): postFwdScale=%.1f postBwdScale=%.1f postVertUntracked=%.1f postVertTracked=%.1f launchAngle=%.1f°",
+                     cfg.postFwdScale, cfg.postBwdScale,
+                     cfg.postVertScaleUntracked, cfg.postVertScaleTracked,
+                     cfg.launchAngleDegrees))
+        print(String(format: "PostImpactBallTracker mask config: postMinNormWidth=%.4f maskPercentile=%d maskPercentileMinBright=%d maskBgDelta=%d localMaskWindowScale=%.2f smoothingWindow=%d",
                      cfg.postMinNormWidth,
-                     cfg.postImpactMaxVerticalScale,
                      cfg.diameterRefinement.maskPercentile,
                      cfg.diameterRefinement.maskPercentileMinBright,
-                     cfg.diameterRefinement.maskBgDelta))
+                     cfg.diameterRefinement.maskBgDelta,
+                     cfg.diameterRefinement.localMaskWindowScale,
+                     cfg.diameterRefinement.smoothingWindowSize))
         print("PostImpactBallTracker analysis mode: DarkenedHighContrast (gamma=0.909 matches Python)")
     }
 
@@ -1093,6 +1323,46 @@ final class PostImpactBallTracker {
 
         context.draw(cg, in: CGRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height)))
         return (bytes, width, height)
+    }
+
+    // Forward-biased post-impact ROI: narrow backward, wide forward, capped vertically.
+    // Geometry matches Python's asymmetric oriented post-impact ROI (use_asymmetric_roi=True).
+    // Uses tracked launchDir when available (Python: theta_post = atan2(-ldy, ldx)), else cfg angle.
+    private func forwardBiasedPostROI(
+        center: CGPoint, base: CGFloat, hasTracking: Bool,
+        launchDir: (dx: CGFloat, dy: CGFloat)? = nil
+    ) -> CGRect {
+        let theta: CGFloat
+        if let ld = launchDir {
+            theta = atan2(-ld.dy, ld.dx)   // Python: atan2(-_ldy, _ldx)
+        } else {
+            theta = CGFloat(cfg.launchAngleDegrees) * .pi / 180.0
+        }
+        let fx = cos(theta)    // forward unit vector x (positive = rightward at 0°)
+        let fy = -sin(theta)   // forward unit vector y (image +y = downward, so -sin)
+        let px = -fy           // perpendicular unit x
+        let py = fx            // perpendicular unit y
+
+        let fwd  = cfg.postFwdScale * base
+        let bwd  = cfg.postBwdScale * base
+        let vert = (hasTracking ? cfg.postVertScaleTracked : cfg.postVertScaleUntracked) * base
+
+        let cx = center.x, cy = center.y
+        let cornersX: [CGFloat] = [
+            cx - bwd*fx - vert*px,
+            cx + fwd*fx - vert*px,
+            cx + fwd*fx + vert*px,
+            cx - bwd*fx + vert*px
+        ]
+        let cornersY: [CGFloat] = [
+            cy - bwd*fy - vert*py,
+            cy + fwd*fy - vert*py,
+            cy + fwd*fy + vert*py,
+            cy - bwd*fy + vert*py
+        ]
+        let x0 = max(0, cornersX.min()!), x1 = min(1, cornersX.max()!)
+        let y0 = max(0, cornersY.min()!), y1 = min(1, cornersY.max()!)
+        return CGRect(x: x0, y: y0, width: max(0, x1 - x0), height: max(0, y1 - y0))
     }
 
     private func expanded(_ rect: CGRect, scale: CGFloat) -> CGRect {

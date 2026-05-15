@@ -5,12 +5,13 @@ struct ShotTrackingReviewView: View {
     let onDismiss: () -> Void
 
     @State private var currentIndex: Int
-    @State private var displayMode:    FrameNormalizationMode = .darkenedHighContrast
-    @State private var showComposite:  Bool = false
-    @State private var isExporting:    Bool = false
-    @State private var showShareSheet: Bool = false
-    @State private var exportedURL:    URL? = nil
-    @State private var exportError:    String? = nil
+    @State private var displayMode:      FrameNormalizationMode = .darkenedHighContrast
+    @State private var showComposite:    Bool = false
+    @State private var isExporting:      Bool = false
+    @State private var showShareSheet:   Bool = false
+    @State private var exportedURL:      URL? = nil
+    @State private var exportError:      String? = nil
+    @State private var showMarkBadAlert: Bool = false
     #if DEBUG
     @State private var showTester: Bool = false
     #endif
@@ -30,6 +31,7 @@ struct ShotTrackingReviewView: View {
         VStack(spacing: 0) {
             topBar
             imageArea   // slider is overlaid inside
+            actionBar   // Save / Bad — compact row above metrics
             metricsPanel
         }
         .background(Color.black.ignoresSafeArea())
@@ -44,6 +46,9 @@ struct ShotTrackingReviewView: View {
                 ActivityViewController(activityItems: [url])
             }
         }
+        .alert("Marked as bad shot", isPresented: $showMarkBadAlert) {
+            Button("OK") { }
+        }
         #if DEBUG
         .fullScreenCover(isPresented: $showTester) {
             BallTrackingTestView { showTester = false }
@@ -54,71 +59,62 @@ struct ShotTrackingReviewView: View {
     // MARK: - Sections
 
     private var topBar: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             Text("Shot Review")
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(size: 14, weight: .semibold))
                 .foregroundColor(.white)
+                .layoutPriority(1)
 
-            Spacer()
+            Spacer(minLength: 4)
 
-            // Mode picker: Original | Darkened | Brightened
+            // Mode picker
             HStack(spacing: 0) {
                 ForEach(FrameNormalizationMode.allCases, id: \.self) { mode in
                     Button(action: { displayMode = mode }) {
                         Text(mode.displayName)
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 9, weight: .semibold))
                             .foregroundColor(displayMode == mode ? .black : .white.opacity(0.65))
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 5)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 4)
                             .background(displayMode == mode ? Color.white : Color.clear)
                     }
                 }
             }
             .background(Color.white.opacity(0.15))
-            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
 
-            Button(action: { showComposite = true }) {
-                Text("Composite")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 5)
-                    .background(Color.indigo.opacity(0.7))
-                    .clipShape(Capsule())
-            }
-
-            Button(action: doExport) {
-                Text(isExporting ? "Exporting…" : "Export")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 5)
-                    .background(isExporting ? Color.gray.opacity(0.5) : Color.green.opacity(0.7))
-                    .clipShape(Capsule())
-            }
-            .disabled(isExporting)
-
-            #if DEBUG
-            Button(action: { showTester = true }) {
-                Text("Tester")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 5)
-                    .background(Color.purple.opacity(0.7))
-                    .clipShape(Capsule())
-            }
-            #endif
-
-            Button("Done") {
-                onDismiss()
-            }
-            .font(.system(size: 14, weight: .semibold))
-            .foregroundColor(.blue)
+            Button("Done") { onDismiss() }
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(.blue)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 14)
+        .padding(.top, 9)
+        .padding(.bottom, 9)
         .background(Color(white: 0.10))
+    }
+
+    private var actionBar: some View {
+        HStack(spacing: 8) {
+            Button(action: { print("Save shot") }) {
+                Label("Save Shot", systemImage: "square.and.arrow.down")
+                    .font(.system(size: 11, weight: .semibold))
+                    .frame(maxWidth: .infinity, minHeight: 32)
+                    .background(Color.white.opacity(0.08))
+                    .foregroundColor(.white.opacity(0.75))
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            }
+            Button(action: { showMarkBadAlert = true }) {
+                Label("Bad Shot", systemImage: "xmark.circle")
+                    .font(.system(size: 11, weight: .semibold))
+                    .frame(maxWidth: .infinity, minHeight: 32)
+                    .background(Color.orange.opacity(0.18))
+                    .foregroundColor(.orange.opacity(0.90))
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .background(Color(white: 0.065))
     }
 
     private var displayedImage: UIImage? {
@@ -179,6 +175,54 @@ struct ShotTrackingReviewView: View {
                         sliderOverlay
                             .padding(.horizontal, 12)
                             .padding(.bottom, 14)
+                    }
+
+                    // Action buttons — bottom-right of image, above frame slider
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Spacer()
+                            HStack(spacing: 6) {
+                                Button(action: { showComposite = true }) {
+                                    Label("Composite", systemImage: "square.stack.3d.up")
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(Color.indigo.opacity(0.7))
+                                        .clipShape(Capsule())
+                                }
+
+                                Button(action: doExport) {
+                                    Label(isExporting ? "…" : "Export", systemImage: "square.and.arrow.up")
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(isExporting ? Color.gray.opacity(0.5) : Color.green.opacity(0.7))
+                                        .clipShape(Capsule())
+                                }
+                                .disabled(isExporting)
+
+                                #if DEBUG
+                                Button(action: { showTester = true }) {
+                                    Label("Tester", systemImage: "flask")
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(Color.purple.opacity(0.7))
+                                        .clipShape(Capsule())
+                                }
+                                #endif
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 5)
+                            .background(Color.black.opacity(0.40))
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .padding(.trailing, 10)
+                        }
+                        .padding(.bottom, 72)  // sits above the slider overlay (~58pt)
                     }
                 } else {
                     Text("No image")
@@ -310,54 +354,46 @@ struct ShotTrackingReviewView: View {
     @ViewBuilder
     private var metricsPanel: some View {
         if let metrics = analysis.metrics {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(spacing: 0) {
+                // Row 1 — primary ball metrics
                 HStack(spacing: 0) {
                     metricCell("Ball Speed", value: mph(metrics.ballLaunch.ballSpeedMph))
-                    metricCell("HLA", value: metrics.ballLaunch.hlaDisplay)
-                    metricCell("VLA", value: degrees(metrics.ballLaunch.vlaDegrees))
-                    metricCell("Club Speed", value: mph(metrics.club.clubSpeedMph))
-                    metricCell("Smash", value: plain(metrics.smashFactor, digits: 2))
-                    metricCell("Carry", value: yards(metrics.distance.carryYards))
-                    metricCell("Total", value: yards(metrics.distance.totalYards))
+                    metricCell("HLA",        value: metrics.ballLaunch.hlaDisplay)
+                    metricCell("VLA",        value: degrees(metrics.ballLaunch.vlaDegrees))
+                    metricCell("Carry",      value: yards(metrics.distance.carryYards))
+                    metricCell("Total",      value: yards(metrics.distance.totalYards))
                 }
-
+                Divider().background(Color.white.opacity(0.06))
+                // Row 2 — secondary metrics
                 HStack(spacing: 0) {
-                    metricCell("Backspin", value: rpm(metrics.spin.estimatedBackspinRpm))
-                    metricCell("Club Path", value: metrics.clubPath.clubPathDisplay)
-                    metricCell("Face", value: metrics.faceAngle.faceAngleDisplay)
-                    metricCell("Face-to-Path", value: metrics.faceAngle.faceToPathDisplay)
-                    if let warning = metrics.warnings.first {
-                        Text(warning)
-                            .font(.system(size: 10))
-                            .foregroundColor(.yellow.opacity(0.9))
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.leading, 8)
-                    } else {
-                        Spacer()
-                    }
+                    metricCell("Club Speed",   value: mph(metrics.club.clubSpeedMph))
+                    metricCell("Smash Factor", value: plain(metrics.smashFactor, digits: 2))
+                    metricCell("Backspin",     value: rpm(metrics.spin.estimatedBackspinRpm))
+                    metricCell("Club Path",    value: metrics.clubPath.clubPathDisplay)
+                    metricCell("Face",         value: metrics.faceAngle.faceAngleDisplay)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
             .background(Color(white: 0.065))
         }
     }
 
     private func metricCell(_ label: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 2) {
             Text(label)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundColor(.white.opacity(0.55))
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.white.opacity(0.50))
                 .lineLimit(1)
+                .minimumScaleFactor(0.75)
             Text(value)
-                .font(.system(size: 17, weight: .bold, design: .monospaced))
+                .font(.system(size: 18, weight: .bold, design: .monospaced))
                 .foregroundColor(.white)
                 .lineLimit(1)
-                .minimumScaleFactor(0.65)
+                .minimumScaleFactor(0.60)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 2)
     }
 
     // MARK: - Export

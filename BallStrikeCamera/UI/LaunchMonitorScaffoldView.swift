@@ -71,6 +71,23 @@ struct LaunchMonitorScaffoldView: View {
 
                                     Spacer()
 
+                                    Button(action: { camera.simulateShot() }) {
+                                        RangeOverlayPill {
+                                            HStack(spacing: 5) {
+                                                Image(systemName: "play.circle")
+                                                    .font(.system(size: 11, weight: .bold))
+                                                Text(camera.isAnalyzingShot ? "Simulating…" : "Simulate Shot")
+                                                    .font(.system(size: 12, weight: .bold))
+                                                    .lineLimit(1)
+                                            }
+                                            .foregroundColor(.white.opacity(
+                                                (camera.isAnalyzingShot || camera.showShotResult) ? 0.42 : 0.94
+                                            ))
+                                        }
+                                    }
+                                    .buttonStyle(.plain)
+                                    .disabled(camera.isAnalyzingShot || camera.showShotResult)
+
                                     Button(action: {}) {
                                         RangeOverlayPill {
                                             HStack(spacing: 6) {
@@ -112,10 +129,10 @@ struct LaunchMonitorScaffoldView: View {
         .navigationBarHidden(true)
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
-        .fullScreenCover(isPresented: $camera.showReview) {
+        .fullScreenCover(isPresented: $camera.showShotResult) {
             if let analysis = camera.latestShotAnalysis {
-                ShotTrackingReviewView(analysis: analysis) {
-                    camera.dismissReview()
+                ShotResultView(analysis: analysis) {
+                    camera.dismissShotPresentation()
                 }
             }
         }

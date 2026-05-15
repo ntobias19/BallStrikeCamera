@@ -58,6 +58,17 @@
 		BF0000010000000000000038 /* ExperimentalClubPathFaceEstimator.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000000138 /* ExperimentalClubPathFaceEstimator.swift */; };
 		BF0000010000000000000039 /* VLAModelPredictor.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000000139 /* VLAModelPredictor.swift */; };
 		BF000001000000000000003A /* ExperimentalVLAModelPredictor.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF000001000000000000013A /* ExperimentalVLAModelPredictor.swift */; };
+		BF000001000000000000003B /* SampleShots in Resources */ = {isa = PBXBuildFile; fileRef = BF000001000000000000013B /* SampleShots */; };
+		BF000001000000000000003F /* Models in Resources */ = {isa = PBXBuildFile; fileRef = BF000001000000000000013F /* Models */; };
+		BF0000010000000000000040 /* ModelResourceLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000000140 /* ModelResourceLoader.swift */; };
+		BF0000010000000000000041 /* FlightModelPredictor.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000000141 /* FlightModelPredictor.swift */; };
+		BF000001000000000000003C /* SampleShotLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF000001000000000000013C /* SampleShotLoader.swift */; };
+		BF000001000000000000003D /* ShotResultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF000001000000000000013D /* ShotResultView.swift */; };
+		BF000001000000000000003E /* BallFlightPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF000001000000000000013E /* BallFlightPreviewView.swift */; };
+		BF0000010000000000000042 /* SideLaunchAngleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000000142 /* SideLaunchAngleView.swift */; };
+		BF0000010000000000000043 /* TopDownShotGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000000143 /* TopDownShotGridView.swift */; };
+		BF0000010000000000000044 /* AnimatedShotFlightView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000000144 /* AnimatedShotFlightView.swift */; };
+		BF0000010000000000000045 /* CinematicBallFlightView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000000145 /* CinematicBallFlightView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -114,6 +125,17 @@
 		BF0000010000000000000138 /* ExperimentalClubPathFaceEstimator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExperimentalClubPathFaceEstimator.swift; sourceTree = "<group>"; };
 		BF0000010000000000000139 /* VLAModelPredictor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VLAModelPredictor.swift; sourceTree = "<group>"; };
 		BF000001000000000000013A /* ExperimentalVLAModelPredictor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExperimentalVLAModelPredictor.swift; sourceTree = "<group>"; };
+		BF000001000000000000013B /* SampleShots */ = {isa = PBXFileReference; lastKnownFileType = folder; path = SampleShots; sourceTree = "<group>"; };
+		BF000001000000000000013F /* Models */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Models; sourceTree = "<group>"; };
+		BF0000010000000000000140 /* ModelResourceLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelResourceLoader.swift; sourceTree = "<group>"; };
+		BF0000010000000000000141 /* FlightModelPredictor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlightModelPredictor.swift; sourceTree = "<group>"; };
+		BF000001000000000000013C /* SampleShotLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleShotLoader.swift; sourceTree = "<group>"; };
+		BF000001000000000000013D /* ShotResultView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShotResultView.swift; sourceTree = "<group>"; };
+		BF000001000000000000013E /* BallFlightPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BallFlightPreviewView.swift; sourceTree = "<group>"; };
+		BF0000010000000000000142 /* SideLaunchAngleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SideLaunchAngleView.swift; sourceTree = "<group>"; };
+		BF0000010000000000000143 /* TopDownShotGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TopDownShotGridView.swift; sourceTree = "<group>"; };
+		BF0000010000000000000144 /* AnimatedShotFlightView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnimatedShotFlightView.swift; sourceTree = "<group>"; };
+		BF0000010000000000000145 /* CinematicBallFlightView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CinematicBallFlightView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -146,6 +168,7 @@
 				BF0000010000000000000308 /* Models */,
 				BF0000010000000000000309 /* Resources */,
 				BF000001000000000000030B /* Export */,
+				BF000001000000000000030F /* Simulation */,
 				BF000001000000000000030C /* Experimental */,
 			);
 			path = BallStrikeCamera;
@@ -199,6 +222,8 @@
 				BF0000010000000000000134 /* SpinEstimator.swift */,
 				BF0000010000000000000135 /* ClubPathFaceEstimator.swift */,
 				BF0000010000000000000139 /* VLAModelPredictor.swift */,
+				BF0000010000000000000140 /* ModelResourceLoader.swift */,
+				BF0000010000000000000141 /* FlightModelPredictor.swift */,
 			);
 			path = Analysis;
 			sourceTree = "<group>";
@@ -219,6 +244,12 @@
 				BF000001000000000000011A /* CompactMetricsBarView.swift */,
 				BF000001000000000000011F /* ShotTrackingReviewView.swift */,
 				BF0000010000000000000121 /* ShotCompositeView.swift */,
+				BF000001000000000000013D /* ShotResultView.swift */,
+				BF000001000000000000013E /* BallFlightPreviewView.swift */,
+				BF0000010000000000000142 /* SideLaunchAngleView.swift */,
+				BF0000010000000000000143 /* TopDownShotGridView.swift */,
+				BF0000010000000000000144 /* AnimatedShotFlightView.swift */,
+				BF0000010000000000000145 /* CinematicBallFlightView.swift */,
 			);
 			path = UI;
 			sourceTree = "<group>";
@@ -239,8 +270,18 @@
 				BF0000010000000000000109 /* Assets.xcassets */,
 				BF0000010000000000000110 /* Info.plist */,
 				BF000001000000000000011B /* LaunchScreen.storyboard */,
+				BF000001000000000000013B /* SampleShots */,
+				BF000001000000000000013F /* Models */,
 			);
 			path = Resources;
+			sourceTree = "<group>";
+		};
+		BF000001000000000000030F /* Simulation */ = {
+			isa = PBXGroup;
+			children = (
+				BF000001000000000000013C /* SampleShotLoader.swift */,
+			);
+			path = Simulation;
 			sourceTree = "<group>";
 		};
 		BF000001000000000000030B /* Export */ = {
@@ -350,6 +391,8 @@
 			files = (
 				BF0000010000000000000009 /* Assets.xcassets in Resources */,
 				BF000001000000000000000A /* LaunchScreen.storyboard in Resources */,
+				BF000001000000000000003B /* SampleShots in Resources */,
+				BF000001000000000000003F /* Models in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -409,6 +452,15 @@
 				BF0000010000000000000038 /* ExperimentalClubPathFaceEstimator.swift in Sources */,
 				BF0000010000000000000039 /* VLAModelPredictor.swift in Sources */,
 				BF000001000000000000003A /* ExperimentalVLAModelPredictor.swift in Sources */,
+				BF0000010000000000000040 /* ModelResourceLoader.swift in Sources */,
+				BF0000010000000000000041 /* FlightModelPredictor.swift in Sources */,
+				BF000001000000000000003C /* SampleShotLoader.swift in Sources */,
+				BF000001000000000000003D /* ShotResultView.swift in Sources */,
+				BF000001000000000000003E /* BallFlightPreviewView.swift in Sources */,
+				BF0000010000000000000042 /* SideLaunchAngleView.swift in Sources */,
+				BF0000010000000000000043 /* TopDownShotGridView.swift in Sources */,
+				BF0000010000000000000044 /* AnimatedShotFlightView.swift in Sources */,
+				BF0000010000000000000045 /* CinematicBallFlightView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

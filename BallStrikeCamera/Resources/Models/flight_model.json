@@ -1,0 +1,121 @@
+{
+  "version": 1,
+  "createdAt": "2026-05-07T10:34:13.582044",
+  "sourceCsv": "/Users/noahtobias/Downloads/flightscope_trajectory_optimizer_2026-05-07_0950.csv",
+  "carryModel": {
+    "features": [
+      "ball_speed",
+      "vla",
+      "ball_speed_sq",
+      "vla_sq",
+      "speed_times_vla",
+      "sin_2vla",
+      "ideal_carry_yards"
+    ],
+    "means": {
+      "ball_speed": 77.54615384615384,
+      "vla": 26.22307692307692,
+      "ball_speed_sq": 6348.285384615385,
+      "vla_sq": 800.126923076923,
+      "speed_times_vla": 1918.8946153846155,
+      "sin_2vla": 0.7385884027384672,
+      "ideal_carry_yards": 99.80678526842937
+    },
+    "stds": {
+      "ball_speed": 18.299710606564894,
+      "vla": 10.605524964060649,
+      "ball_speed_sq": 2743.9002823034316,
+      "vla_sq": 603.88924347974,
+      "speed_times_vla": 600.4739523668001,
+      "sin_2vla": 0.2077798072728439,
+      "ideal_carry_yards": 44.6028277810682
+    },
+    "imputationMedians": {
+      "ball_speed": 74.5,
+      "vla": 24.4,
+      "ball_speed_sq": 5550.25,
+      "vla_sq": 595.3599999999999,
+      "speed_times_vla": 2011.5000000000002,
+      "sin_2vla": 0.7524149088957244,
+      "ideal_carry_yards": 113.58248234813662
+    },
+    "coefficients": {
+      "ball_speed": 11.032731088230523,
+      "vla": 0.843806886009741,
+      "ball_speed_sq": 15.342268531523287,
+      "vla_sq": -4.960544580431026,
+      "speed_times_vla": 1.4119565726662862,
+      "sin_2vla": 6.938918836057396,
+      "ideal_carry_yards": 11.74183835859965
+    },
+    "intercept": 92.41538461538462,
+    "type": "ridge_regression",
+    "alpha": 1.0
+  },
+  "rollModel": {
+    "features": [
+      "ball_speed",
+      "vla",
+      "ball_speed_sq",
+      "vla_sq",
+      "speed_times_vla",
+      "sin_2vla",
+      "ideal_carry_yards",
+      "carry_yards",
+      "backspin"
+    ],
+    "means": {
+      "ball_speed": 77.54615384615384,
+      "vla": 26.22307692307692,
+      "ball_speed_sq": 6348.285384615385,
+      "vla_sq": 800.126923076923,
+      "speed_times_vla": 1918.8946153846155,
+      "sin_2vla": 0.7385884027384672,
+      "ideal_carry_yards": 99.80678526842937,
+      "carry_yards": 92.41538461538462,
+      "backspin": 3769.230769230769
+    },
+    "stds": {
+      "ball_speed": 18.299710606564894,
+      "vla": 10.605524964060649,
+      "ball_speed_sq": 2743.9002823034316,
+      "vla_sq": 603.88924347974,
+      "speed_times_vla": 600.4739523668001,
+      "sin_2vla": 0.2077798072728439,
+      "ideal_carry_yards": 44.6028277810682,
+      "carry_yards": 39.831739299474506,
+      "backspin": 2422.771653542096
+    },
+    "imputationMedians": {
+      "ball_speed": 74.5,
+      "vla": 24.4,
+      "ball_speed_sq": 5550.25,
+      "vla_sq": 595.3599999999999,
+      "speed_times_vla": 2011.5000000000002,
+      "sin_2vla": 0.7524149088957244,
+      "ideal_carry_yards": 113.58248234813662,
+      "carry_yards": 90.9,
+      "backspin": 3000.0
+    },
+    "coefficients": {
+      "ball_speed": 0.9464094486490725,
+      "vla": -1.3637936564937168,
+      "ball_speed_sq": 1.2516959960977356,
+      "vla_sq": 1.4194772452684723,
+      "speed_times_vla": -1.243289881745446,
+      "sin_2vla": -4.811313487399603,
+      "ideal_carry_yards": -1.1657558736611047,
+      "carry_yards": -2.8017402036164527,
+      "backspin": -2.600623656012198
+    },
+    "intercept": 9.26153846153846,
+    "type": "ridge_regression",
+    "alpha": 1.0
+  },
+  "metrics": {
+    "carry_mae": 32.99,
+    "roll_mae": 5.57,
+    "total_mae": 3.48,
+    "n_shots": 13
+  }
+}

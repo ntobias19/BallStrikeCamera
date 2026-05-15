@@ -1,0 +1,709 @@
+{
+  "clubSpeedFrameIndices" : [
+
+  ],
+  "rolloutFraction" : null,
+  "estimatedSpinAxisDegreesSigned" : null,
+  "detectedImpactFrameIndex" : 20,
+  "estimatedSidespinDisplay" : "—",
+  "ballPointsUsed" : 0,
+  "schema" : "ballstrike.shot_metrics.v2",
+  "idealCarryYards" : null,
+  "faceToPathDisplay" : "39.8° R",
+  "clubObservations" : [
+    {
+      "detectionMode" : "frameDifference_or_dark",
+      "ballExclusionDiameter" : 0.055,
+      "leadingEdgeY" : 0.38423645320197042,
+      "clubBoundingBox" : {
+        "x" : 0.16388888888888889,
+        "y" : 0.31527093596059114,
+        "width" : 0.18055555555555555,
+        "height" : 0.12315270935960591
+      },
+      "confidence" : 0.87749999999999995,
+      "frameDifferenceWasUsed" : true,
+      "relativeTime" : -0.041607999999996537,
+      "ballExclusionCenterY" : 0.37759691582780042,
+      "leadingEdgeX" : 0.32500000000000001,
+      "searchROI" : {
+        "width" : 0.18333333333333335,
+        "x" : 0.16558454106280196,
+        "y" : 0.3164858047166893,
+        "height" : 0.12222222222222223
+      },
+      "centerY" : 0.37357254814151364,
+      "frameIndex" : 10,
+      "ballExclusionCenterX" : 0.29758454106280197,
+      "debugReason" : "club_blob_frame_diff_or_dark",
+      "ballExclusionWasApplied" : true,
+      "centerX" : 0.24297664141414141,
+      "timestamp" : 3963.4870282500001
+    },
+    {
+      "ballExclusionWasApplied" : true,
+      "centerX" : 0.24297664141414141,
+      "searchROI" : {
+        "width" : 0.18333333333333335,
+        "x" : 0.16558454106280196,
+        "y" : 0.3164858047166893,
+        "height" : 0.12222222222222223
+      },
+      "timestamp" : 3963.4911890409999,
+      "ballExclusionDiameter" : 0.055,
+      "frameDifferenceWasUsed" : true,
+      "centerY" : 0.37357254814151364,
+      "confidence" : 0.87749999999999995,
+      "debugReason" : "club_blob_frame_diff_or_dark",
+      "ballExclusionCenterY" : 0.37759691582780042,
+      "detectionMode" : "frameDifference_or_dark",
+      "relativeTime" : -0.037447209000220028,
+      "leadingEdgeY" : 0.38423645320197042,
+      "ballExclusionCenterX" : 0.29758454106280197,
+      "leadingEdgeX" : 0.32500000000000001,
+      "frameIndex" : 11,
+      "clubBoundingBox" : {
+        "y" : 0.31527093596059114,
+        "width" : 0.18055555555555555,
+        "x" : 0.16388888888888889,
+        "height" : 0.12315270935960591
+      }
+    },
+    {
+      "ballExclusionCenterX" : 0.29758454106280197,
+      "frameDifferenceWasUsed" : true,
+      "confidence" : 0.87749999999999995,
+      "ballExclusionWasApplied" : true,
+      "centerX" : 0.24297664141414141,
+      "detectionMode" : "frameDifference_or_dark",
+      "frameIndex" : 12,
+      "centerY" : 0.37357254814151364,
+      "leadingEdgeX" : 0.32500000000000001,
+      "leadingEdgeY" : 0.38423645320197042,
+      "searchROI" : {
+        "x" : 0.16558454106280196,
+        "y" : 0.3164858047166893,
+        "width" : 0.18333333333333335,
+        "height" : 0.12222222222222223
+      },
+      "relativeTime" : -0.033286374999988766,
+      "ballExclusionDiameter" : 0.055,
+      "debugReason" : "club_blob_frame_diff_or_dark",
+      "clubBoundingBox" : {
+        "x" : 0.16388888888888889,
+        "y" : 0.31527093596059114,
+        "width" : 0.18055555555555555,
+        "height" : 0.12315270935960591
+      },
+      "ballExclusionCenterY" : 0.37759691582780042,
+      "timestamp" : 3963.4953498750001
+    },
+    {
+      "confidence" : 0.87749999999999995,
+      "detectionMode" : "frameDifference_or_dark",
+      "relativeTime" : -0.029125584000212257,
+      "frameDifferenceWasUsed" : true,
+      "searchROI" : {
+        "y" : 0.3164858047166893,
+        "x" : 0.16558454106280196,
+        "height" : 0.12222222222222223,
+        "width" : 0.18333333333333335
+      },
+      "debugReason" : "club_blob_frame_diff_or_dark",
+      "frameIndex" : 13,
+      "centerY" : 0.37357254814151364,
+      "ballExclusionWasApplied" : true,
+      "ballExclusionCenterY" : 0.37759691582780042,
+      "leadingEdgeX" : 0.32500000000000001,
+      "ballExclusionCenterX" : 0.29758454106280197,
+      "timestamp" : 3963.4995106659999,
+      "ballExclusionDiameter" : 0.055,
+      "leadingEdgeY" : 0.38423645320197042,
+      "clubBoundingBox" : {
+        "height" : 0.12315270935960591,
+        "x" : 0.16388888888888889,
+        "width" : 0.18055555555555555,
+        "y" : 0.31527093596059114
+      },
+      "centerX" : 0.24297664141414141
+    },
+    {
+      "timestamp" : 3963.5036714580001,
+      "frameDifferenceWasUsed" : true,
+      "clubBoundingBox" : {
+        "y" : 0.31527093596059114,
+        "height" : 0.12315270935960591,
+        "x" : 0.16388888888888889,
+        "width" : 0.18055555555555555
+      },
+      "frameIndex" : 14,
+      "confidence" : 0.87749999999999995,
+      "leadingEdgeY" : 0.37438423645320196,
+      "ballExclusionCenterY" : 0.37751903269144649,
+      "debugReason" : "club_blob_frame_diff_or_dark",
+      "relativeTime" : -0.024964791999991576,
+      "centerX" : 0.24320900220333649,
+      "centerY" : 0.37357484754183007,
+      "leadingEdgeX" : 0.26944444444444443,
+      "searchROI" : {
+        "x" : 0.16496969696969693,
+        "y" : 0.31640792158033537,
+        "width" : 0.18333333333333329,
+        "height" : 0.12222222222222223
+      },
+      "ballExclusionCenterX" : 0.29696969696969694,
+      "ballExclusionWasApplied" : true,
+      "ballExclusionDiameter" : 0.055,
+      "detectionMode" : "frameDifference_or_dark"
+    },
+    {
+      "confidence" : 0.87749999999999995,
+      "centerY" : 0.37357484754183007,
+      "ballExclusionCenterX" : 0.29696969696969694,
+      "ballExclusionCenterY" : 0.37751903269144649,
+      "relativeTime" : -0.020804000000225642,
+      "ballExclusionDiameter" : 0.055,
+      "debugReason" : "club_blob_frame_diff_or_dark",
+      "frameDifferenceWasUsed" : true,
+      "timestamp" : 3963.5078322499999,
+      "ballExclusionWasApplied" : true,
+      "leadingEdgeX" : 0.26944444444444443,
+      "detectionMode" : "frameDifference_or_dark",
+      "frameIndex" : 15,
+      "clubBoundingBox" : {
+        "height" : 0.12315270935960591,
+        "width" : 0.18055555555555555,
+        "x" : 0.16388888888888889,
+        "y" : 0.31527093596059114
+      },
+      "leadingEdgeY" : 0.37438423645320196,
+      "searchROI" : {
+        "width" : 0.18333333333333329,
+        "x" : 0.16496969696969693,
+        "y" : 0.31640792158033537,
+        "height" : 0.12222222222222223
+      },
+      "centerX" : 0.24320900220333649
+    },
+    {
+      "debugReason" : "club_blob_frame_diff_or_dark",
+      "timestamp" : 3963.5119930830001,
+      "ballExclusionCenterY" : 0.37759691582780042,
+      "ballExclusionWasApplied" : true,
+      "frameIndex" : 16,
+      "searchROI" : {
+        "y" : 0.3164858047166893,
+        "width" : 0.18333333333333335,
+        "x" : 0.16558454106280196,
+        "height" : 0.12222222222222223
+      },
+      "leadingEdgeY" : 0.38423645320197042,
+      "ballExclusionDiameter" : 0.055,
+      "detectionMode" : "frameDifference_or_dark",
+      "frameDifferenceWasUsed" : true,
+      "centerY" : 0.37357254814151364,
+      "confidence" : 0.87749999999999995,
+      "ballExclusionCenterX" : 0.29758454106280197,
+      "relativeTime" : -0.016643166999983805,
+      "clubBoundingBox" : {
+        "x" : 0.16388888888888889,
+        "y" : 0.31527093596059114,
+        "height" : 0.12315270935960591,
+        "width" : 0.18055555555555555
+      },
+      "centerX" : 0.24297664141414141,
+      "leadingEdgeX" : 0.32500000000000001
+    },
+    {
+      "debugReason" : "club_blob_frame_diff_or_dark",
+      "frameIndex" : 17,
+      "clubBoundingBox" : {
+        "x" : 0.16388888888888889,
+        "y" : 0.31527093596059114,
+        "height" : 0.12315270935960591,
+        "width" : 0.18055555555555555
+      },
+      "relativeTime" : -0.012482334000196715,
+      "ballExclusionCenterX" : 0.29758454106280197,
+      "frameDifferenceWasUsed" : true,
+      "centerY" : 0.37357254814151364,
+      "detectionMode" : "frameDifference_or_dark",
+      "timestamp" : 3963.5161539159999,
+      "centerX" : 0.24297664141414141,
+      "leadingEdgeX" : 0.32500000000000001,
+      "confidence" : 0.87749999999999995,
+      "leadingEdgeY" : 0.38423645320197042,
+      "searchROI" : {
+        "height" : 0.12222222222222223,
+        "width" : 0.18333333333333335,
+        "y" : 0.3164858047166893,
+        "x" : 0.16558454106280196
+      },
+      "ballExclusionWasApplied" : true,
+      "ballExclusionCenterY" : 0.37759691582780042,
+      "ballExclusionDiameter" : 0.055
+    },
+    {
+      "centerY" : 0.3733990147783251,
+      "relativeTime" : -0.0083215839999866148,
+      "centerX" : 0.24533333333333332,
+      "confidence" : 0.87749999999999995,
+      "frameIndex" : 18,
+      "searchROI" : {
+        "y" : 0.31741105637657363,
+        "height" : 0.12222222222222223,
+        "x" : 0.1691111111111111,
+        "width" : 0.18333333333333335
+      },
+      "clubBoundingBox" : {
+        "width" : 0.18055555555555555,
+        "height" : 0.12315270935960591,
+        "y" : 0.31527093596059114,
+        "x" : 0.16666666666666666
+      },
+      "ballExclusionCenterX" : 0.30111111111111111,
+      "ballExclusionCenterY" : 0.37852216748768475,
+      "detectionMode" : "frameDifference_or_dark",
+      "ballExclusionDiameter" : 0.055,
+      "timestamp" : 3963.5203146660001,
+      "debugReason" : "club_blob_frame_diff_or_dark",
+      "frameDifferenceWasUsed" : true,
+      "ballExclusionWasApplied" : true,
+      "leadingEdgeY" : 0.3645320197044335,
+      "leadingEdgeX" : 0.32777777777777778
+    },
+    {
+      "leadingEdgeY" : 0.3645320197044335,
+      "frameDifferenceWasUsed" : true,
+      "detectionMode" : "frameDifference_or_dark",
+      "leadingEdgeX" : 0.32777777777777778,
+      "relativeTime" : -0.0041607920002206811,
+      "confidence" : 0.87749999999999995,
+      "ballExclusionDiameter" : 0.055,
+      "centerY" : 0.3733990147783251,
+      "ballExclusionCenterX" : 0.30111111111111111,
+      "centerX" : 0.24533333333333332,
+      "frameIndex" : 19,
+      "ballExclusionCenterY" : 0.37852216748768475,
+      "ballExclusionWasApplied" : true,
+      "debugReason" : "club_blob_frame_diff_or_dark",
+      "clubBoundingBox" : {
+        "height" : 0.12315270935960591,
+        "y" : 0.31527093596059114,
+        "x" : 0.16666666666666666,
+        "width" : 0.18055555555555555
+      },
+      "searchROI" : {
+        "x" : 0.1691111111111111,
+        "height" : 0.12222222222222223,
+        "y" : 0.31741105637657363,
+        "width" : 0.18333333333333335
+      },
+      "timestamp" : 3963.5244754579999
+    },
+    {
+      "ballExclusionCenterY" : 0.37852216748768475,
+      "detectionMode" : "frameDifference_or_dark",
+      "searchROI" : {
+        "height" : 0.12222222222222223,
+        "y" : 0.31741105637657363,
+        "x" : 0.1691111111111111,
+        "width" : 0.18333333333333335
+      },
+      "centerY" : 0.3733990147783251,
+      "frameIndex" : 20,
+      "leadingEdgeY" : 0.3645320197044335,
+      "centerX" : 0.24533333333333332,
+      "debugReason" : "club_blob_frame_diff_or_dark",
+      "relativeTime" : 0,
+      "confidence" : 0.87749999999999995,
+      "ballExclusionCenterX" : 0.30111111111111111,
+      "ballExclusionWasApplied" : true,
+      "frameDifferenceWasUsed" : true,
+      "clubBoundingBox" : {
+        "x" : 0.16666666666666666,
+        "y" : 0.31527093596059114,
+        "height" : 0.12315270935960591,
+        "width" : 0.18055555555555555
+      },
+      "timestamp" : 3963.5286362500001,
+      "leadingEdgeX" : 0.32777777777777778,
+      "ballExclusionDiameter" : 0.055
+    },
+    {
+      "frameDifferenceWasUsed" : true,
+      "ballExclusionCenterX" : 0.30111111111111111,
+      "leadingEdgeX" : 0.32777777777777778,
+      "frameIndex" : 21,
+      "timestamp" : 3963.5327972499999,
+      "clubBoundingBox" : {
+        "height" : 0.12315270935960591,
+        "x" : 0.16666666666666666,
+        "y" : 0.31527093596059114,
+        "width" : 0.18055555555555555
+      },
+      "ballExclusionDiameter" : 0.055,
+      "relativeTime" : 0.0041609999998399871,
+      "leadingEdgeY" : 0.3645320197044335,
+      "confidence" : 0.87749999999999995,
+      "debugReason" : "club_blob_frame_diff_or_dark",
+      "centerX" : 0.24533333333333332,
+      "centerY" : 0.3733990147783251,
+      "searchROI" : {
+        "y" : 0.31741105637657363,
+        "height" : 0.12222222222222223,
+        "width" : 0.18333333333333335,
+        "x" : 0.1691111111111111
+      },
+      "ballExclusionWasApplied" : true,
+      "ballExclusionCenterY" : 0.37852216748768475,
+      "detectionMode" : "frameDifference_or_dark"
+    }
+  ],
+  "estimatedFaceAngleDegreesSigned" : 37.383970362139301,
+  "hlaReferenceAngleDegrees" : 0,
+  "rolloutYards" : null,
+  "ballSpeedMph" : null,
+  "clubPathDisplay" : "2.4° L",
+  "calibration" : {
+    "horizontalFOVDegrees" : 70,
+    "imageHeightPixels" : 203,
+    "verticalFOVDegrees" : 45,
+    "realBallDiameterMeters" : 0.04267,
+    "cameraTiltDegrees" : null,
+    "cameraHeightMeters" : null,
+    "focalLengthPixelsX" : 257.06664121358062,
+    "focalLengthPixelsY" : 245.04267658086911,
+    "imageWidthPixels" : 360
+  },
+  "faceToPathDegreesSigned" : 39.783933681134869,
+  "hlaDegrees" : null,
+  "hlaLateralComponent" : null,
+  "totalYards" : null,
+  "estimatedSpinAxisDisplay" : "—",
+  "clubMethod" : "unavailable",
+  "spinEstimateMethod" : "unavailable",
+  "metrics_available" : true,
+  "hlaForwardComponent" : null,
+  "faceAngleConfidence" : "low_gradient",
+  "carryCorrectionFactor" : 0.75,
+  "hla3DRawDegrees" : null,
+  "vlaDegrees" : null,
+  "hlaDisplay" : "—",
+  "ballQuality" : 0,
+  "clubQuality" : 0,
+  "warnings" : [
+    "Backspin is ESTIMATED from a speed+VLA model. Not measured.",
+    "Camera FOV calibration is using estimated defaults; tune horizontalFOVDegrees and verticalFOVDegrees for trusted metrics.",
+    "Club path is image-space estimate. Accuracy depends on camera calibration.",
+    "Club speed is approximate because club depth is assumed from ball depth near impact.",
+    "Club speed skipped: no ball depth near impact.",
+    "Distance estimate skipped: missing ball speed.",
+    "Face angle is ESTIMATED from edge gradients in clubhead bounding box.",
+    "Motion blur at impact typically reduces reliability. Treat as indicative only.",
+    "Sidespin is ESTIMATED from HLA\/path angle difference. Not measured.",
+    "Smash factor unavailable until both ball speed and club speed are available.",
+    "Spin estimate unavailable: missing ball speed.",
+    "Too few post-impact ball points for ball speed\/HLA\/VLA."
+  ],
+  "estimatedBackspinRpm" : null,
+  "distanceMethod" : "unavailable",
+  "fallbackImpactFrameIndex" : 20,
+  "clubPathDegreesSigned" : -2.3999633189955678,
+  "ball3DObservations" : [
+    {
+      "frameIndex" : 0,
+      "imageX" : 0.29758454106280197,
+      "timestamp" : 3963.445420041,
+      "diameterPixels" : 11,
+      "relativeTime" : -0.083216209000056551,
+      "positionMeters" : {
+        "x" : -0.2760569579624465,
+        "y" : 0.098751775775985734,
+        "z" : 0.97386384501314405
+      },
+      "imageY" : 0.37759691582780042,
+      "diameterNorm" : 0.030555555555555555,
+      "confidence" : 0.95833333333333337
+    },
+    {
+      "imageX" : 0.29758454106280197,
+      "timestamp" : 3963.4495808749998,
+      "imageY" : 0.37759691582780042,
+      "diameterNorm" : 0.030555555555555555,
+      "positionMeters" : {
+        "y" : 0.098751775775985734,
+        "z" : 0.97386384501314405,
+        "x" : -0.2760569579624465
+      },
+      "frameIndex" : 1,
+      "diameterPixels" : 11,
+      "confidence" : 0.95833333333333337,
+      "relativeTime" : -0.079055375000280037
+    },
+    {
+      "imageY" : 0.37759691582780042,
+      "diameterPixels" : 11,
+      "imageX" : 0.29758454106280197,
+      "relativeTime" : -0.074894625000069937,
+      "diameterNorm" : 0.030555555555555555,
+      "positionMeters" : {
+        "z" : 0.97386384501314405,
+        "y" : 0.098751775775985734,
+        "x" : -0.2760569579624465
+      },
+      "timestamp" : 3963.453741625,
+      "confidence" : 0.95833333333333337,
+      "frameIndex" : 2
+    },
+    {
+      "diameterPixels" : 11,
+      "relativeTime" : -0.070733792000282847,
+      "frameIndex" : 3,
+      "imageY" : 0.37759691582780042,
+      "diameterNorm" : 0.030555555555555555,
+      "positionMeters" : {
+        "y" : 0.098751775775985734,
+        "x" : -0.2760569579624465,
+        "z" : 0.97386384501314405
+      },
+      "timestamp" : 3963.4579024579998,
+      "confidence" : 0.95833333333333337,
+      "imageX" : 0.29758454106280197
+    },
+    {
+      "diameterPixels" : 11,
+      "confidence" : 0.95833333333333337,
+      "positionMeters" : {
+        "y" : 0.098751775775985734,
+        "x" : -0.2760569579624465,
+        "z" : 0.97386384501314405
+      },
+      "frameIndex" : 4,
+      "diameterNorm" : 0.030555555555555555,
+      "imageY" : 0.37759691582780042,
+      "timestamp" : 3963.4620634160001,
+      "relativeTime" : -0.066572833999998693,
+      "imageX" : 0.29758454106280197
+    },
+    {
+      "imageX" : 0.29758454106280197,
+      "diameterNorm" : 0.030555555555555555,
+      "imageY" : 0.37759691582780042,
+      "timestamp" : 3963.4662241659998,
+      "diameterPixels" : 11,
+      "relativeTime" : -0.06241208400024334,
+      "positionMeters" : {
+        "x" : -0.2760569579624465,
+        "y" : 0.098751775775985734,
+        "z" : 0.97386384501314405
+      },
+      "confidence" : 0.95833333333333337,
+      "frameIndex" : 5
+    },
+    {
+      "positionMeters" : {
+        "y" : 0.098751775775985734,
+        "z" : 0.97386384501314405,
+        "x" : -0.2760569579624465
+      },
+      "diameterPixels" : 11,
+      "confidence" : 0.95833333333333337,
+      "imageY" : 0.37759691582780042,
+      "relativeTime" : -0.058251250000012078,
+      "frameIndex" : 6,
+      "timestamp" : 3963.4703850000001,
+      "imageX" : 0.29758454106280197,
+      "diameterNorm" : 0.030555555555555555
+    },
+    {
+      "positionMeters" : {
+        "x" : -0.2760569579624465,
+        "y" : 0.098751775775985734,
+        "z" : 0.97386384501314405
+      },
+      "confidence" : 0.95833333333333337,
+      "diameterNorm" : 0.030555555555555555,
+      "frameIndex" : 7,
+      "relativeTime" : -0.054090417000224988,
+      "imageX" : 0.29758454106280197,
+      "imageY" : 0.37759691582780042,
+      "diameterPixels" : 11,
+      "timestamp" : 3963.4745458329999
+    },
+    {
+      "diameterPixels" : 11,
+      "positionMeters" : {
+        "y" : 0.098751775775985734,
+        "x" : -0.2760569579624465,
+        "z" : 0.97386384501314405
+      },
+      "frameIndex" : 8,
+      "imageX" : 0.29758454106280197,
+      "confidence" : 0.95833333333333337,
+      "relativeTime" : -0.049929625000004307,
+      "diameterNorm" : 0.030555555555555555,
+      "timestamp" : 3963.4787066250001,
+      "imageY" : 0.37759691582780042
+    },
+    {
+      "relativeTime" : -0.045768834000227798,
+      "timestamp" : 3963.4828674159999,
+      "diameterPixels" : 11,
+      "imageX" : 0.29758454106280197,
+      "positionMeters" : {
+        "y" : 0.098751775775985734,
+        "z" : 0.97386384501314405,
+        "x" : -0.2760569579624465
+      },
+      "frameIndex" : 9,
+      "imageY" : 0.37759691582780042,
+      "diameterNorm" : 0.030555555555555555,
+      "confidence" : 0.95833333333333337
+    },
+    {
+      "confidence" : 0.95833333333333337,
+      "frameIndex" : 10,
+      "relativeTime" : -0.041607999999996537,
+      "positionMeters" : {
+        "x" : -0.2760569579624465,
+        "y" : 0.098751775775985734,
+        "z" : 0.97386384501314405
+      },
+      "imageX" : 0.29758454106280197,
+      "diameterPixels" : 11,
+      "diameterNorm" : 0.030555555555555555,
+      "imageY" : 0.37759691582780042,
+      "timestamp" : 3963.4870282500001
+    },
+    {
+      "imageY" : 0.37759691582780042,
+      "confidence" : 0.95833333333333337,
+      "positionMeters" : {
+        "z" : 0.97386384501314405,
+        "x" : -0.2760569579624465,
+        "y" : 0.098751775775985734
+      },
+      "diameterNorm" : 0.030555555555555555,
+      "relativeTime" : -0.037447209000220028,
+      "timestamp" : 3963.4911890409999,
+      "frameIndex" : 11,
+      "diameterPixels" : 11,
+      "imageX" : 0.29758454106280197
+    },
+    {
+      "frameIndex" : 12,
+      "diameterPixels" : 11,
+      "imageX" : 0.29758454106280197,
+      "diameterNorm" : 0.030555555555555555,
+      "confidence" : 0.95833333333333337,
+      "relativeTime" : -0.033286374999988766,
+      "imageY" : 0.37759691582780042,
+      "positionMeters" : {
+        "x" : -0.2760569579624465,
+        "y" : 0.098751775775985734,
+        "z" : 0.97386384501314405
+      },
+      "timestamp" : 3963.4953498750001
+    },
+    {
+      "frameIndex" : 13,
+      "diameterPixels" : 11,
+      "imageX" : 0.29758454106280197,
+      "positionMeters" : {
+        "z" : 0.97386384501314405,
+        "y" : 0.098751775775985734,
+        "x" : -0.2760569579624465
+      },
+      "confidence" : 0.95833333333333337,
+      "relativeTime" : -0.029125584000212257,
+      "diameterNorm" : 0.030555555555555555,
+      "timestamp" : 3963.4995106659999,
+      "imageY" : 0.37759691582780042
+    },
+    {
+      "positionMeters" : {
+        "x" : -0.2768954907052269,
+        "y" : 0.098814609960842806,
+        "z" : 0.97386384501314405
+      },
+      "relativeTime" : -0.024964791999991576,
+      "confidence" : 0.91666666666666663,
+      "diameterPixels" : 11,
+      "frameIndex" : 14,
+      "timestamp" : 3963.5036714580001,
+      "imageY" : 0.37751903269144649,
+      "diameterNorm" : 0.030555555555555555,
+      "imageX" : 0.29696969696969694
+    },
+    {
+      "diameterNorm" : 0.030555555555555555,
+      "timestamp" : 3963.5078322499999,
+      "relativeTime" : -0.020804000000225642,
+      "imageX" : 0.29696969696969694,
+      "positionMeters" : {
+        "y" : 0.098814609960842806,
+        "z" : 0.97386384501314405,
+        "x" : -0.2768954907052269
+      },
+      "confidence" : 0.91666666666666663,
+      "frameIndex" : 15,
+      "imageY" : 0.37751903269144649,
+      "diameterPixels" : 11
+    },
+    {
+      "confidence" : 0.95833333333333337,
+      "diameterNorm" : 0.030555555555555555,
+      "relativeTime" : -0.016643166999983805,
+      "frameIndex" : 16,
+      "positionMeters" : {
+        "x" : -0.2760569579624465,
+        "y" : 0.098751775775985734,
+        "z" : 0.97386384501314405
+      },
+      "imageY" : 0.37759691582780042,
+      "imageX" : 0.29758454106280197,
+      "diameterPixels" : 11,
+      "timestamp" : 3963.5119930830001
+    },
+    {
+      "diameterPixels" : 11,
+      "diameterNorm" : 0.030555555555555555,
+      "timestamp" : 3963.5161539159999,
+      "imageY" : 0.37759691582780042,
+      "relativeTime" : -0.012482334000196715,
+      "frameIndex" : 17,
+      "positionMeters" : {
+        "y" : 0.098751775775985734,
+        "z" : 0.97386384501314405,
+        "x" : -0.2760569579624465
+      },
+      "imageX" : 0.29758454106280197,
+      "confidence" : 0.95833333333333337
+    },
+    {
+      "imageY" : 0.37852216748768475,
+      "imageX" : 0.30111111111111111,
+      "diameterNorm" : 0.030555555555555555,
+      "relativeTime" : -0.0083215839999866148,
+      "confidence" : 1,
+      "timestamp" : 3963.5203146660001,
+      "frameIndex" : 18,
+      "positionMeters" : {
+        "y" : 0.098005305659883801,
+        "z" : 0.97386384501314405,
+        "x" : -0.27124737373064256
+      },
+      "diameterPixels" : 11
+    }
+  ],
+  "vlaBucket" : "unknown",
+  "estimatedSidespinRpmSigned" : null,
+  "clubPointsUsed" : 0,
+  "smashFactor" : null,
+  "clubSpeedMph" : null,
+  "carryYards" : null,
+  "estimatedFaceAngleDisplay" : "37.4° R",
+  "zeroDegreeReferenceAngleDegrees" : 0,
+  "ballMethod" : "unavailable"
+}

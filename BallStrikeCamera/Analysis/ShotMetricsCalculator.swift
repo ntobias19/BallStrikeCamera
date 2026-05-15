@@ -93,6 +93,9 @@ struct ShotMetricsCalculator {
         carryCorrectionFactor: Double = 0.75
     ) -> ShotMetricsResult? {
         print("Shot metrics calculation started")
+        ModelResourceLoader.logBundleCheck()
+        let flightModel   = FlightModelPredictor.autoLoad()
+        let groundCalibration = GroundCalibration.autoLoad()
 
         guard let calibration = makeCalibration(from: analysis) else {
             print("Shot metrics skipped: no frame image dimensions")
@@ -116,19 +119,18 @@ struct ShotMetricsCalculator {
             calibration: calibration
         )
 
-        // VLA model: try trained ridge regression
-        let postImpactObs = ball3DObservations
+        // VLA model: use all post-impact observations for feature extraction (matches Python)
+        let allPostImpactObs = ball3DObservations
             .filter { $0.frameIndex > analysis.detectedImpactFrameIndex }
             .sorted { $0.frameIndex < $1.frameIndex }
-            .prefix(configuration.preferredBallPointLimit)
-            .map { $0 }
         if let model = VLAModelPredictor.autoLoad() {
             let feats = VLAModelPredictor.extractFeatures(
-                from: postImpactObs,
+                from: allPostImpactObs,
                 hlaDegrees: ballLaunch.hlaDegrees,
                 ballSpeedMph: ballLaunch.ballSpeedMph,
                 impactFrameIndex: analysis.detectedImpactFrameIndex,
-                totalFrames: analysis.frames.count
+                totalFrames: analysis.frames.count,
+                groundCalibration: groundCalibration
             )
             let (rawPred, clampedPred, featVals, mdlWarns) = VLAModelPredictor.predict(
                 features: feats, model: model
@@ -213,7 +215,9 @@ struct ShotMetricsCalculator {
             ballSpeedMph: ballLaunch.ballSpeedMph,
             vlaDegrees: ballLaunch.vlaDegrees,
             hlaDegrees: ballLaunch.hlaDegrees,
-            carryCorrectionFactor: carryCorrectionFactor
+            carryCorrectionFactor: carryCorrectionFactor,
+            flightModel: flightModel,
+            backspinRpm: spin.estimatedBackspinRpm
         )
 
         var warnings: [String] = [calibration.calibrationWarning]

@@ -17,7 +17,9 @@ struct DistanceEstimator {
         ballSpeedMph: Double?,
         vlaDegrees: Double?,
         hlaDegrees: Double?,
-        carryCorrectionFactor: Double = 0.75
+        carryCorrectionFactor: Double = 0.75,
+        flightModel: FlightModelPredictor? = nil,
+        backspinRpm: Double? = nil
     ) -> DistanceEstimate {
         var warnings = [String]()
 
@@ -52,6 +54,37 @@ struct DistanceEstimator {
         let idealCarryMeters = (speedMps * speedMps * sin(2.0 * vlaRad)) / 9.80665
         let idealCarryYards  = idealCarryMeters * 1.09361
 
+        // Flight model path (trained ridge regression)
+        if let fm = flightModel {
+            let carry      = clamp(fm.predictCarry(ballSpeedMph: ballSpeedMph,
+                                                   vlaDegrees: clampedVLA,
+                                                   idealCarryYards: idealCarryYards), 0, 450)
+            let rollout    = clamp(fm.predictRollout(ballSpeedMph: ballSpeedMph,
+                                                     vlaDegrees: clampedVLA,
+                                                     idealCarryYards: idealCarryYards,
+                                                     carryYards: carry,
+                                                     backspinRpm: backspinRpm), 0, 150)
+            let total      = min(carry + rollout, 400)
+            let rollFrac   = carry > 0 ? rollout / carry : 0
+            if total > 350 {
+                warnings.append("Total distance estimate >350 yd — verify calibration and FOV settings.")
+            }
+            warnings.append(String(format: "FlightModel: carry=%.0f yd  rollout=%.0f yd  total=%.0f yd",
+                                   carry, rollout, total))
+            return DistanceEstimate(
+                idealCarryYards: idealCarryYards > 0 ? idealCarryYards : nil,
+                carryCorrectionFactor: 1.0,
+                carryYards: carry > 0 ? carry : nil,
+                rolloutYards: rollout > 0 ? rollout : nil,
+                totalYards: total > 0 ? total : nil,
+                rolloutFraction: rollFrac,
+                vlaBucket: "flightModel",
+                method: "flightModel_ridge",
+                warnings: warnings
+            )
+        }
+
+        // Physics fallback
         let correctionFactor = clamp(carryCorrectionFactor, 0.40, 1.20)
         let carry = clamp(idealCarryYards * correctionFactor, 0, 450)
 

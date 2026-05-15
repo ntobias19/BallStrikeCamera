@@ -27,8 +27,8 @@ struct ClubTracker {
         var approachDirectionX: CGFloat = -1
         var approachDirectionY: CGFloat = 0
         var ballExclusionRadiusScale: CGFloat = 1.8
-        var clubSearchROIScaleX: CGFloat = 8.0
-        var clubSearchROIScaleY: CGFloat = 5.0
+        var clubSearchROIScaleX: CGFloat = 10.5
+        var clubSearchROIScaleY: CGFloat = 6.0
         var minClubDarknessOrEdgeThreshold: Int = 85
         var useFrameDifference: Bool = true
         var frameDifferenceThreshold: Int = 34
@@ -50,6 +50,7 @@ struct ClubTracker {
         var closestX: Int
         var closestY: Int
         var closestDistanceSquared: Double
+        var motionPixelCount: Int = 0  // pixels that triggered frameDiff (not just static dark)
     }
 
     let configuration: Configuration
@@ -65,6 +66,12 @@ struct ClubTracker {
         let start = max(0, impact - 10)
         let end = min(analysis.frames.count - 1, impact + 1)
         var observations: [ClubObservation] = []
+
+        // Duplicate-point rejection state
+        let duplicateDistanceNormThreshold = 0.003
+        let maxDuplicateClubFrames = 1
+        var lastAcceptedCenter: CGPoint? = nil
+        var duplicateStreak = 0
 
         for frameIndex in start...end {
             let frame = analysis.frames[frameIndex]
@@ -116,6 +123,34 @@ struct ClubTracker {
                     continue
                 }
 
+                let candidateCX = CGFloat(selected.sumX) / CGFloat(selected.count) / CGFloat(current.width)
+                let candidateCY = CGFloat(selected.sumY) / CGFloat(selected.count) / CGFloat(current.height)
+
+                // Duplicate-point rejection: reject static club detections
+                if let last = lastAcceptedCenter {
+                    let dx = Double(candidateCX - last.x)
+                    let dy = Double(candidateCY - last.y)
+                    let distNorm = sqrt(dx * dx + dy * dy)
+                    if distNorm < duplicateDistanceNormThreshold {
+                        duplicateStreak += 1
+                        if duplicateStreak > maxDuplicateClubFrames {
+                            let obs = emptyObservation(
+                                frame, roi: roi, ballCenter: ballCenter,
+                                ballExclusionDiameter: exclusionDiameter,
+                                reason: String(format: "rejected_duplicate_static_club_point(streak=%d dist=%.5f)", duplicateStreak, distNorm)
+                            )
+                            observations.append(obs)
+                            log(obs)
+                            continue
+                        }
+                    } else {
+                        duplicateStreak = 0
+                        lastAcceptedCenter = CGPoint(x: candidateCX, y: candidateCY)
+                    }
+                } else {
+                    lastAcceptedCenter = CGPoint(x: candidateCX, y: candidateCY)
+                }
+
                 let bboxNorm = CGRect(
                     x: CGFloat(selected.minX) / CGFloat(current.width),
                     y: CGFloat(selected.minY) / CGFloat(current.height),
@@ -123,13 +158,14 @@ struct ClubTracker {
                     height: CGFloat(max(1, selected.maxY - selected.minY + 1)) / CGFloat(current.height)
                 )
                 let usedDiff = configuration.useFrameDifference && previous != nil
+                let motionFraction = selected.count > 0 ? Double(selected.motionPixelCount) / Double(selected.count) : 0
 
                 let obs = ClubObservation(
                     frameIndex: frame.frameIndex,
                     timestamp: frame.timestamp,
                     relativeTime: frame.relativeTime,
-                    centerX: CGFloat(selected.sumX) / CGFloat(selected.count) / CGFloat(current.width),
-                    centerY: CGFloat(selected.sumY) / CGFloat(selected.count) / CGFloat(current.height),
+                    centerX: candidateCX,
+                    centerY: candidateCY,
                     leadingEdgeX: CGFloat(selected.closestX) / CGFloat(current.width),
                     leadingEdgeY: CGFloat(selected.closestY) / CGFloat(current.height),
                     clubBoundingBox: bboxNorm,
@@ -138,7 +174,7 @@ struct ClubTracker {
                     ballExclusionCenterX: ballX,
                     ballExclusionCenterY: ballY,
                     ballExclusionDiameter: exclusionDiameter,
-                    debugReason: "club_blob_frame_diff_or_dark",
+                    debugReason: String(format: "club_blob motionFrac=%.2f duplicateStreak=%d", motionFraction, duplicateStreak),
                     detectionMode: usedDiff ? "frameDifference_or_dark" : "dark",
                     ballExclusionWasApplied: true,
                     frameDifferenceWasUsed: usedDiff
@@ -168,17 +204,26 @@ struct ClubTracker {
         var centerX = ballCenter.x
         var centerY = ballCenter.y
         if configuration.searchBehindBallEnabled {
-            centerX += configuration.approachDirectionX * width * 0.22
-            centerY += configuration.approachDirectionY * height * 0.22
+            centerX += configuration.approachDirectionX * width * 0.40
+            centerY += configuration.approachDirectionY * height * 0.40
         }
 
-        return CGRect(
+        let roi = CGRect(
             x: centerX - width / 2,
             y: centerY - height / 2,
             width: width,
             height: height
         )
         .intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
+
+        if configuration.debugLoggingEnabled {
+            print(String(format: "ClubTracker ROI ball=(%.4f,%.4f) d=%.4f scaleX=%.1f scaleY=%.1f roi=(x:%.4f y:%.4f w:%.4f h:%.4f)",
+                         ballCenter.x, ballCenter.y, ballDiameter,
+                         configuration.clubSearchROIScaleX, configuration.clubSearchROIScaleY,
+                         roi.minX, roi.minY, roi.width, roi.height))
+        }
+
+        return roi
     }
 
     private func findClubBlob(
@@ -197,7 +242,8 @@ struct ClubTracker {
 
         let cols = (xEnd - xStart + step - 1) / step
         let rows = (yEnd - yStart + step - 1) / step
-        var active = [Bool](repeating: false, count: cols * rows)
+        var active  = [Bool](repeating: false, count: cols * rows)
+        var isMotion = [Bool](repeating: false, count: cols * rows)
         var visited = [Bool](repeating: false, count: cols * rows)
 
         let ballPx = CGPoint(
@@ -215,9 +261,7 @@ struct ClubTracker {
                 let px = xStart + col * step
                 let dx = Double(CGFloat(px) - ballPx.x)
                 let dy = Double(CGFloat(py) - ballPx.y)
-                if sqrt(dx * dx + dy * dy) <= exclusionRadius {
-                    continue
-                }
+                if sqrt(dx * dx + dy * dy) <= exclusionRadius { continue }
 
                 let i = py * current.width * 4 + px * 4
                 let r = Int(current.bytes[i])
@@ -234,8 +278,10 @@ struct ClubTracker {
                 }
 
                 let isDarkClub = brightness <= configuration.minClubDarknessOrEdgeThreshold
-                let isMoving = canUseDiff && frameDiff >= configuration.frameDifferenceThreshold
-                active[row * cols + col] = isDarkClub || isMoving
+                let moving = canUseDiff && frameDiff >= configuration.frameDifferenceThreshold
+                let idx = row * cols + col
+                active[idx]   = isDarkClub || moving
+                isMotion[idx] = moving
             }
         }
 
@@ -273,6 +319,7 @@ struct ClubTracker {
                     blob.count += 1
                     blob.sumX += px
                     blob.sumY += py
+                    if isMotion[index] { blob.motionPixelCount += 1 }
                     if px < blob.minX { blob.minX = px }
                     if px > blob.maxX { blob.maxX = px }
                     if py < blob.minY { blob.minY = py }
@@ -324,7 +371,9 @@ struct ClubTracker {
         let elongation = max(width / height, height / width)
         let elongationBonus = min(0.04, elongation * 0.004)
         let confidenceBonus = confidence(for: blob) * 0.02
-        return distanceNorm - elongationBonus - confidenceBonus
+        // Penalize static blobs (zero motion pixels) — prefer blobs with actual frame difference
+        let staticPenalty = blob.motionPixelCount == 0 ? 0.10 : 0.0
+        return distanceNorm - elongationBonus - confidenceBonus + staticPenalty
     }
 
     private func confidence(for blob: Blob) -> Double {
@@ -383,11 +432,15 @@ struct ClubTracker {
 
     private func log(_ observation: ClubObservation) {
         guard configuration.debugLoggingEnabled else { return }
-        if let x = observation.leadingEdgeX, let y = observation.leadingEdgeY {
-            print(String(format: "ClubTracker frame=%02d leading=(%.4f, %.4f) conf=%.2f reason=%@",
-                         observation.frameIndex, x, y, observation.confidence, observation.debugReason))
+        let roiStr = observation.searchROI.map {
+            String(format: "roi=(x:%.3f y:%.3f w:%.3f h:%.3f)", $0.minX, $0.minY, $0.width, $0.height)
+        } ?? "roi=nil"
+        if let x = observation.leadingEdgeX, let y = observation.leadingEdgeY,
+           let cx = observation.centerX, let cy = observation.centerY {
+            print(String(format: "ClubTracker frame=%02d center=(%.4f,%.4f) leading=(%.4f,%.4f) conf=%.2f %@ reason=%@",
+                         observation.frameIndex, cx, cy, x, y, observation.confidence, roiStr, observation.debugReason))
         } else {
-            print("ClubTracker frame=\(observation.frameIndex) miss reason=\(observation.debugReason)")
+            print("ClubTracker frame=\(observation.frameIndex) miss \(roiStr) reason=\(observation.debugReason)")
         }
     }
 

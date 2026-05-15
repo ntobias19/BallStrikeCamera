@@ -15,6 +15,7 @@ final class CameraController: NSObject, ObservableObject {
     @Published var latestShotAnalysis: ShotAnalysisResult?
     @Published var analysisStatusText: String = ""
     @Published var showReview: Bool = false
+    @Published var showShotResult: Bool = false
 
     let session = AVCaptureSession()
 
@@ -615,18 +616,47 @@ extension CameraController: AVCaptureVideoDataOutputSampleBufferDelegate {
         isAnalyzingShot = false
         analysisStatusText = "Analysis complete"
         print("Shot analysis complete: \(result.frames.count) frames, impact at index \(result.impactFrameIndex)")
-        print("Showing ShotTrackingReviewView with \(result.frames.count) frames")
-        print("Review screen active; shot pipeline disarmed")
-        showReview = true
+        print("Showing ShotResultView")
+        showShotResult = true
         phase = .reviewingShot
         reviewTriggerLogCount = 0
     }
 
     @MainActor
-    func dismissReview() {
+    func dismissShotPresentation() {
+        showShotResult = false
         showReview = false
-        print("Review dismissed; shot pipeline re-armed")
+        print("Shot result dismissed; shot pipeline re-armed")
         resetShotPipeline(to: .searching, status: "Looking for ball")
+    }
+
+    @MainActor
+    func dismissReview() {
+        dismissShotPresentation()
+    }
+
+    @MainActor
+    func simulateShot() {
+        print("Simulate Shot requested")
+        guard phase != .reviewingShot else {
+            print("Simulate Shot ignored: review screen active")
+            return
+        }
+        guard !isAnalyzingShot else {
+            print("Simulate Shot ignored: analysis already running")
+            return
+        }
+        do {
+            let shot = try SampleShotLoader.loadRawFramesOnly()
+            print("Simulate Shot: running fresh live analysis")
+            statusText = "Simulating shot…"
+            analyzeCapturedFrames(shot.frames,
+                                  lockedBallRect: shot.lockedBallRect,
+                                  lockedImpactROI: shot.lockedImpactROI)
+        } catch {
+            statusText = "Sample shot not found"
+            print("Simulate Shot failed: \(error.localizedDescription)")
+        }
     }
 
     @MainActor

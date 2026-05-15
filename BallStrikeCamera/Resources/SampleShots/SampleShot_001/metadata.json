@@ -1,0 +1,13 @@
+{
+  "locked_ball_rect" : {
+    "x" : 0.27726715686274511,
+    "y" : 0.34019607843137256,
+    "width" : 0.042187500000000003,
+    "height" : 0.074999999999999997
+  },
+  "export_version" : 1,
+  "created_at" : "2026-05-04T18:19:36Z",
+  "fps_estimate" : 240,
+  "frame_count" : 41,
+  "impact_frame_index" : 20
+}

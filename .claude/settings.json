@@ -82,12 +82,29 @@
       "Bash(xcodebuild -scheme BallStrikeCamera -destination \"generic/platform=iOS\")",
       "Bash(xcodebuild -project BallStrikeCamera.xcodeproj -scheme BallStrikeCamera -destination 'generic/platform=iOS' -configuration Debug build)",
       "Bash(zip -r BallStrikeCamera_export.zip BallStrikeCamera/ --exclude \"*.git*\" --exclude \"*DerivedData*\" --exclude \"*.xcuserstate\")",
-      "Bash(xcodebuild -scheme BallStrikeCamera -destination 'generic/platform=iOS' build)"
+      "Bash(xcodebuild -scheme BallStrikeCamera -destination 'generic/platform=iOS' build)",
+      "Bash(mkdir -p /Users/noahtobias/Downloads/BallStrikeCamera/BallStrikeCamera/Resources/SampleShots/SampleShot_001 && mkdir -p /Users/noahtobias/Downloads/BallStrikeCamera/BallStrikeCamera/Simulation && cp /Users/noahtobias/Downloads/ShotExport_20260501_114631/frame_*.png /Users/noahtobias/Downloads/BallStrikeCamera/BallStrikeCamera/Resources/SampleShots/SampleShot_001/ && cp /Users/noahtobias/Downloads/ShotExport_20260501_114631/metadata.json /Users/noahtobias/Downloads/BallStrikeCamera/BallStrikeCamera/Resources/SampleShots/SampleShot_001/ && cp /Users/noahtobias/Downloads/ShotExport_20260501_114631/timestamps.json /Users/noahtobias/Downloads/BallStrikeCamera/BallStrikeCamera/Resources/SampleShots/SampleShot_001/ && echo \"Done\" && ls /Users/noahtobias/Downloads/BallStrikeCamera/BallStrikeCamera/Resources/SampleShots/SampleShot_001/ | wc -l)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\({k:v for k,v in d.items\\(\\) if k in ['totalYards','carryYards','hlaDegrees','vlaDegrees','ballSpeedMph','clubSpeedMph','smashFactor','estimatedBackspinRpm']}\\)\")",
+      "Bash(cp /Users/noahtobias/Downloads/drive-download-20260504T195054Z-3-001/ShotExport_20260504_141936/* /Users/noahtobias/Downloads/BallStrikeCamera/BallStrikeCamera/Resources/SampleShots/SampleShot_001/ && echo \"copied\" && ls /Users/noahtobias/Downloads/BallStrikeCamera/BallStrikeCamera/Resources/SampleShots/SampleShot_001/ | wc -l && ls /Users/noahtobias/Downloads/BallStrikeCamera/BallStrikeCamera/Resources/SampleShots/SampleShot_001/ | head -10)",
+      "Bash(xcodebuild -project BallStrikeCamera.xcodeproj -scheme BallStrikeCamera -sdk iphonesimulator)",
+      "Bash(python3 -c \"import json; d=json.load\\(open\\('/Users/noahtobias/Downloads/vla_model.json'\\)\\); print\\('VLA keys:', list\\(d.keys\\(\\)\\)[:20]\\)\")",
+      "Bash(python3 -c \"import json; d=json.load\\(open\\('/Users/noahtobias/Downloads/ground_ball_size_calibration.json'\\)\\); print\\('Ground keys:', list\\(d.keys\\(\\)\\)[:10]\\)\")",
+      "Bash(python3 -c \"import json; d=json.load\\(open\\('/Users/noahtobias/Downloads/flight_model.json'\\)\\); print\\('Flight keys:', list\\(d.keys\\(\\)\\)[:10]\\)\")",
+      "Bash(plutil -lint /Users/noahtobias/Downloads/BallStrikeCamera/BallStrikeCamera.xcodeproj/project.pbxproj)",
+      "Bash(swift -e ' *)",
+      "Bash(xcodebuild -scheme BallStrikeCamera -destination 'generic/platform=iOS' -configuration Debug build)",
+      "Bash(python3 -c \"import json; d=json.load\\(open\\('/Users/noahtobias/Downloads/BallStrikeCamera/BallStrikeCamera/Resources/Models/ground_ball_size_calibration.json'\\)\\); print\\(list\\(d.keys\\(\\)\\)\\); s=d.get\\('samples',[]\\); print\\(f'samples: {len\\(s\\)}'\\); print\\('sample[0]:', s[0] if s else 'N/A'\\)\")",
+      "Bash(xcodebuild -project BallStrikeCamera.xcodeproj -scheme BallStrikeCamera -destination 'generic/platform=iOS' -configuration Debug CODE_SIGNING_ALLOWED=NO build)",
+      "Bash(grep -v \"^$\")",
+      "Bash(swift -typecheck /Users/noahtobias/Downloads/BallStrikeCamera/BallStrikeCamera/Analysis/ShotCompositeRenderer.swift)",
+      "Bash(swiftc -parse /Users/noahtobias/Downloads/BallStrikeCamera/BallStrikeCamera/Analysis/ShotCompositeRenderer.swift)"
     ],
     "additionalDirectories": [
       "/tmp",
       "/private/tmp",
-      "/Users/noahtobias/Downloads"
+      "/Users/noahtobias/Downloads",
+      "/Users/noahtobias/Downloads/ShotExport_20260501_114631",
+      "/Users/noahtobias/Downloads/drive-download-20260504T195054Z-3-001/ShotExport_20260504_141936"
     ]
   }
 }
