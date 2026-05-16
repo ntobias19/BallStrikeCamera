@@ -5,24 +5,27 @@ struct RangeCameraScreen: View {
     @Environment(\.dismiss) private var dismiss
     @State private var selectedClub = "7 Iron"
 
+    var context: ShotContext? = nil
+    var onShotComplete: (() -> Void)? = nil
+
     var body: some View {
         LaunchMonitorScaffoldView(
             camera: camera,
-            modeTitle: "Range",
+            modeTitle: context?.sourceMode == .course ? "Course" : "Range",
             selectedClub: $selectedClub,
             shotCount: 12,
+            context: context,
             onDismiss: {
-                print("Dismiss RangeCameraScreen")
+                OrientationManager.shared.lockPortrait()
+                dismiss()
+            },
+            onShotComplete: {
+                onShotComplete?()
                 OrientationManager.shared.lockPortrait()
                 dismiss()
             }
         )
-        .onAppear {
-            print("Navigating to RangeCameraScreen")
-            OrientationManager.shared.lockLandscape()
-        }
-        .onDisappear {
-            OrientationManager.shared.lockPortrait()
-        }
+        .onAppear  { OrientationManager.shared.lockLandscape() }
+        .onDisappear { OrientationManager.shared.lockPortrait() }
     }
 }

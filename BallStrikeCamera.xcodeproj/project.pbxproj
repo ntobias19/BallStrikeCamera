@@ -114,6 +114,19 @@
 		BF000003000000000000001E /* HoleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF000002000000000000001E /* HoleView.swift */; };
 		BF000003000000000000001F /* ScorecardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF000002000000000000001F /* ScorecardView.swift */; };
 				BF0000050000000000000002 /* OrientationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000050000000000000001 /* OrientationManager.swift */; };
+		BF0000060000000000000002 /* TCTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000060000000000000001 /* TCTheme.swift */; };
+		BF0000060000000000000004 /* TrueCarryBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000060000000000000003 /* TrueCarryBackground.swift */; };
+		BF0000060000000000000006 /* TCCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000060000000000000005 /* TCCards.swift */; };
+		BF0000060000000000000008 /* TCBottomDock.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000060000000000000007 /* TCBottomDock.swift */; };
+		BF000006000000000000000A /* TrueCarryHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000060000000000000009 /* TrueCarryHomeView.swift */; };
+		BF000006000000000000000C /* TrueCarryInsightsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF000006000000000000000B /* TrueCarryInsightsView.swift */; };
+		BF000006000000000000000E /* TrueCarryPlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF000006000000000000000D /* TrueCarryPlayView.swift */; };
+		BF0000060000000000000010 /* TrueCarryLockerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF000006000000000000000F /* TrueCarryLockerView.swift */; };
+		BF0000060000000000000012 /* ShotContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000060000000000000011 /* ShotContext.swift */; };
+		BF0000060000000000000014 /* TrueCarryCoursesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000060000000000000013 /* TrueCarryCoursesView.swift */; };
+		BF0000060000000000000016 /* CourseModeGPSHoleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000060000000000000015 /* CourseModeGPSHoleView.swift */; };
+		BF0000060000000000000018 /* ScoreEntryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000060000000000000017 /* ScoreEntryView.swift */; };
+		BF000006000000000000001A /* PastSessionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000060000000000000019 /* PastSessionsView.swift */; };
 		/* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -226,6 +239,19 @@
 		BF000002000000000000001E /* HoleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoleView.swift; sourceTree = "<group>"; };
 		BF000002000000000000001F /* ScorecardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScorecardView.swift; sourceTree = "<group>"; };
 				BF0000050000000000000001 /* OrientationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrientationManager.swift; sourceTree = "<group>"; };
+			BF0000060000000000000001 /* TCTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TCTheme.swift; sourceTree = "<group>"; };
+			BF0000060000000000000003 /* TrueCarryBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrueCarryBackground.swift; sourceTree = "<group>"; };
+			BF0000060000000000000005 /* TCCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TCCards.swift; sourceTree = "<group>"; };
+			BF0000060000000000000007 /* TCBottomDock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TCBottomDock.swift; sourceTree = "<group>"; };
+			BF0000060000000000000009 /* TrueCarryHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrueCarryHomeView.swift; sourceTree = "<group>"; };
+			BF000006000000000000000B /* TrueCarryInsightsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrueCarryInsightsView.swift; sourceTree = "<group>"; };
+			BF000006000000000000000D /* TrueCarryPlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrueCarryPlayView.swift; sourceTree = "<group>"; };
+			BF000006000000000000000F /* TrueCarryLockerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrueCarryLockerView.swift; sourceTree = "<group>"; };
+			BF0000060000000000000011 /* ShotContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShotContext.swift; sourceTree = "<group>"; };
+			BF0000060000000000000013 /* TrueCarryCoursesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrueCarryCoursesView.swift; sourceTree = "<group>"; };
+			BF0000060000000000000015 /* CourseModeGPSHoleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CourseModeGPSHoleView.swift; sourceTree = "<group>"; };
+			BF0000060000000000000017 /* ScoreEntryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoreEntryView.swift; sourceTree = "<group>"; };
+			BF0000060000000000000019 /* PastSessionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PastSessionsView.swift; sourceTree = "<group>"; };
 		/* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -348,6 +374,13 @@
 				BF0000010000000000000144 /* AnimatedShotFlightView.swift */,
 				BF0000010000000000000145 /* CinematicBallFlightView.swift */,
 				BF0000010000000000000351 /* AppShell */,
+				BF0000040000000000000008 /* Theme */,
+				BF0000040000000000000009 /* Components */,
+				BF000004000000000000000A /* Home */,
+				BF000004000000000000000B /* Insights */,
+				BF000004000000000000000C /* Play */,
+				BF000004000000000000000D /* Locker */,
+				BF000004000000000000000E /* Courses */,
 			);
 			path = UI;
 			sourceTree = "<group>";
@@ -381,6 +414,7 @@
 				BF0000010000000000000102 /* CameraPhase.swift */,
 				BF0000010000000000000103 /* PlatformImage.swift */,
 				BF000001000000000000011C /* ShotAnalysisModels.swift */,
+				BF0000060000000000000011 /* ShotContext.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -528,6 +562,68 @@
 				BF000002000000000000001F /* ScorecardView.swift */,
 			);
 			path = Course;
+			sourceTree = "<group>";
+		};
+
+		BF0000040000000000000008 /* Theme */ = {
+			isa = PBXGroup;
+			children = (
+				BF0000060000000000000001 /* TCTheme.swift */,
+				BF0000060000000000000003 /* TrueCarryBackground.swift */,
+			);
+			path = Theme;
+			sourceTree = "<group>";
+		};
+		BF0000040000000000000009 /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				BF0000060000000000000005 /* TCCards.swift */,
+				BF0000060000000000000007 /* TCBottomDock.swift */,
+			);
+			path = Components;
+			sourceTree = "<group>";
+		};
+		BF000004000000000000000A /* Home */ = {
+			isa = PBXGroup;
+			children = (
+				BF0000060000000000000009 /* TrueCarryHomeView.swift */,
+			);
+			path = Home;
+			sourceTree = "<group>";
+		};
+		BF000004000000000000000B /* Insights */ = {
+			isa = PBXGroup;
+			children = (
+				BF000006000000000000000B /* TrueCarryInsightsView.swift */,
+			);
+			path = Insights;
+			sourceTree = "<group>";
+		};
+		BF000004000000000000000C /* Play */ = {
+			isa = PBXGroup;
+			children = (
+				BF000006000000000000000D /* TrueCarryPlayView.swift */,
+			);
+			path = Play;
+			sourceTree = "<group>";
+		};
+		BF000004000000000000000D /* Locker */ = {
+			isa = PBXGroup;
+			children = (
+				BF000006000000000000000F /* TrueCarryLockerView.swift */,
+			);
+			path = Locker;
+			sourceTree = "<group>";
+		};
+		BF000004000000000000000E /* Courses */ = {
+			isa = PBXGroup;
+			children = (
+				BF0000060000000000000013 /* TrueCarryCoursesView.swift */,
+				BF0000060000000000000015 /* CourseModeGPSHoleView.swift */,
+				BF0000060000000000000017 /* ScoreEntryView.swift */,
+				BF0000060000000000000019 /* PastSessionsView.swift */,
+			);
+			path = Courses;
 			sourceTree = "<group>";
 		};
 		/* End PBXGroup section */
@@ -705,6 +801,19 @@
 				BF000003000000000000001E /* HoleView.swift in Sources */,
 				BF000003000000000000001F /* ScorecardView.swift in Sources */,
 				BF0000050000000000000002 /* OrientationManager.swift in Sources */,
+				BF0000060000000000000002 /* TCTheme.swift in Sources */,
+				BF0000060000000000000004 /* TrueCarryBackground.swift in Sources */,
+				BF0000060000000000000006 /* TCCards.swift in Sources */,
+				BF0000060000000000000008 /* TCBottomDock.swift in Sources */,
+				BF000006000000000000000A /* TrueCarryHomeView.swift in Sources */,
+				BF000006000000000000000C /* TrueCarryInsightsView.swift in Sources */,
+				BF000006000000000000000E /* TrueCarryPlayView.swift in Sources */,
+				BF0000060000000000000010 /* TrueCarryLockerView.swift in Sources */,
+				BF0000060000000000000012 /* ShotContext.swift in Sources */,
+				BF0000060000000000000014 /* TrueCarryCoursesView.swift in Sources */,
+				BF0000060000000000000016 /* CourseModeGPSHoleView.swift in Sources */,
+				BF0000060000000000000018 /* ScoreEntryView.swift in Sources */,
+				BF000006000000000000001A /* PastSessionsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

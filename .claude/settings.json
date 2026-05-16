@@ -99,7 +99,9 @@
       "Bash(swift -typecheck /Users/noahtobias/Downloads/BallStrikeCamera/BallStrikeCamera/Analysis/ShotCompositeRenderer.swift)",
       "Bash(swiftc -parse /Users/noahtobias/Downloads/BallStrikeCamera/BallStrikeCamera/Analysis/ShotCompositeRenderer.swift)",
       "Bash(xcodebuild -project BallStrikeCamera.xcodeproj -scheme BallStrikeCamera -destination 'generic/platform=iOS Simulator' -configuration Debug build)",
-      "Bash(xcodebuild -project BallStrikeCamera.xcodeproj -scheme BallStrikeCamera -destination \"generic/platform=iOS Simulator\" build)"
+      "Bash(xcodebuild -project BallStrikeCamera.xcodeproj -scheme BallStrikeCamera -destination \"generic/platform=iOS Simulator\" build)",
+      "Bash(xcodebuild -scheme BallStrikeCamera -destination 'platform=iOS Simulator,name=iPhone 16' build)",
+      "Bash(xcodebuild -scheme BallStrikeCamera -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build)"
     ],
     "additionalDirectories": [
       "/tmp",

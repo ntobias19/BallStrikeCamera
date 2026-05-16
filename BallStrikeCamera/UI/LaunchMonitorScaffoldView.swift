@@ -5,7 +5,9 @@ struct LaunchMonitorScaffoldView: View {
     let modeTitle: String
     @Binding var selectedClub: String
     let shotCount: Int
+    var context: ShotContext? = nil
     var onDismiss: () -> Void = {}
+    var onShotComplete: (() -> Void)? = nil
 
     var body: some View {
         GeometryReader { geo in
@@ -132,8 +134,9 @@ struct LaunchMonitorScaffoldView: View {
         .persistentSystemOverlays(.hidden)
         .fullScreenCover(isPresented: $camera.showShotResult) {
             if let analysis = camera.latestShotAnalysis {
-                ShotResultView(analysis: analysis) {
+                ShotResultView(analysis: analysis, context: context) {
                     camera.dismissShotPresentation()
+                    onShotComplete?()
                 }
             }
         }

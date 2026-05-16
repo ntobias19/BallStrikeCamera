@@ -25,6 +25,7 @@ private func drawGolfBall(ctx: GraphicsContext, center: CGPoint, radius r: CGFlo
 struct ShotResultView: View {
     let analysis: ShotAnalysisResult
     let onDone: () -> Void
+    var context: ShotContext? = nil
 
     @State private var animationStartDate: Date? = nil
     @State private var animationFinished: Bool   = false
@@ -105,12 +106,17 @@ struct ShotResultView: View {
 
                         Rectangle().fill(Color.white.opacity(0.09)).frame(width: 1)
 
-                        // Right: top-down map
-                        Canvas { ctx, size in
-                            drawTopDown(ctx: ctx, size: size, fp: fp, rp: rp,
-                                        showCarry: showCarry, showTotal: showTotal)
+                        // Right: top-down map or course context panel
+                        if context?.sourceMode == .course {
+                            courseContextPanel
+                                .frame(width: geo.size.width * 0.30)
+                        } else {
+                            Canvas { ctx, size in
+                                drawTopDown(ctx: ctx, size: size, fp: fp, rp: rp,
+                                            showCarry: showCarry, showTotal: showTotal)
+                            }
+                            .frame(width: geo.size.width * 0.30)
                         }
-                        .frame(width: geo.size.width * 0.30)
                     }
                     .frame(maxHeight: .infinity)
                 }
@@ -150,6 +156,87 @@ struct ShotResultView: View {
     }
 
     private func openReplay() { showReplay = true }
+
+    // MARK: - Course Context Panel (right side for course mode)
+
+    private var courseContextPanel: some View {
+        VStack(spacing: 0) {
+            // Course info header
+            VStack(spacing: 6) {
+                Image(systemName: "flag.fill")
+                    .font(.system(size: 20))
+                    .foregroundColor(Color(red: 0.55, green: 0.73, blue: 0.37))
+
+                if let name = context?.courseName {
+                    Text(name)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.70))
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                }
+
+                if let hole = context?.holeNumber {
+                    Text("Hole \(hole)")
+                        .font(.system(size: 13, weight: .black))
+                        .foregroundColor(.white)
+                }
+
+                if let par = context?.holePar {
+                    Text("Par \(par)")
+                        .font(.system(size: 10))
+                        .foregroundColor(.white.opacity(0.50))
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
+
+            Divider().background(Color.white.opacity(0.12))
+
+            // Carry to par remaining
+            VStack(spacing: 8) {
+                if let carry = m?.distance.carryYards,
+                   let yd = context?.holeYardage {
+                    let remaining = max(0, yd - Int(carry))
+                    VStack(spacing: 2) {
+                        Text("\(remaining)")
+                            .font(.system(size: 26, weight: .black, design: .rounded))
+                            .foregroundColor(Color(red: 0.0, green: 0.85, blue: 1.0))
+                        Text("yd left")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.45))
+                    }
+                }
+
+                VStack(spacing: 2) {
+                    Text(yds(m?.distance.carryYards))
+                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                        .foregroundColor(Self.airborneColor)
+                    Text("carry")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.40))
+                }
+            }
+            .padding(.top, 10)
+
+            Spacer()
+
+            // Direction indicator
+            if let hla = m?.ballLaunch.hlaDegrees {
+                VStack(spacing: 4) {
+                    Image(systemName: hla < -1 ? "arrow.up.left" :
+                                      hla > 1  ? "arrow.up.right" : "arrow.up")
+                        .font(.system(size: 18))
+                        .foregroundColor(Self.rolloutColor)
+                    Text(m?.ballLaunch.hlaDisplay ?? "")
+                        .font(.system(size: 9))
+                        .foregroundColor(.white.opacity(0.50))
+                }
+                .padding(.bottom, 10)
+            }
+        }
+        .background(Color(white: 0.08))
+    }
 
     // MARK: - Top Bar
 
