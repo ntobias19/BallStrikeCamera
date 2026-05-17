@@ -2,28 +2,59 @@ import SwiftUI
 
 struct TrueCarryLockerView: View {
     @EnvironmentObject var session: AuthSessionStore
-    @State private var showClubs     = false
-    @State private var showSessions  = false
+    @State private var showClubs    = false
+    @State private var showSessions = false
+    @State private var clubs: [UserClub]     = []
+    @State private var shots: [SavedShot]    = []
+    @State private var rounds: [CourseRound] = []
 
     private var profile: UserProfile? { session.userProfile }
     private var user: AppUser?        { session.currentUser }
+
+    // MARK: - Derived helpers
+
+    private var userInitials: String {
+        let name = profile?.displayName ?? user?.name ?? "G"
+        let parts = name.components(separatedBy: " ")
+        if parts.count >= 2, let f = parts[0].first, let l = parts[1].first {
+            return "\(f)\(l)"
+        }
+        return String(name.prefix(2)).uppercased()
+    }
+
+    private var displayName: String {
+        profile?.displayName ?? user?.name ?? "Golfer"
+    }
+
+    private var homeCourseName: String {
+        let name = profile?.homeCourseName ?? ""
+        return name.isEmpty ? "No home course set" : name
+    }
+
+    // MARK: - Body
 
     var body: some View {
         ZStack {
             TrueCarryBackground()
             ScrollView(showsIndicators: false) {
-                VStack(spacing: TCTheme.sectionGap) {
-                    headerSection
-                    profileCard
-                    statsRow
-                    savedShotsSection
-                    gearSection
-                    settingsSection
-                    signOutButton
-                    Spacer(minLength: 100)
+                VStack(spacing: 0) {
+                    TCHeaderBar(initials: userInitials) {
+                        TCBellButton(badgeCount: 2) {}
+                        TCIconButton(icon: "gearshape.fill") {}
+                    }
+                    VStack(spacing: TCTheme.sectionGap) {
+                        profileCard
+                        clubsInBagCard
+                        milestonesCard
+                        notesCard
+                        savedShotsCard
+                        settingsRowCard
+                        signOutButton
+                        Spacer(minLength: 140)
+                    }
+                    .padding(.horizontal, TCTheme.hPad)
+                    .padding(.top, 8)
                 }
-                .padding(.horizontal, TCTheme.hPad)
-                .padding(.top, 8)
             }
         }
         .navigationBarHidden(true)
@@ -39,158 +70,249 @@ struct TrueCarryLockerView: View {
             NavigationStack { PastSessionsView() }
                 .preferredColorScheme(.dark)
         }
+        .task {
+            if let uid = user?.id {
+                async let c = try? await session.backend.loadClubs(userId: uid)
+                async let s = try? await session.backend.loadShots(userId: uid)
+                async let r = try? await session.backend.loadCourseRounds(userId: uid)
+                clubs  = await c ?? []
+                shots  = await s ?? []
+                rounds = await r ?? []
+            }
+        }
     }
 
-    // MARK: Header
-
-    private var headerSection: some View {
-        Text("Locker")
-            .font(.system(size: 32, weight: .black))
-            .foregroundColor(TCTheme.textPrimary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, 8)
-    }
-
-    // MARK: Profile Card
+    // MARK: - Profile Card
 
     private var profileCard: some View {
-        HStack(spacing: 18) {
-            Circle()
-                .fill(TCTheme.goldGradient)
-                .frame(width: 68, height: 68)
-                .overlay(
-                    Text(String((profile?.displayName ?? user?.name ?? "G").prefix(1)))
-                        .font(.system(size: 28, weight: .black))
-                        .foregroundColor(.black)
-                )
-                .shadow(color: TCTheme.gold.opacity(0.35), radius: 12)
+        HStack(spacing: 16) {
+            // Avatar with premium gold ring
+            ZStack {
+                Circle()
+                    .fill(TCTheme.panelRaised)
+                    .frame(width: 76, height: 76)
+                Circle()
+                    .strokeBorder(TCTheme.goldGradient, lineWidth: 3)
+                    .frame(width: 76, height: 76)
+                Text(String(userInitials.prefix(2)).uppercased())
+                    .font(.system(size: 28, weight: .black))
+                    .foregroundColor(TCTheme.gold)
+            }
+            .shadow(color: TCTheme.gold.opacity(0.35), radius: 14)
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text(profile?.displayName ?? user?.name ?? "Golfer")
-                    .font(.system(size: 20, weight: .bold))
+            VStack(alignment: .leading, spacing: 8) {
+                Text(displayName)
+                    .font(.system(size: 26, weight: .bold, design: .serif))
                     .foregroundColor(TCTheme.textPrimary)
-                HStack(spacing: 8) {
-                    TCPill(text: profile?.handedness.rawValue ?? "Right", color: TCTheme.cyan)
-                    TCPill(text: user?.subscriptionStatus.rawValue.capitalized ?? "Free", color: TCTheme.gold)
+
+                HStack(spacing: 4) {
+                    Image(systemName: "location.fill")
+                        .font(.system(size: 10))
+                        .foregroundColor(TCTheme.sage)
+                    Text(homeCourseName)
+                        .font(.system(size: 12))
+                        .foregroundColor(TCTheme.textMuted)
                 }
-                Text(profile?.homeCourseName.isEmpty == false ? profile!.homeCourseName : "Home course not set")
-                    .font(.system(size: 12))
-                    .foregroundColor(TCTheme.textMuted)
+
+                Spacer(minLength: 4)
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        statBadge("HANDICAP", "6.2", "Index", TCTheme.gold)
+                        statBadge("ROUNDS", rounds.isEmpty ? "28" : "\(rounds.count)", "This Year", TCTheme.sage)
+                        statBadge("AVG SCORE", "75.4", "Last 20", TCTheme.cyan)
+                    }
+                    .padding(.horizontal, 2)
+                }
             }
-            Spacer()
+
+            Spacer(minLength: 0)
         }
         .tcCard()
     }
 
-    // MARK: Stats Row
-
-    private var statsRow: some View {
-        HStack(spacing: 10) {
-            TCMetricTile(label: "SHOTS", value: "142", unit: "", accent: TCTheme.gold)
-            TCMetricTile(label: "SESSIONS", value: "8", unit: "", accent: TCTheme.sage)
-            TCMetricTile(label: "ROUNDS", value: "3", unit: "", accent: TCTheme.cyan)
+    private func statBadge(_ label: String, _ value: String, _ sub: String, _ color: Color) -> some View {
+        VStack(alignment: .center, spacing: 2) {
+            Text(label)
+                .font(.system(size: 8, weight: .bold))
+                .foregroundColor(TCTheme.textMuted)
+                .tracking(0.8)
+            Text(value)
+                .font(.system(size: 16, weight: .black, design: .rounded))
+                .foregroundColor(color)
+            Text(sub)
+                .font(.system(size: 9))
+                .foregroundColor(TCTheme.textMuted)
         }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(color.opacity(0.10))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(color.opacity(0.25), lineWidth: 1)
+        )
     }
 
-    // MARK: Saved Shots
+    // MARK: - Clubs in Bag Card
 
-    private var savedShotsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            TCSectionHeader(
-                title: "Saved Shots",
-                trailing: AnyView(
-                    Button("View All") { showSessions = true }
-                        .font(.system(size: 13, weight: .semibold))
+    private var clubsInBagCard: some View {
+        VStack(spacing: 0) {
+            HStack {
+                TCSectionHeader(title: "Clubs in Bag")
+                Button {
+                    showClubs = true
+                } label: {
+                    Text("Manage Bag ›")
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(TCTheme.gold)
-                )
-            )
-            VStack(spacing: 10) {
-                savedShotRow(club: "Driver", carry: 241, speed: 148, ago: "2h ago")
-                savedShotRow(club: "7 Iron", carry: 162, speed: 112, ago: "2h ago")
-                savedShotRow(club: "PW",     carry: 108, speed: 94,  ago: "Yesterday")
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(TCTheme.gold.opacity(0.10))
+                        .clipShape(Capsule())
+                        .overlay(Capsule().strokeBorder(TCTheme.gold.opacity(0.30), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
             }
+
+            TCDivider()
+                .padding(.top, 8)
+
+            HStack(spacing: 16) {
+                // Premium golf bag illustration
+                TCGolfBagIllustration()
+                    .frame(width: 72, height: 108)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .strokeBorder(TCTheme.border, lineWidth: 1)
+                    )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    let driverName  = clubs.first(where: { $0.type == .driver })?.name ?? "Titleist TSR3 10°"
+                    let fwName      = clubs.first(where: { $0.type == .fairwayWood })?.name ?? "TaylorMade Qi10 15°"
+                    let ironName    = clubs.filter({ $0.type == .iron }).isEmpty ? "Titleist T200" : "Irons"
+                    let wedgeName   = clubs.first(where: { $0.type == .wedge })?.name ?? "Vokey SM9 48/54/58"
+                    let putterName  = clubs.first(where: { $0.type == .putter })?.name ?? "Scotty Cameron Phantom"
+
+                    TCClubRow(category: "DRIVER", name: driverName)
+                    TCClubRow(category: "3 WOOD",  name: fwName)
+                    TCClubRow(category: "5-PW",    name: ironName)
+                    TCClubRow(category: "WEDGES",  name: wedgeName)
+                    TCClubRow(category: "PUTTER",  name: putterName)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 12)
         }
+        .tcCard()
     }
 
-    private func savedShotRow(club: String, carry: Int, speed: Int, ago: String) -> some View {
-        HStack(spacing: 14) {
-            Circle()
-                .fill(TCTheme.cyan.opacity(0.15))
-                .frame(width: 40, height: 40)
-                .overlay(Image(systemName: "smallcircle.filled.circle")
-                    .font(.system(size: 15))
-                    .foregroundColor(TCTheme.cyan))
-            VStack(alignment: .leading, spacing: 3) {
-                Text(club).font(.system(size: 14, weight: .semibold)).foregroundColor(TCTheme.textPrimary)
-                Text(ago).font(.system(size: 12)).foregroundColor(TCTheme.textMuted)
-            }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 2) {
-                Text("\(carry) yd").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundColor(TCTheme.cyan)
-                Text("\(speed) mph").font(.system(size: 11)).foregroundColor(TCTheme.textMuted)
+    // MARK: - Milestones Card
+
+    private var milestonesCard: some View {
+        VStack(spacing: 12) {
+            TCSectionHeader(title: "Milestones")
+            LazyVGrid(
+                columns: [GridItem(.flexible()), GridItem(.flexible())],
+                spacing: 10
+            ) {
+                TCMilestoneBadge(icon: "checkmark.seal.fill", value: "28",  label: "Rounds\nCompleted")
+                TCMilestoneBadge(icon: "flame.fill",          value: "5",   label: "Sub-80\nRounds")
+                TCMilestoneBadge(icon: "star.fill",           value: "74",  label: "Best\nRound")
+                TCMilestoneBadge(icon: "arrow.up.right",      value: "3",   label: "Par or Better\nStreak")
             }
         }
         .tcCard()
     }
 
-    // MARK: Gear / Clubs
+    // MARK: - Notes Card
 
-    private var gearSection: some View {
-        VStack(spacing: 0) {
-            TCSectionHeader(title: "Clubs in Bag").padding(.bottom, 10)
-            Button { showClubs = true } label: {
-                TCSettingsRow(icon: "figure.golf", title: "Manage Clubs", value: "View bag", accent: TCTheme.sage)
+    private var notesCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Notes")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundColor(TCTheme.textPrimary)
+                Spacer()
+                Button {} label: {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 14))
+                        .foregroundColor(TCTheme.textMuted)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
-            .background(TCTheme.panel)
-            .clipShape(RoundedRectangle(cornerRadius: TCTheme.cardRadius, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: TCTheme.cardRadius, style: .continuous)
-                    .strokeBorder(TCTheme.border, lineWidth: 1)
-            )
+            Text("Working on a more consistent draw with driver. Focus on tempo and release.")
+                .font(.system(size: 13))
+                .foregroundColor(TCTheme.textSecondary)
+                .lineSpacing(3)
+            Text("Updated May 14")
+                .font(.system(size: 11))
+                .foregroundColor(TCTheme.textMuted)
         }
+        .tcCard()
     }
 
-    // MARK: Settings
+    // MARK: - Saved Shots Card
 
-    private var settingsSection: some View {
-        VStack(spacing: 0) {
-            TCSectionHeader(title: "Settings").padding(.bottom, 10)
-            VStack(spacing: 0) {
-                TCSettingsRow(icon: "hand.raised.fill", title: "Handedness",
-                             value: profile?.handedness.rawValue ?? "Right", accent: TCTheme.cyan)
-                TCDivider()
-                TCSettingsRow(icon: "ruler.fill", title: "Distance Units",
-                             value: profile?.distanceUnit.rawValue ?? "Yards", accent: TCTheme.textMuted)
-                TCDivider()
-                TCSettingsRow(icon: "camera.fill", title: "Frame Rate", value: "240 fps", accent: TCTheme.gold)
-                TCDivider()
-                TCSettingsRow(icon: "info.circle.fill", title: "Version", value: "1.0.0",
-                             accent: TCTheme.textMuted, showChevron: false)
+    private var savedShotsCard: some View {
+        VStack(spacing: 12) {
+            TCSectionHeader(title: "Saved Shots", viewAllAction: { showSessions = true })
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    if shots.isEmpty {
+                        TCShotThumb(clubName: "Driver", yards: 285, isBest: true)
+                        TCShotThumb(clubName: "7 Iron", yards: 172)
+                        TCShotThumb(clubName: "58°",    yards: 78)
+                    } else {
+                        let displayShots = Array(shots.prefix(3))
+                        ForEach(Array(displayShots.enumerated()), id: \.offset) { index, shot in
+                            TCShotThumb(
+                                clubName: shot.clubName ?? "Club",
+                                yards: Int(shot.metrics.carryYards),
+                                isBest: index == 0
+                            )
+                        }
+                    }
+                }
+                .padding(.horizontal, 2)
             }
-            .background(TCTheme.panel)
-            .clipShape(RoundedRectangle(cornerRadius: TCTheme.cardRadius, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: TCTheme.cardRadius, style: .continuous)
-                    .strokeBorder(TCTheme.border, lineWidth: 1)
-            )
         }
+        .tcCard()
     }
 
-    // MARK: Sign Out
+    // MARK: - Settings Row Card
+
+    private var settingsRowCard: some View {
+        Button {} label: {
+            TCSettingsRow(
+                icon: "gearshape.fill",
+                title: "Settings",
+                value: "Preferences, units & privacy",
+                accent: TCTheme.gold
+            )
+        }
+        .buttonStyle(.plain)
+        .tcCard(padding: 0)
+    }
+
+    // MARK: - Sign Out
 
     private var signOutButton: some View {
-        Button { Task { await session.signOut() } } label: {
+        Button {
+            Task { await session.signOut() }
+        } label: {
             Text("Sign Out")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundColor(TCTheme.danger)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
-                .background(TCTheme.danger.opacity(0.10))
+                .background(TCTheme.danger.opacity(0.08))
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(TCTheme.danger.opacity(0.30), lineWidth: 1)
+                        .strokeBorder(TCTheme.danger.opacity(0.30), lineWidth: 1.5)
                 )
         }
         .buttonStyle(.plain)

@@ -2,13 +2,15 @@ import SwiftUI
 
 struct CourseModeGPSHoleView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var session: AuthSessionStore
     @EnvironmentObject var camera: CameraController
     @StateObject private var vm: CourseRoundViewModel
 
-    @State private var showCamera       = false
-    @State private var showScoreEntry   = false
-    @State private var showScorecard    = false
-    @State private var showFinishAlert  = false
+    @State private var showCamera      = false
+    @State private var showScoreEntry  = false
+    @State private var showScorecard   = false
+    @State private var showFinishAlert = false
+    @State private var gpsOn           = true
 
     let initialCourse: GolfCourse?
     let initialTeeBox: TeeBox?
@@ -21,27 +23,85 @@ struct CourseModeGPSHoleView: View {
         self.initialTeeBox = initialTeeBox
     }
 
-    var body: some View {
-        ZStack {
-            TCTheme.background.ignoresSafeArea()
-            TrueCarryBackground().ignoresSafeArea()
+    // MARK: - Body
 
-            if vm.roundActive, let round = vm.activeRound {
-                activeHoleView(round: round)
-            } else {
-                loadingView
+    var body: some View {
+        ZStack(alignment: .top) {
+            // Full-screen fairway background
+            GeneratedFairwayView(landingFraction: 0.50, dispersionOffline: 0)
+                .ignoresSafeArea()
+
+            // Top + bottom dark gradient overlays
+            VStack(spacing: 0) {
+                LinearGradient(
+                    colors: [TCTheme.background.opacity(0.88), .clear],
+                    startPoint: .top, endPoint: .bottom
+                )
+                .frame(height: 180)
+                .ignoresSafeArea(edges: .top)
+                Spacer()
+                LinearGradient(
+                    colors: [.clear, TCTheme.background.opacity(0.92)],
+                    startPoint: .top, endPoint: .bottom
+                )
+                .frame(height: 240)
             }
+            .ignoresSafeArea()
+
+            // Top overlay bar
+            topBar
+                .padding(.top, topSafeArea)
+
+            // Center content column
+            VStack(spacing: 0) {
+                Color.clear.frame(height: topSafeArea + 56)
+
+                // Hole selector pill
+                holeSelectorPill
+                    .padding(.top, 8)
+
+                // Plays Like yardage card (left) + GPS button (right) + yardage center
+                ZStack(alignment: .center) {
+                    playsLikeCard
+                        .frame(width: 72)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.leading, 16)
+
+                    yardageLabel
+
+                    gpsPill
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .padding(.trailing, 16)
+                }
+                .padding(.top, 24)
+
+                Spacer()
+
+                // Right tool rail
+                rightToolRail
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.trailing, 12)
+                    .padding(.bottom, 260)
+            }
+            .ignoresSafeArea(edges: .bottom)
         }
-        .task {
-            if let course = initialCourse, let tee = initialTeeBox {
-                await vm.startRound(course: course, teeBox: tee)
+        // Player bottom panel via safeAreaInset
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            playerPanel
+        }
+        .ignoresSafeArea(edges: .bottom)
+        .navigationBarHidden(true)
+        // Alerts & sheets
+        .alert("Finish Round?", isPresented: $showFinishAlert) {
+            Button("Finish & Save", role: .destructive) {
+                Task { await vm.finishRound(); dismiss() }
             }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Your round will be saved.")
         }
         .fullScreenCover(isPresented: $showCamera) {
-            RangeCameraScreen(context: ShotContext(sourceMode: .course,
-                                                  holeNumber: vm.currentHole?.holeNumber,
-                                                  holePar: vm.currentHole?.par,
-                                                  courseName: vm.activeRound?.courseName))
+            RangeCameraScreen(context: buildContext())
                 .ignoresSafeArea()
                 .statusBarHidden(true)
         }
@@ -52,10 +112,9 @@ struct CourseModeGPSHoleView: View {
                     par: hole.par,
                     existingScore: hole.score,
                     existingPutts: hole.putts
-                ) { score, putts, fairway, gir in
+                ) { s, p, f, g in
                     let idx = vm.currentHoleIndex
-                    Task { await vm.setScore(holeIndex: idx, score: score,
-                                            putts: putts, fairwayHit: fairway, gir: gir) }
+                    Task { await vm.setScore(holeIndex: idx, score: s, putts: p, fairwayHit: f, gir: g) }
                 }
                 .preferredColorScheme(.dark)
             }
@@ -68,299 +127,340 @@ struct CourseModeGPSHoleView: View {
                 .preferredColorScheme(.dark)
             }
         }
-        .alert("Finish Round?", isPresented: $showFinishAlert) {
-            Button("Finish & Save", role: .destructive) {
-                Task { await vm.finishRound(); dismiss() }
-            }
-            Button("Cancel", role: .cancel) {}
-        }
-    }
-
-    // MARK: Loading
-
-    private var loadingView: some View {
-        VStack(spacing: 20) {
-            ProgressView()
-                .tint(TCTheme.gold)
-                .scaleEffect(1.4)
-            Text("Setting up round…")
-                .font(.system(size: 14))
-                .foregroundColor(TCTheme.textMuted)
-        }
-    }
-
-    // MARK: Active Hole
-
-    @ViewBuilder
-    private func activeHoleView(round: CourseRound) -> some View {
-        let currentHole = round.holes[min(vm.currentHoleIndex, round.holes.count - 1)]
-        let summary = round.scoreSummary
-        let diff = summary.totalScore - summary.totalPar
-
-        VStack(spacing: 0) {
-            // Top Bar
-            topBar(round: round, diff: diff)
-
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 16) {
-                    holeCard(hole: currentHole)
-                    actionButtons
-                    holeNavigator(round: round)
-                    Spacer(minLength: 100)
-                }
-                .padding(.horizontal, TCTheme.hPad)
-                .padding(.top, 16)
+        .task {
+            if let course = initialCourse, let tee = initialTeeBox {
+                await vm.startRound(course: course, teeBox: tee)
             }
         }
     }
 
-    private func topBar(round: CourseRound, diff: Int) -> some View {
-        HStack(spacing: 12) {
+    // MARK: - Top Bar
+
+    private var topBar: some View {
+        HStack {
             Button { showFinishAlert = true } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(TCTheme.textMuted)
-                    .frame(width: 36, height: 36)
-                    .background(TCTheme.panel)
-                    .clipShape(Circle())
-                    .overlay(Circle().strokeBorder(TCTheme.border, lineWidth: 1))
+                ZStack {
+                    Circle()
+                        .fill(TCTheme.panelRaised.opacity(0.85))
+                        .frame(width: 36, height: 36)
+                    Image(systemName: "xmark")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(TCTheme.textSecondary)
+                }
             }
             .buttonStyle(.plain)
-
-            VStack(spacing: 1) {
-                Text(round.courseName)
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundColor(TCTheme.textPrimary)
-                    .lineLimit(1)
-                Text(round.teeBoxName + " Tees")
-                    .font(.system(size: 11))
-                    .foregroundColor(TCTheme.textMuted)
-            }
 
             Spacer()
+            TrueCarryLogo(size: 14)
+            Spacer()
 
-            // Score to par badge
-            VStack(spacing: 1) {
-                Text(diff == 0 ? "E" : (diff > 0 ? "+\(diff)" : "\(diff)"))
-                    .font(.system(size: 20, weight: .black, design: .rounded))
-                    .foregroundColor(diff < 0 ? TCTheme.sage : diff == 0 ? TCTheme.cyan : TCTheme.textPrimary)
-                Text("to par")
-                    .font(.system(size: 10))
-                    .foregroundColor(TCTheme.textMuted)
-            }
-
-            Button { showScorecard = true } label: {
-                Image(systemName: "list.number")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(TCTheme.gold)
-                    .frame(width: 36, height: 36)
-                    .background(TCTheme.gold.opacity(0.12))
-                    .clipShape(Circle())
-                    .overlay(Circle().strokeBorder(TCTheme.gold.opacity(0.25), lineWidth: 1))
+            Button {} label: {
+                ZStack {
+                    Circle()
+                        .fill(TCTheme.panelRaised.opacity(0.85))
+                        .frame(width: 36, height: 36)
+                    Image(systemName: "bell")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(TCTheme.textSecondary)
+                }
             }
             .buttonStyle(.plain)
         }
-        .padding(.horizontal, TCTheme.hPad)
-        .padding(.vertical, 14)
-        .background(TCTheme.panel)
-        .overlay(Rectangle().fill(TCTheme.border).frame(height: 1), alignment: .bottom)
+        .padding(.horizontal, 16)
     }
 
-    private func holeCard(hole: RoundHole) -> some View {
-        VStack(spacing: 0) {
-            // Accent top stripe
-            LinearGradient(colors: [TCTheme.sage, TCTheme.gold],
-                           startPoint: .leading, endPoint: .trailing)
-                .frame(height: 3)
-                .clipShape(UnevenRoundedRectangle(
-                    topLeadingRadius: TCTheme.cardRadius,
-                    bottomLeadingRadius: 0,
-                    bottomTrailingRadius: 0,
-                    topTrailingRadius: TCTheme.cardRadius))
+    // MARK: - Hole Selector Pill
 
-            VStack(spacing: 16) {
-                // Hole header
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("HOLE")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundColor(TCTheme.textMuted)
-                            .tracking(2)
-                        Text("\(hole.holeNumber)")
-                            .font(.system(size: 52, weight: .black, design: .rounded))
-                            .foregroundColor(TCTheme.textPrimary)
-                    }
-
-                    Spacer()
-
-                    VStack(spacing: 12) {
-                        VStack(spacing: 2) {
-                            Text("PAR")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundColor(TCTheme.textMuted)
-                                .tracking(2)
-                            Text("\(hole.par)")
-                                .font(.system(size: 32, weight: .black, design: .rounded))
-                                .foregroundColor(TCTheme.cyan)
-                        }
-
-                        if let score = hole.score {
-                            let scoreDiff = score - hole.par
-                            VStack(spacing: 2) {
-                                Text("SCORE")
-                                    .font(.system(size: 9, weight: .bold))
-                                    .foregroundColor(TCTheme.textMuted)
-                                    .tracking(2)
-                                Text("\(score)")
-                                    .font(.system(size: 24, weight: .black, design: .rounded))
-                                    .foregroundColor(scoreDiff < 0 ? TCTheme.sage :
-                                                     scoreDiff == 0 ? TCTheme.textPrimary : TCTheme.gold)
-                            }
-                        }
-                    }
-                }
-
-                // Stats row
-                HStack(spacing: 0) {
-                    holeStatCell(icon: "flag.fill", label: "Putts",
-                                 value: hole.putts.map { "\($0)" } ?? "—",
-                                 color: TCTheme.gold)
-                    holeStatCell(icon: "arrow.left.and.right", label: "Fairway",
-                                 value: hole.fairwayHit.map { $0 ? "Hit" : "Miss" } ?? "—",
-                                 color: hole.fairwayHit == true ? TCTheme.sage : TCTheme.textMuted)
-                    holeStatCell(icon: "circlebadge.fill", label: "GIR",
-                                 value: hole.greenInRegulation.map { $0 ? "Yes" : "No" } ?? "—",
-                                 color: hole.greenInRegulation == true ? TCTheme.sage : TCTheme.textMuted)
-                }
-            }
-            .padding(18)
-            .background(TCTheme.panel)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: TCTheme.cardRadius, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: TCTheme.cardRadius, style: .continuous)
-                .strokeBorder(TCTheme.border, lineWidth: 1)
-        )
-    }
-
-    private func holeStatCell(icon: String, label: String, value: String, color: Color) -> some View {
-        VStack(spacing: 4) {
-            Image(systemName: icon)
-                .font(.system(size: 13))
-                .foregroundColor(color)
-            Text(value)
-                .font(.system(size: 16, weight: .bold, design: .rounded))
-                .foregroundColor(color)
-            Text(label)
-                .font(.system(size: 10))
-                .foregroundColor(TCTheme.textMuted)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    // MARK: Action Buttons
-
-    private var actionButtons: some View {
-        VStack(spacing: 10) {
-            // Hit Shot — primary gold
-            TCPrimaryGoldButton(title: "Hit Shot", icon: "camera.fill") {
-                showCamera = true
-            }
-
-            HStack(spacing: 10) {
-                // Add Score
-                Button { showScoreEntry = true } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "pencil")
-                            .font(.system(size: 14, weight: .bold))
-                        Text("Add Score")
-                            .font(.system(size: 14, weight: .semibold))
-                    }
-                    .foregroundColor(TCTheme.cyan)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(TCTheme.cyan.opacity(0.10))
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .strokeBorder(TCTheme.cyan.opacity(0.30), lineWidth: 1)
-                    )
-                }
-                .buttonStyle(.plain)
-
-                // Scorecard
-                Button { showScorecard = true } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "list.number")
-                            .font(.system(size: 14, weight: .bold))
-                        Text("Scorecard")
-                            .font(.system(size: 14, weight: .semibold))
-                    }
-                    .foregroundColor(TCTheme.sage)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(TCTheme.sage.opacity(0.10))
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .strokeBorder(TCTheme.sage.opacity(0.30), lineWidth: 1)
-                    )
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
-    // MARK: Hole Navigator
-
-    private func holeNavigator(round: CourseRound) -> some View {
-        HStack(spacing: 12) {
+    private var holeSelectorPill: some View {
+        HStack(spacing: 16) {
             Button {
                 if vm.currentHoleIndex > 0 { vm.goToHole(vm.currentHoleIndex - 1) }
             } label: {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(vm.currentHoleIndex > 0 ? TCTheme.textSecondary : TCTheme.textMuted.opacity(0.4))
-                    .frame(width: 44, height: 44)
-                    .background(TCTheme.panel)
-                    .clipShape(Circle())
-                    .overlay(Circle().strokeBorder(TCTheme.border, lineWidth: 1))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(TCTheme.textMuted)
             }
-            .disabled(vm.currentHoleIndex == 0)
             .buttonStyle(.plain)
 
-            Spacer()
+            HStack(spacing: 6) {
+                Image(systemName: "flag.fill")
+                    .font(.system(size: 12))
+                    .foregroundColor(TCTheme.gold)
 
-            Text("Hole \(vm.currentHoleIndex + 1) of \(round.holes.count)")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(TCTheme.textMuted)
-
-            Spacer()
-
-            let isLast = vm.currentHoleIndex >= round.holes.count - 1
-            if isLast {
-                Button { showFinishAlert = true } label: {
-                    Text("Finish")
+                if let hole = vm.currentHole {
+                    Text(ordinal(hole.holeNumber))
                         .font(.system(size: 13, weight: .bold))
-                        .foregroundColor(.black)
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 10)
-                        .background(TCTheme.goldGradient)
-                        .clipShape(Capsule())
+                        .foregroundColor(TCTheme.textPrimary)
+                    Text("Par \(hole.par)  ·  \(hole.par * 85) yds  ·  HCP \(holeHandicap)")
+                        .font(.system(size: 12))
+                        .foregroundColor(TCTheme.textMuted)
+                } else {
+                    Text("Loading…")
+                        .font(.system(size: 12))
+                        .foregroundColor(TCTheme.textMuted)
                 }
-                .buttonStyle(.plain)
-            } else {
-                Button { vm.advanceHole() } label: {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(TCTheme.textSecondary)
-                        .frame(width: 44, height: 44)
-                        .background(TCTheme.panel)
-                        .clipShape(Circle())
-                        .overlay(Circle().strokeBorder(TCTheme.border, lineWidth: 1))
+            }
+
+            Button {
+                if let round = vm.activeRound, vm.currentHoleIndex < round.holes.count - 1 {
+                    vm.advanceHole()
                 }
-                .buttonStyle(.plain)
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(TCTheme.textMuted)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.ultraThinMaterial.opacity(0.4))
+        .background(TCTheme.panel.opacity(0.72))
+        .clipShape(Capsule())
+        .overlay(Capsule().strokeBorder(TCTheme.borderMedium, lineWidth: 1))
+        .padding(.horizontal, TCTheme.hPad)
+    }
+
+    // MARK: - Plays Like Card
+
+    private var playsLikeCard: some View {
+        VStack(spacing: 3) {
+            Text("↑305")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundColor(TCTheme.textPrimary)
+            Text("291")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundColor(TCTheme.textPrimary)
+            Text("↓278")
+                .font(.system(size: 14))
+                .foregroundColor(TCTheme.textMuted)
+            Divider()
+                .background(TCTheme.border)
+                .padding(.vertical, 2)
+            Text("Plays Like")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundColor(TCTheme.gold)
+                .tracking(1.5)
+        }
+        .padding(10)
+        .background(TCTheme.panel.opacity(0.86))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(TCTheme.border, lineWidth: 1)
+        )
+    }
+
+    // MARK: - Yardage Label
+
+    private var yardageLabel: some View {
+        VStack(spacing: 4) {
+            Text("192")
+                .font(.system(size: 32, weight: .bold))
+                .foregroundColor(.white)
+                .shadow(color: .black.opacity(0.7), radius: 4, x: 0, y: 2)
+            Text("Front  180  ·  Back  205")
+                .font(.system(size: 11))
+                .foregroundColor(TCTheme.textSecondary)
+                .shadow(color: .black.opacity(0.5), radius: 3)
+        }
+    }
+
+    // MARK: - GPS Pill
+
+    private var gpsPill: some View {
+        Button { gpsOn.toggle() } label: {
+            VStack(spacing: 3) {
+                Image(systemName: "location.fill")
+                    .font(.system(size: 16))
+                    .foregroundColor(gpsOn ? TCTheme.sage : TCTheme.textMuted)
+                Text("GPS")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(TCTheme.gold)
+            }
+            .frame(width: 44, height: 44)
+            .background(TCTheme.panelRaised.opacity(0.86))
+            .clipShape(Circle())
+            .overlay(
+                Circle().strokeBorder(gpsOn ? TCTheme.sage.opacity(0.5) : TCTheme.border, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Right Tool Rail
+
+    private var rightToolRail: some View {
+        VStack(spacing: 8) {
+            toolButton("ruler.fill",           "Measure")
+            toolButton("target",               "Targets")
+            toolButton("arrow.down.to.line",   "Layup")
+            toolButton("circle.fill",          "Green")
+        }
+        .padding(.trailing, 4)
+    }
+
+    private func toolButton(_ icon: String, _ label: String) -> some View {
+        Button {} label: {
+            VStack(spacing: 3) {
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(TCTheme.textSecondary)
+                Text(label)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(TCTheme.textMuted)
+            }
+            .frame(width: 42, height: 42)
+            .background(TCTheme.panelRaised.opacity(0.82))
+            .clipShape(Circle())
+            .overlay(Circle().strokeBorder(TCTheme.border, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Player Bottom Panel
+
+    private var playerPanel: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 16) {
+                // Player info row
+                HStack(spacing: 12) {
+                    // Avatar
+                    ZStack {
+                        Circle()
+                            .fill(TCTheme.panelRaised)
+                            .frame(width: 36, height: 36)
+                        Circle()
+                            .strokeBorder(TCTheme.borderGold, lineWidth: 1.5)
+                            .frame(width: 36, height: 36)
+                        Text(userInitials)
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(TCTheme.gold)
+                    }
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(userName)
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(TCTheme.textPrimary)
+
+                        let diff = (vm.activeRound?.scoreSummary.totalScore ?? 0)
+                                 - (vm.activeRound?.scoreSummary.totalPar ?? 0)
+                        let holeCount = vm.activeRound?.holes.count ?? 18
+                        HStack(spacing: 4) {
+                            Text(diff == 0 ? "E" : diff > 0 ? "+\(diff)" : "\(diff)")
+                                .font(.system(size: 12))
+                                .foregroundColor(diff < 0 ? TCTheme.sage : diff == 0 ? TCTheme.cyan : TCTheme.textMuted)
+                            Text("·  Hole \(vm.currentHoleIndex + 1)/\(holeCount)")
+                                .font(.system(size: 12))
+                                .foregroundColor(TCTheme.textMuted)
+                        }
+                    }
+
+                    Spacer()
+
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("0:42")
+                            .font(.system(size: 13))
+                            .foregroundColor(TCTheme.textMuted)
+                        Image(systemName: "timer")
+                            .font(.system(size: 12))
+                            .foregroundColor(TCTheme.textMuted)
+                    }
+                }
+                .padding(.top, 4)
+
+                // Hit Shot button
+                TCPrimaryGoldButton(title: "Hit Shot", icon: "camera.fill") {
+                    showCamera = true
+                }
+
+                // Mini bottom tabs
+                HStack(spacing: 0) {
+                    miniTabButton("Scorecard", "list.number") { showScorecard = true }
+                    miniTabButton("Score",     "pencil")      { showScoreEntry = true }
+                    miniTabButton("Notes",     "note.text")   {}
+                    miniTabButton("GPS \(gpsOn ? "ON" : "OFF")", "location.fill") { gpsOn.toggle() }
+                }
+                .padding(.bottom, 4)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+            .padding(.bottom, 8)
+            .background(.ultraThinMaterial.opacity(0.3))
+            .background(TCTheme.panel.opacity(0.95))
+            .overlay(Rectangle().fill(TCTheme.border).frame(height: 1), alignment: .top)
+        }
+    }
+
+    private func miniTabButton(_ label: String, _ icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(TCTheme.textMuted)
+                Text(label)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(TCTheme.textMuted)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 4)
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Helpers
+
+    private func buildContext() -> ShotContext {
+        ShotContext(
+            sourceMode: .course,
+            holeNumber: vm.currentHole?.holeNumber,
+            holePar: vm.currentHole?.par,
+            holeYardage: vm.currentHole.map { $0.par * 85 },
+            courseName: vm.activeRound?.courseName
+        )
+    }
+
+    private var holeHandicap: Int {
+        guard let hole = vm.currentHole,
+              let gh = vm.selectedCourse?.holes.first(where: { $0.number == hole.holeNumber })
+        else { return vm.currentHole?.par == 3 ? 9 : 7 }
+        return gh.handicap ?? 9
+    }
+
+    private var userName: String {
+        session.userProfile?.displayName ?? "Player"
+    }
+
+    private var userInitials: String {
+        let name = userName
+        let parts = name.split(separator: " ")
+        if parts.count >= 2 {
+            return String((parts[0].first ?? "P")).uppercased()
+                 + String((parts[1].first ?? "L")).uppercased()
+        }
+        return String(name.prefix(2)).uppercased()
+    }
+
+    private var topSafeArea: CGFloat {
+        (UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first?.windows.first?.safeAreaInsets.top) ?? 44
+    }
+
+    private func ordinal(_ n: Int) -> String {
+        let suffix: String
+        switch n {
+        case 11, 12, 13: suffix = "th"
+        default:
+            switch n % 10 {
+            case 1: suffix = "st"
+            case 2: suffix = "nd"
+            case 3: suffix = "rd"
+            default: suffix = "th"
             }
         }
+        return "\(n)\(suffix)"
     }
 }

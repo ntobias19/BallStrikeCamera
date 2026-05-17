@@ -3,28 +3,64 @@ import SwiftUI
 struct TrueCarryPlayView: View {
     @EnvironmentObject var session: AuthSessionStore
     @EnvironmentObject var camera: CameraController
-    @State private var showCamera     = false
-    @State private var showRangeSetup = false
-    @State private var showSim        = false
-    @State private var showCourseFlow = false
+
+    @State private var selectedMode: PlayMode = .range
+    @State private var showCamera = false
+    @State private var showSim = false
+    @State private var showCourseSearch = false
     @State private var showCourseMode = false
     @State private var selectedCourse: GolfCourse?
     @State private var selectedTeeBox: TeeBox?
-    @State private var selectedMode: PlayMode = .range
+    @State private var showSessions = false
 
     enum PlayMode { case range, sim, course }
+
+    // MARK: Derived helpers
+
+    private var userInitials: String {
+        let name = session.userProfile?.displayName ?? session.currentUser?.name ?? "G"
+        let parts = name.components(separatedBy: " ")
+        if parts.count >= 2,
+           let f = parts[0].first,
+           let l = parts[1].first {
+            return "\(f)\(l)"
+        }
+        return String(name.prefix(2)).uppercased()
+    }
+
+    private var startTitle: String {
+        switch selectedMode {
+        case .range:  return "Start Session"
+        case .sim:    return "Start Sim Session"
+        case .course: return "Start Round"
+        }
+    }
+
+    private var startIcon: String {
+        switch selectedMode {
+        case .range:  return "camera.fill"
+        case .sim:    return "display"
+        case .course: return "magnifyingglass"
+        }
+    }
+
+    // MARK: Body
 
     var body: some View {
         ZStack {
             TrueCarryBackground()
             ScrollView(showsIndicators: false) {
                 VStack(spacing: TCTheme.sectionGap) {
-                    headerSection
-                    modePickerSection
-                    sessionSetupCard
-                    startButton
-                    quickChipsRow
-                    Spacer(minLength: 100)
+                    TCHeaderBar(initials: userInitials) {
+                        TCBellButton(badgeCount: 0) {}
+                    }
+                    pageTitleSection
+                    modeCardsSection
+                    sessionSetupSection
+                    startButtonSection
+                    chipsRow
+                    upNextCard
+                    Spacer(minLength: 140)
                 }
                 .padding(.horizontal, TCTheme.hPad)
                 .padding(.top, 8)
@@ -34,14 +70,16 @@ struct TrueCarryPlayView: View {
         .fullScreenCover(isPresented: $showCamera) {
             RangeCameraScreen().ignoresSafeArea().statusBarHidden(true)
         }
-        .sheet(isPresented: $showSim) { SimModeView() }
-        .sheet(isPresented: $showCourseFlow) {
+        .sheet(isPresented: $showSim) {
+            SimModeView()
+        }
+        .sheet(isPresented: $showCourseSearch) {
             if let uid = session.currentUser?.id {
                 NavigationStack {
                     CourseSearchView(userId: uid) { course, tee in
                         selectedCourse = course
                         selectedTeeBox = tee
-                        showCourseFlow = false
+                        showCourseSearch = false
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                             showCourseMode = true
                         }
@@ -62,81 +100,103 @@ struct TrueCarryPlayView: View {
                 )
             }
         }
+        .sheet(isPresented: $showSessions) {
+            NavigationStack {
+                PastSessionsView()
+            }
+            .preferredColorScheme(.dark)
+        }
     }
 
-    // MARK: Header
+    // MARK: Page Title
 
-    private var headerSection: some View {
+    private var pageTitleSection: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Play")
-                .font(.system(size: 32, weight: .black))
+                .font(.system(size: 48, weight: .black, design: .serif))
                 .foregroundColor(TCTheme.textPrimary)
             Text("Choose a mode and set up your session.")
                 .font(.system(size: 14))
                 .foregroundColor(TCTheme.textMuted)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, 8)
     }
 
-    // MARK: Mode Picker
+    // MARK: Mode Cards (horizontal HStack)
 
-    private var modePickerSection: some View {
-        VStack(spacing: 10) {
+    private var modeCardsSection: some View {
+        HStack(spacing: 10) {
             TCModeCard(
                 icon: "target",
                 title: "Range Mode",
-                subtitle: "Practice freely. Track carry, spin, ball speed & club path.",
+                subtitle: "Dial in your game. Track every shot.",
                 accent: TCTheme.cyan,
-                action: { selectedMode = .range }
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: TCTheme.cardRadius, style: .continuous)
-                    .strokeBorder(selectedMode == .range ? TCTheme.cyan.opacity(0.50) : Color.clear, lineWidth: 2)
-            )
+                isSelected: selectedMode == .range,
+                illustration: AnyView(TCModeRangeIllustration())
+            ) {
+                selectedMode = .range
+            }
 
             TCModeCard(
                 icon: "display",
-                title: "Simulator Mode",
-                subtitle: "Send shots to GSPro, OGS, or any OpenAPI simulator over WiFi.",
+                title: "Sim Mode",
+                subtitle: "Play virtual courses indoors.",
                 accent: TCTheme.gold,
-                action: { selectedMode = .sim }
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: TCTheme.cardRadius, style: .continuous)
-                    .strokeBorder(selectedMode == .sim ? TCTheme.gold.opacity(0.50) : Color.clear, lineWidth: 2)
-            )
+                isSelected: selectedMode == .sim,
+                illustration: AnyView(TCModeSimIllustration())
+            ) {
+                selectedMode = .sim
+            }
 
             TCModeCard(
                 icon: "map.fill",
                 title: "Course Mode",
-                subtitle: "Track every shot on-course with GPS rangefinder and scoring.",
+                subtitle: "Play real courses. On the course.",
                 accent: TCTheme.sage,
-                action: { selectedMode = .course }
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: TCTheme.cardRadius, style: .continuous)
-                    .strokeBorder(selectedMode == .course ? TCTheme.sage.opacity(0.50) : Color.clear, lineWidth: 2)
-            )
+                isSelected: selectedMode == .course,
+                illustration: AnyView(TCModeCourseIllustration())
+            ) {
+                selectedMode = .course
+            }
         }
     }
 
-    // MARK: Session Setup
+    // MARK: Session Setup Card
 
-    private var sessionSetupCard: some View {
-        VStack(spacing: 0) {
+    private var sessionSetupSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
             TCSectionHeader(title: "Session Setup")
                 .padding(.bottom, 12)
+
             VStack(spacing: 0) {
-                setupRow(icon: "figure.golf", label: "Club", value: "7 Iron", accent: TCTheme.sage)
+                TCSettingsRow(
+                    icon: "flag.fill",
+                    title: "Course",
+                    value: "Stone Ridge GC",
+                    accent: TCTheme.sage
+                )
                 TCDivider()
-                setupRow(icon: "flag.fill", label: "Course", value: "Pebble Beach", accent: TCTheme.gold)
+                TCSettingsRow(
+                    icon: "tshirt",
+                    title: "Tee Box",
+                    value: "Blue – 6,412 yds",
+                    accent: TCTheme.cyan
+                )
                 TCDivider()
-                setupRow(icon: "hand.raised.fill", label: "Handedness",
-                         value: session.userProfile?.handedness.rawValue ?? "Right",
-                         accent: TCTheme.cyan)
+                TCSettingsRow(
+                    icon: "list.bullet",
+                    title: "Session Type",
+                    value: sessionTypeValue,
+                    accent: TCTheme.gold
+                )
                 TCDivider()
-                setupRow(icon: "location.fill", label: "GPS", value: "Active", accent: TCTheme.sage)
+                TCSettingsRow(
+                    icon: "hand.raised.fill",
+                    title: "Handedness",
+                    value: session.userProfile?.handedness.rawValue ?? "Right",
+                    accent: TCTheme.textMuted,
+                    showChevron: false
+                )
             }
             .background(TCTheme.panel)
             .clipShape(RoundedRectangle(cornerRadius: TCTheme.cardRadius, style: .continuous))
@@ -147,33 +207,19 @@ struct TrueCarryPlayView: View {
         }
     }
 
-    private func setupRow(icon: String, label: String, value: String, accent: Color) -> some View {
-        TCSettingsRow(icon: icon, title: label, value: value, accent: accent)
+    private var sessionTypeValue: String {
+        switch selectedMode {
+        case .sim:    return "Sim Session"
+        case .course: return "Full Round"
+        case .range:  return "Practice"
+        }
     }
 
     // MARK: Start Button
 
-    private var startButton: some View {
-        TCPrimaryGoldButton(
-            title: buttonTitle,
-            icon: buttonIcon,
-            action: handleStart
-        )
-    }
-
-    private var buttonTitle: String {
-        switch selectedMode {
-        case .range:  return "Open Camera"
-        case .sim:    return "Start Sim Session"
-        case .course: return "Find a Course"
-        }
-    }
-
-    private var buttonIcon: String {
-        switch selectedMode {
-        case .range:  return "camera.fill"
-        case .sim:    return "display"
-        case .course: return "magnifyingglass"
+    private var startButtonSection: some View {
+        TCPrimaryGoldButton(title: startTitle, icon: startIcon) {
+            handleStart()
         }
     }
 
@@ -181,37 +227,72 @@ struct TrueCarryPlayView: View {
         switch selectedMode {
         case .range:  showCamera = true
         case .sim:    showSim = true
-        case .course: showCourseFlow = true
+        case .course: showCourseSearch = true
         }
     }
 
-    // MARK: Quick Chips
+    // MARK: Quick Chips Row
 
-    private var quickChipsRow: some View {
+    private var chipsRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
-                chipButton("Use Last Setup", icon: "arrow.clockwise") {}
-                chipButton("Choose Club", icon: "figure.golf") {}
-                chipButton("Saved Sessions", icon: "list.bullet") {}
-                chipButton("Sim History", icon: "clock") {}
+                TCChipButton(title: "Use Last Setup", icon: "arrow.clockwise") {}
+                TCChipButton(title: "Choose Club", icon: "figure.golf") {}
+                TCChipButton(title: "Saved Sessions", icon: "list.bullet") {
+                    showSessions = true
+                }
+                TCChipButton(title: "Sim History", icon: "clock") {}
             }
             .padding(.horizontal, 2)
         }
     }
 
-    private func chipButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: icon).font(.system(size: 12, weight: .semibold))
-                Text(title).font(.system(size: 12, weight: .semibold))
+    // MARK: Up Next Card
+
+    private var upNextCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("UP NEXT")
+                .font(.system(size: 10, weight: .bold))
+                .kerning(1.4)
+                .foregroundColor(TCTheme.gold)
+
+            HStack(spacing: 14) {
+                // Course aerial thumbnail
+                TCCourseAerialThumbnail(seed: 0)
+                    .frame(width: 70, height: 80)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                // Hole info
+                VStack(alignment: .leading, spacing: 6) {
+                    ZStack {
+                        Circle()
+                            .fill(TCTheme.goldGradient)
+                            .frame(width: 28, height: 28)
+                        Text("1")
+                            .font(.system(size: 13, weight: .black))
+                            .foregroundColor(TCTheme.background)
+                    }
+
+                    Text("Par 4  ·  392 yds")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(TCTheme.textMuted)
+
+                    Text("Stone Ridge GC")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundColor(TCTheme.textPrimary)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(TCTheme.textMuted)
             }
-            .foregroundColor(TCTheme.textSecondary)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 9)
-            .background(TCTheme.panel)
-            .clipShape(Capsule())
-            .overlay(Capsule().strokeBorder(TCTheme.border, lineWidth: 1))
         }
-        .buttonStyle(.plain)
+        .tcGlassCard()
+        .contentShape(Rectangle())
+        .onTapGesture {
+            showCourseSearch = true
+        }
     }
 }

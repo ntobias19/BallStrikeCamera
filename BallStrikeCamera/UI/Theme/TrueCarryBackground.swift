@@ -1,63 +1,64 @@
 import SwiftUI
 
-// MARK: - True Carry Background with topographic contour lines
+// MARK: - True Carry Background (full-screen dark with topo lines + radial glow)
 
 struct TrueCarryBackground: View {
     var body: some View {
         ZStack {
-            TCTheme.background.ignoresSafeArea()
+            LinearGradient(
+                colors: [TCTheme.background, TCTheme.backgroundMid, TCTheme.backgroundBot],
+                startPoint: .top, endPoint: .bottom
+            )
+            .ignoresSafeArea()
             TopoLinesCanvas()
                 .ignoresSafeArea()
-                .allowsHitTesting(false)
+                .opacity(0.055)
+            RadialGradient(
+                colors: [TCTheme.sage.opacity(0.06), Color.clear],
+                center: .init(x: 0.5, y: 0.05),
+                startRadius: 0, endRadius: 280
+            )
+            .ignoresSafeArea()
         }
     }
 }
 
-private struct TopoLinesCanvas: View {
+// MARK: - Topographic Canvas
+
+struct TopoLinesCanvas: View {
     var body: some View {
-        GeometryReader { geo in
-            Canvas { ctx, size in
-                drawTopoLines(ctx: ctx, size: size)
-            }
-        }
-    }
-
-    private func drawTopoLines(ctx: GraphicsContext, size: CGSize) {
-        let lineColor = Color.white.opacity(0.028)
-        let lineWidth: CGFloat = 0.8
-
-        // Gentle curved contour lines suggesting terrain
-        let curves: [(startX: CGFloat, startY: CGFloat, cp1X: CGFloat, cp1Y: CGFloat, cp2X: CGFloat, cp2Y: CGFloat, endX: CGFloat, endY: CGFloat)] = [
-            (0, size.height * 0.18, size.width * 0.35, size.height * 0.10, size.width * 0.65, size.height * 0.26, size.width, size.height * 0.15),
-            (0, size.height * 0.32, size.width * 0.40, size.height * 0.24, size.width * 0.60, size.height * 0.40, size.width, size.height * 0.30),
-            (0, size.height * 0.50, size.width * 0.30, size.height * 0.42, size.width * 0.70, size.height * 0.56, size.width, size.height * 0.48),
-            (0, size.height * 0.66, size.width * 0.45, size.height * 0.58, size.width * 0.55, size.height * 0.72, size.width, size.height * 0.64),
-            (0, size.height * 0.80, size.width * 0.38, size.height * 0.74, size.width * 0.62, size.height * 0.86, size.width, size.height * 0.78),
-        ]
-
-        for c in curves {
+        Canvas { ctx, size in
+            let w = size.width
+            let h = size.height
             var path = Path()
-            path.move(to: CGPoint(x: c.startX, y: c.startY))
-            path.addCurve(
-                to: CGPoint(x: c.endX, y: c.endY),
-                control1: CGPoint(x: c.cp1X, y: c.cp1Y),
-                control2: CGPoint(x: c.cp2X, y: c.cp2Y)
-            )
-            ctx.stroke(path, with: .color(lineColor), lineWidth: lineWidth)
-        }
-
-        // Subtle dot grid
-        let dotColor = Color.white.opacity(0.018)
-        let spacing: CGFloat = 44
-        var x: CGFloat = spacing
-        while x < size.width {
-            var y: CGFloat = spacing
-            while y < size.height {
-                let dot = Path(ellipseIn: CGRect(x: x - 1, y: y - 1, width: 2, height: 2))
-                ctx.fill(dot, with: .color(dotColor))
-                y += spacing
+            let groups: [(y: CGFloat, n: Int, amp: CGFloat)] = [
+                (h * 0.15, 7, h * 0.048),
+                (h * 0.43, 9, h * 0.058),
+                (h * 0.73, 8, h * 0.042),
+            ]
+            for g in groups {
+                for i in 0..<g.n {
+                    let y = g.y + CGFloat(i) * 22
+                    let amp = g.amp * (1 - CGFloat(i) * 0.07)
+                    path.move(to: CGPoint(x: -20, y: y))
+                    path.addCurve(
+                        to: CGPoint(x: w + 20, y: y + amp * 0.3),
+                        control1: CGPoint(x: w * 0.25, y: y - amp),
+                        control2: CGPoint(x: w * 0.75, y: y + amp * 0.8)
+                    )
+                }
             }
-            x += spacing
+            ctx.stroke(path, with: .color(Color.white),
+                       style: StrokeStyle(lineWidth: 0.75, lineCap: .round))
+            var dots = Path()
+            let sp: CGFloat = 38
+            var dx: CGFloat = sp / 2
+            while dx < w { var dy: CGFloat = sp / 2
+                while dy < h {
+                    dots.addEllipse(in: CGRect(x: dx - 0.9, y: dy - 0.9, width: 1.8, height: 1.8))
+                    dy += sp
+                }; dx += sp }
+            ctx.fill(dots, with: .color(Color.white.opacity(0.45)))
         }
     }
 }
@@ -65,29 +66,242 @@ private struct TopoLinesCanvas: View {
 // MARK: - True Carry Logo
 
 struct TrueCarryLogo: View {
-    var size: CGFloat = 28
-    var showWordmark: Bool = true
+    var size: CGFloat = 24
 
     var body: some View {
-        HStack(spacing: 8) {
-            logoMark
-            if showWordmark {
-                Text("TRUE CARRY")
-                    .font(.system(size: size * 0.50, weight: .black, design: .default))
-                    .tracking(2.0)
+        VStack(spacing: -1) {
+            ArcLogoView(size: size)
+                .frame(width: size * 4.6, height: size * 0.65)
+                .offset(y: 2)
+            VStack(spacing: -3) {
+                Text("TRUE")
+                    .font(.system(size: size, weight: .black, design: .serif))
+                    .tracking(size * 0.20)
+                    .foregroundColor(TCTheme.textPrimary)
+                Text("CARRY")
+                    .font(.system(size: size * 0.98, weight: .black, design: .serif))
+                    .tracking(size * 0.14)
                     .foregroundColor(TCTheme.textPrimary)
             }
         }
     }
+}
 
-    private var logoMark: some View {
+private struct ArcLogoView: View {
+    let size: CGFloat
+    var body: some View {
+        Canvas { ctx, sz in
+            let w = sz.width; let h = sz.height; let midX = w / 2
+            var arc = Path()
+            arc.move(to: CGPoint(x: w * 0.05, y: h * 0.90))
+            arc.addCurve(
+                to: CGPoint(x: w * 0.95, y: h * 0.90),
+                control1: CGPoint(x: midX - w * 0.07, y: -h * 0.18),
+                control2: CGPoint(x: midX + w * 0.14, y: -h * 0.18)
+            )
+            ctx.stroke(arc, with: .color(TCTheme.sage.opacity(0.82)),
+                       style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+            let ax = midX + w * 0.02; let ay = h * -0.04
+            ctx.fill(Path(ellipseIn: CGRect(x: ax - 3.5, y: ay - 3.5, width: 7, height: 7)),
+                     with: .color(TCTheme.gold))
+            ctx.fill(Path(ellipseIn: CGRect(x: ax - 2, y: ay - 2, width: 4, height: 4)),
+                     with: .color(TCTheme.goldLight))
+        }
+    }
+}
+
+// MARK: - Universal Tab Header Bar
+
+struct TCHeaderBar<RightContent: View>: View {
+    let initials: String
+    @ViewBuilder let rightContent: () -> RightContent
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 0) {
+            avatarCircle.frame(width: 44)
+            Spacer(minLength: 6)
+            TrueCarryLogo(size: 20)
+                .frame(maxWidth: .infinity, alignment: .center)
+            Spacer(minLength: 6)
+            HStack(spacing: 6) { rightContent() }.frame(width: 80, alignment: .trailing)
+        }
+        .padding(.horizontal, TCTheme.hPad)
+        .padding(.top, 8)
+        .padding(.bottom, 4)
+    }
+
+    private var avatarCircle: some View {
         ZStack {
-            Circle()
-                .fill(TCTheme.goldGradient)
-                .frame(width: size, height: size)
-            Image(systemName: "flag.fill")
-                .font(.system(size: size * 0.48, weight: .bold))
-                .foregroundColor(.black)
+            Circle().fill(TCTheme.panelRaised)
+            Circle().strokeBorder(TCTheme.goldGradient, lineWidth: 2)
+            Text(String(initials.prefix(2)).uppercased())
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(TCTheme.gold)
+        }
+        .frame(width: 38, height: 38)
+        .shadow(color: TCTheme.gold.opacity(0.20), radius: 6, x: 0, y: 0)
+    }
+}
+
+// MARK: - Header Icon Buttons
+
+struct TCBellButton: View {
+    var badgeCount: Int = 0
+    var action: () -> Void = {}
+    var body: some View {
+        Button(action: action) {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: "bell")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(TCTheme.textSecondary)
+                if badgeCount > 0 {
+                    ZStack {
+                        Circle().fill(TCTheme.gold)
+                        Text("\(min(badgeCount, 9))")
+                            .font(.system(size: 8, weight: .black))
+                            .foregroundColor(.black)
+                    }
+                    .frame(width: 13, height: 13)
+                    .offset(x: 2, y: -2)
+                }
+            }
+            .frame(width: 32, height: 32)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct TCIconButton: View {
+    let icon: String
+    var color: Color = TCTheme.textSecondary
+    var action: () -> Void = {}
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundColor(color)
+                .frame(width: 32, height: 32)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Generated Fairway View (course-map illustration in SwiftUI Canvas)
+
+struct GeneratedFairwayView: View {
+    var landingFraction: CGFloat = 0.55
+    var dispersionOffline: CGFloat = 0
+
+    var body: some View {
+        Canvas { ctx, size in
+            let w = size.width; let h = size.height; let midX = w / 2
+            ctx.fill(Path(CGRect(origin: .zero, size: size)),
+                     with: .linearGradient(Gradient(colors: [Color(red:0.02,green:0.08,blue:0.14),
+                                                              Color(red:0.04,green:0.14,blue:0.10)]),
+                                           startPoint:.zero, endPoint:CGPoint(x:0,y:h)))
+            let fw = w * 0.36
+            let roughPath = Path { p in
+                p.addRoundedRect(in: CGRect(x:midX-fw, y:h*0.04, width:fw*2, height:h*0.92),
+                                 cornerSize: CGSize(width:fw*0.44, height:fw*0.44))
+            }
+            ctx.fill(roughPath, with: .color(Color(red:0.12,green:0.24,blue:0.14)))
+            let fwPath = Path { p in
+                p.addRoundedRect(in: CGRect(x:midX-fw*0.55, y:h*0.13, width:fw*1.10, height:h*0.73),
+                                 cornerSize: CGSize(width:fw*0.28, height:fw*0.28))
+            }
+            ctx.fill(fwPath, with: .color(Color(red:0.16,green:0.35,blue:0.18)))
+            let gR = w * 0.11; let gCY = h * 0.11
+            ctx.fill(Path(ellipseIn: CGRect(x:midX-gR,y:gCY-gR*0.65,width:gR*2,height:gR*1.3)),
+                     with: .color(Color(red:0.20,green:0.48,blue:0.22)))
+            ctx.fill(Path(CGRect(x:midX-1,y:gCY-gR*0.45,width:2,height:gR*0.8)), with:.color(.white.opacity(0.9)))
+            ctx.fill(Path(CGRect(x:midX+1,y:gCY-gR*0.45,width:gR*0.4,height:gR*0.28)), with:.color(TCTheme.gold))
+            let teeCY = h * 0.89
+            let lx = midX + dispersionOffline*(w/200)
+            let ly = h*(1-landingFraction)*0.77+h*0.11
+            var sp = Path()
+            sp.move(to: CGPoint(x:midX,y:teeCY-4))
+            sp.addQuadCurve(to: CGPoint(x:lx,y:ly),
+                            control: CGPoint(x:(midX+lx)/2, y:teeCY-(teeCY-ly)*1.32))
+            ctx.stroke(sp, with:.color(TCTheme.gold.opacity(0.72)),
+                       style:StrokeStyle(lineWidth:1.8,lineCap:.round,dash:[4,3]))
+            ctx.fill(Path(ellipseIn: CGRect(x:lx-4,y:ly-4,width:8,height:8)), with:.color(TCTheme.gold))
+            ctx.stroke(Path(ellipseIn: CGRect(x:lx-11,y:ly-11,width:22,height:22)),
+                       with:.color(TCTheme.gold.opacity(0.28)), lineWidth:1)
+        }
+    }
+}
+
+// MARK: - Dispersion Chart
+
+struct DispersionChartView: View {
+    var dots: [(x: CGFloat, y: CGFloat)] = []
+    static let sampleDots: [(x: CGFloat, y: CGFloat)] = [
+        (0.49,0.54),(0.51,0.48),(0.53,0.52),(0.47,0.55),(0.50,0.46),
+        (0.54,0.50),(0.46,0.52),(0.52,0.57),(0.48,0.49),(0.55,0.53),
+        (0.45,0.58),(0.51,0.44),(0.56,0.48),(0.50,0.61),(0.44,0.50),(0.53,0.44)
+    ]
+    var body: some View {
+        let useDots = dots.isEmpty ? Self.sampleDots : dots
+        Canvas { ctx, size in
+            let w = size.width; let h = size.height; let mx = w/2
+            let fw = w*0.30
+            ctx.fill(Path(CGRect(x:mx-fw,y:h*0.05,width:fw*2,height:h*0.90)),
+                     with:.color(Color(red:0.10,green:0.22,blue:0.12)))
+            ctx.fill(Path(CGRect(x:mx-fw*0.55,y:h*0.05,width:fw*1.10,height:h*0.90)),
+                     with:.color(Color(red:0.14,green:0.30,blue:0.16)))
+            for r in [0.20,0.35,0.50] as [Double] {
+                let rv = CGFloat(r)*w
+                ctx.stroke(Path(ellipseIn: CGRect(x:mx-rv,y:h*0.55-rv*0.4,width:rv*2,height:rv*0.8)),
+                           with:.color(Color.white.opacity(0.08)),lineWidth:1)
+            }
+            var cl = Path(); cl.move(to:CGPoint(x:mx,y:h*0.05)); cl.addLine(to:CGPoint(x:mx,y:h*0.95))
+            ctx.stroke(cl, with:.color(TCTheme.sage.opacity(0.18)),
+                       style:StrokeStyle(lineWidth:1,dash:[4,4]))
+            for d in useDots {
+                ctx.fill(Path(ellipseIn: CGRect(x:d.x*w-4,y:d.y*h-4,width:8,height:8)),
+                         with:.color(TCTheme.gold.opacity(0.78)))
+            }
+            ctx.fill(Path(ellipseIn: CGRect(x:mx-5.5,y:h*0.52-5.5,width:11,height:11)),
+                     with:.color(TCTheme.sage))
+        }
+    }
+}
+
+// MARK: - Range Hero Background (dark fairway scene for hero cards)
+
+struct RangeHeroBackground: View {
+    var body: some View {
+        Canvas { ctx, size in
+            let w = size.width; let h = size.height
+            ctx.fill(Path(CGRect(origin:.zero, size:size)),
+                     with:.linearGradient(Gradient(colors:[Color(red:0.03,green:0.12,blue:0.06),
+                                                           Color(red:0.01,green:0.06,blue:0.03)]),
+                                          startPoint:.zero,endPoint:CGPoint(x:0,y:h)))
+            let gw = w*0.55
+            ctx.fill(Path(CGRect(x:w*0.22,y:h*0.30,width:gw,height:h*0.70)),
+                     with:.color(Color(red:0.14,green:0.30,blue:0.16).opacity(0.7)))
+            var arc = Path()
+            arc.move(to:CGPoint(x:w*0.08,y:h*0.78))
+            arc.addCurve(to:CGPoint(x:w*0.72,y:h*0.35),
+                         control1:CGPoint(x:w*0.18,y:h*0.15),
+                         control2:CGPoint(x:w*0.55,y:h*0.08))
+            ctx.stroke(arc,with:.color(TCTheme.gold.opacity(0.55)),
+                       style:StrokeStyle(lineWidth:1.5,lineCap:.round,dash:[5,4]))
+            ctx.fill(Path(ellipseIn:CGRect(x:w*0.69,y:h*0.33,width:8,height:8)),
+                     with:.color(TCTheme.gold))
+            // Device silhouette (range monitor)
+            let dx=w*0.72; let dy=h*0.45
+            ctx.fill(Path(CGRect(x:dx,y:dy,width:w*0.22,height:h*0.28)),
+                     with:.color(Color(red:0.08,green:0.14,blue:0.10).opacity(0.8)))
+            ctx.stroke(Path(CGRect(x:dx,y:dy,width:w*0.22,height:h*0.28)),
+                       with:.color(TCTheme.sage.opacity(0.20)),lineWidth:1)
+            ctx.fill(Path(CGRect(x:dx+w*0.04,y:dy+h*0.04,width:w*0.14,height:h*0.12)),
+                     with:.color(TCTheme.sage.opacity(0.15)))
+            // Ball
+            ctx.fill(Path(ellipseIn:CGRect(x:w*0.12,y:h*0.74,width:10,height:10)),
+                     with:.color(.white.opacity(0.85)))
+            ctx.stroke(Path(ellipseIn:CGRect(x:w*0.12,y:h*0.74,width:10,height:10)),
+                       with:.color(TCTheme.gold.opacity(0.40)),lineWidth:1)
         }
     }
 }

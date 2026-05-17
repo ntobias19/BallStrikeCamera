@@ -2,225 +2,427 @@ import SwiftUI
 
 struct ScorecardView: View {
     @Environment(\.dismiss) private var dismiss
+
     let round: CourseRound
     let course: GolfCourse?
 
+    // MARK: - Computed
+
+    private var frontNine: [RoundHole] { round.holes.filter { $0.holeNumber <= 9 } }
+    private var backNine:  [RoundHole] { round.holes.filter { $0.holeNumber > 9  } }
+
+    private var scoreDiff: Int { round.scoreSummary.totalScore - round.scoreSummary.totalPar }
+
+    private var matchedTeeBox: TeeBox? {
+        course?.teeBoxes.first(where: { $0.name == round.teeBoxName })
+    }
+
+    private func frontTotal(_ holes: [RoundHole]) -> Int {
+        holes.reduce(0) { $0 + ($1.score ?? $1.par) }
+    }
+
+    private var totalScore: Int {
+        let s = round.scoreSummary.totalScore
+        return s > 0 ? s : round.holes.reduce(0) { $0 + ($1.score ?? $1.par) }
+    }
+
+    // MARK: - Body
+
     var body: some View {
-        NavigationStack {
-            ZStack {
-                BallStrikeBackgroundView()
+        ZStack {
+            TrueCarryBackground().ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                // Header bar
+                headerBar
+
                 ScrollView(showsIndicators: false) {
-                    VStack(spacing: BSTheme.sectionGap) {
-                        summaryCard
-                        if !frontNine.isEmpty { nineCard(title: "Front 9", holes: frontNine) }
-                        if !backNine.isEmpty  { nineCard(title: "Back 9",  holes: backNine)  }
+                    VStack(spacing: TCTheme.sectionGap) {
+                        // Course summary card
+                        courseCard
+                            .padding(.horizontal, TCTheme.hPad)
+
+                        // Scorecard grid
+                        scorecardGrid
+                            .padding(.horizontal, TCTheme.hPad)
+
+                        // Legend
+                        legendRow
+                            .padding(.horizontal, TCTheme.hPad)
+
+                        // Summary strip
+                        summaryStrip
+                            .padding(.horizontal, TCTheme.hPad)
+
+                        // Stats card
                         statsCard
-                        Spacer(minLength: 32)
+                            .padding(.horizontal, TCTheme.hPad)
+
+                        // Action buttons
+                        VStack(spacing: 10) {
+                            TCPrimaryGoldButton(title: "Back to Hole", icon: "arrow.left") {
+                                dismiss()
+                            }
+                            TCOutlineButton(title: "Round Summary", color: TCTheme.sage) {}
+                        }
+                        .padding(.horizontal, TCTheme.hPad)
+
+                        Spacer(minLength: 40)
                     }
-                    .padding(.horizontal, BSTheme.hPad)
-                    .padding(.top, 4)
-                }
-            }
-            .navigationTitle("Scorecard")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            .toolbarBackground(.clear, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Done") { dismiss() }.foregroundColor(BSTheme.textMuted)
+                    .padding(.top, TCTheme.sectionGap)
+                    .padding(.bottom, 40)
                 }
             }
         }
-        .preferredColorScheme(.dark)
+        .navigationBarHidden(true)
     }
 
-    // MARK: - Summary
+    // MARK: - Header Bar
 
-    private var summaryCard: some View {
+    private var headerBar: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(round.courseName)
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundColor(BSTheme.textPrimary)
-                Text("\(round.teeBoxName) Tees · \(formattedDate)")
-                    .font(.system(size: 12))
-                    .foregroundColor(BSTheme.textMuted)
+            Button { dismiss() } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("Done")
+                        .font(.system(size: 15, weight: .semibold))
+                }
+                .foregroundColor(TCTheme.textMuted)
             }
+            .buttonStyle(.plain)
+
             Spacer()
-            VStack(alignment: .trailing, spacing: 4) {
-                let diff = round.scoreSummary.totalScore - round.scoreSummary.totalPar
-                Text(diff == 0 ? "E" : (diff > 0 ? "+\(diff)" : "\(diff)"))
-                    .font(.system(size: 28, weight: .black))
-                    .foregroundColor(diff < 0 ? BSTheme.fairwayGreen : (diff == 0 ? BSTheme.electricCyan : BSTheme.textPrimary))
-                Text("\(round.scoreSummary.totalScore) / \(round.scoreSummary.totalPar)")
-                    .font(.system(size: 12))
-                    .foregroundColor(BSTheme.textMuted)
-            }
+            TrueCarryLogo(size: 16)
+            Spacer()
+
+            TCIconButton(icon: "square.and.arrow.up") {}
+                .frame(width: 44)
         }
-        .premiumCard()
+        .padding(.horizontal, TCTheme.hPad)
+        .padding(.vertical, 12)
+        .background(TCTheme.panel)
+        .overlay(Rectangle().fill(TCTheme.border).frame(height: 1), alignment: .bottom)
     }
 
-    // MARK: - Nine Card
+    // MARK: - Course Card
 
-    private func nineCard(title: String, holes: [RoundHole]) -> some View {
+    private var courseCard: some View {
+        HStack(spacing: 14) {
+            TCCourseAerialThumbnail(seed: abs(round.courseName.hashValue) % 4)
+                .frame(width: 60, height: 52)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(TCTheme.borderSage, lineWidth: 1)
+                )
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(round.courseName)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(TCTheme.textPrimary)
+                    .lineLimit(1)
+                Text("\(round.teeBoxName) Tees  ·  \(formattedDate(round.startedAt))")
+                    .font(.system(size: 12))
+                    .foregroundColor(TCTheme.textMuted)
+                if let r = matchedTeeBox?.rating, let s = matchedTeeBox?.slope {
+                    Text(String(format: "Rating %.1f  /  Slope %d", r, s))
+                        .font(.system(size: 11))
+                        .foregroundColor(TCTheme.textMuted)
+                }
+            }
+
+            Spacer()
+
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(scoreDiff == 0 ? "E" : scoreDiff > 0 ? "+\(scoreDiff)" : "\(scoreDiff)")
+                    .font(.system(size: 28, weight: .black, design: .rounded))
+                    .foregroundColor(scoreDiff < 0 ? TCTheme.sage : scoreDiff == 0 ? TCTheme.cyan : TCTheme.textPrimary)
+                Text("Total")
+                    .font(.system(size: 10))
+                    .foregroundColor(TCTheme.textMuted)
+            }
+        }
+        .tcCard()
+    }
+
+    // MARK: - Scorecard Grid
+
+    private var scorecardGrid: some View {
         VStack(spacing: 0) {
             // Header row
-            HStack(spacing: 0) {
-                columnHeader("Hole", width: 40)
-                columnHeader("Par",  width: 36)
-                columnHeader("Yds",  width: 50)
-                Spacer()
-                columnHeader("Score", width: 52)
-                columnHeader("Putts", width: 44)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(Color.white.opacity(0.04))
+            scorecardHeaderRow
 
-            BSDivider()
+            Divider().background(Color(white: 0.75))
 
             // Hole rows
-            ForEach(holes) { hole in
-                ScorecardRow(hole: hole, golfHole: golfHole(for: hole), teeBox: nil)
-                BSDivider()
+            ForEach(Array(round.holes.enumerated()), id: \.element.id) { idx, hole in
+                scorecardHoleRow(hole: hole)
+                if idx < round.holes.count - 1 {
+                    Divider().background(Color(white: 0.80))
+                }
             }
 
-            // Sub-total
-            let subtotalScore = holes.compactMap { $0.score }.reduce(0, +)
-            let subtotalPar   = holes.map { $0.par }.reduce(0, +)
-            HStack(spacing: 0) {
-                Text(title)
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundColor(BSTheme.textMuted)
-                    .frame(width: 40, alignment: .leading)
-                Spacer()
-                Text("\(subtotalPar)")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundColor(BSTheme.textMuted)
-                    .frame(width: 52, alignment: .center)
-                Text(holes.allSatisfy { $0.score != nil } ? "\(subtotalScore)" : "—")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundColor(BSTheme.textPrimary)
-                    .frame(width: 44, alignment: .center)
+            // OUT subtotal
+            if frontNine.count == 9 {
+                Divider().background(Color(white: 0.70))
+                scorecardTotalRow(label: "OUT", holes: frontNine)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(Color.white.opacity(0.04))
+
+            // IN subtotal
+            if backNine.count == 9 {
+                Divider().background(Color(white: 0.70))
+                scorecardTotalRow(label: "IN", holes: backNine)
+            }
+
+            // TOTAL
+            Divider().background(Color(white: 0.60))
+            scorecardTotalRow(label: "TOTAL", holes: round.holes)
         }
-        .background(BSTheme.panel)
-        .clipShape(RoundedRectangle(cornerRadius: BSTheme.cardRadius, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: BSTheme.cardRadius, style: .continuous)
-            .strokeBorder(BSTheme.border, lineWidth: 1))
+        .background(Color(red: 0.96, green: 0.94, blue: 0.90))
+        .clipShape(RoundedRectangle(cornerRadius: TCTheme.cardRadius, style: .continuous))
     }
 
-    // MARK: - Stats
-
-    private var statsCard: some View {
-        VStack(spacing: 12) {
-            BSectionHeader(title: "Round Stats")
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()),
-                                GridItem(.flexible()), GridItem(.flexible())],
-                      spacing: 10) {
-                let s = round.scoreSummary
-                StatTile(label: "FIR",    value: "\(s.fairwaysHit)",  accent: BSTheme.fairwayGreen)
-                StatTile(label: "GIR",    value: "\(s.greensInReg)",  accent: BSTheme.electricCyan)
-                StatTile(label: "Putts",  value: "\(s.totalPutts)",   accent: BSTheme.gold)
-                StatTile(label: "Score",  value: "\(s.totalScore)",   accent: BSTheme.textPrimary)
-            }
+    private var scorecardHeaderRow: some View {
+        HStack(spacing: 0) {
+            Text("HOLE")
+                .frame(width: 44, alignment: .leading)
+            Text("PAR")
+                .frame(width: 36, alignment: .center)
+            Spacer()
+            Text("SCORE")
+                .frame(width: 54, alignment: .center)
+            Text("PUTTS")
+                .frame(width: 44, alignment: .center)
         }
+        .font(.system(size: 10, weight: .bold))
+        .foregroundColor(Color(red: 0.94, green: 0.90, blue: 0.80))
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .background(
+            // Top corners rounded, bottom corners square to join the rows below
+            Color(red: 0.10, green: 0.23, blue: 0.13)
+                .clipShape(
+                    RoundedTopCornersShape(radius: TCTheme.cardRadius)
+                )
+        )
     }
 
-    // MARK: - Helpers
-
-    private var frontNine: [RoundHole] { round.holes.filter { $0.holeNumber <= 9  } }
-    private var backNine:  [RoundHole] { round.holes.filter { $0.holeNumber >= 10 } }
-
-    private func golfHole(for rh: RoundHole) -> GolfHole? {
-        course?.holes.first { $0.number == rh.holeNumber }
-    }
-
-    private var formattedDate: String {
-        let f = DateFormatter()
-        f.dateStyle = .medium
-        return f.string(from: round.startedAt)
-    }
-
-    private func columnHeader(_ text: String, width: CGFloat) -> some View {
-        Text(text)
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundColor(BSTheme.textMuted)
-            .frame(width: width, alignment: .center)
-    }
-}
-
-// MARK: - Scorecard Row
-
-private struct ScorecardRow: View {
-    let hole: RoundHole
-    let golfHole: GolfHole?
-    let teeBox: TeeBox?
-
-    var body: some View {
+    private func scorecardHoleRow(hole: RoundHole) -> some View {
         HStack(spacing: 0) {
             Text("\(hole.holeNumber)")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(BSTheme.textPrimary)
-                .frame(width: 40, alignment: .leading)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(Color(white: 0.15))
+                .frame(width: 44, alignment: .leading)
+
             Text("\(hole.par)")
-                .font(.system(size: 14))
-                .foregroundColor(BSTheme.textMuted)
+                .font(.system(size: 13))
+                .foregroundColor(Color(white: 0.40))
                 .frame(width: 36, alignment: .center)
-            if let yards = yardage {
-                Text("\(yards)")
-                    .font(.system(size: 12))
-                    .foregroundColor(BSTheme.textMuted)
-                    .frame(width: 50, alignment: .center)
-            } else {
-                Text("—")
-                    .font(.system(size: 12))
-                    .foregroundColor(BSTheme.textMuted)
-                    .frame(width: 50, alignment: .center)
-            }
+
             Spacer()
-            // Score box
+
+            // Score cell with colored background
             if let s = hole.score {
+                let diff = s - hole.par
                 Text("\(s)")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundColor(scoreColor(s))
-                    .frame(width: 52, alignment: .center)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(diff < 0 ? .white : diff == 0 ? Color(white: 0.20) : .white)
+                    .frame(width: 28, height: 28)
+                    .background(scoreCellBackground(diff: diff))
+                    .clipShape(diff > 0
+                               ? AnyShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                               : AnyShape(Circle()))
+                    .frame(width: 54, alignment: .center)
             } else {
                 Text("—")
-                    .font(.system(size: 14))
-                    .foregroundColor(BSTheme.textMuted)
-                    .frame(width: 52, alignment: .center)
+                    .font(.system(size: 13))
+                    .foregroundColor(Color(white: 0.55))
+                    .frame(width: 54, alignment: .center)
             }
+
+            // Putts
             if let p = hole.putts {
                 Text("\(p)")
-                    .font(.system(size: 14))
-                    .foregroundColor(BSTheme.textMuted)
+                    .font(.system(size: 13))
+                    .foregroundColor(Color(white: 0.35))
                     .frame(width: 44, alignment: .center)
             } else {
                 Text("—")
-                    .font(.system(size: 14))
-                    .foregroundColor(BSTheme.textMuted)
+                    .font(.system(size: 13))
+                    .foregroundColor(Color(white: 0.55))
                     .frame(width: 44, alignment: .center)
             }
         }
         .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+    }
+
+    private func scoreCellBackground(diff: Int) -> Color {
+        if diff < 0  { return Color(red: 0.20, green: 0.65, blue: 0.30).opacity(0.85) }
+        if diff == 0 { return Color(white: 0.82) }
+        return Color(red: 0.85, green: 0.65, blue: 0.20).opacity(0.85)
+    }
+
+    private func scorecardTotalRow(label: String, holes: [RoundHole]) -> some View {
+        let totalPar   = holes.reduce(0) { $0 + $1.par }
+        let totalScore = holes.reduce(0) { $0 + ($1.score ?? $1.par) }
+        let totalPutts = holes.compactMap { $0.putts }.reduce(0, +)
+
+        return HStack(spacing: 0) {
+            Text(label)
+                .font(.system(size: 11, weight: .black))
+                .foregroundColor(Color(white: 0.20))
+                .frame(width: 44, alignment: .leading)
+            Text("\(totalPar)")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(Color(white: 0.40))
+                .frame(width: 36, alignment: .center)
+            Spacer()
+            Text("\(totalScore)")
+                .font(.system(size: 13, weight: .black))
+                .foregroundColor(Color(white: 0.15))
+                .frame(width: 54, alignment: .center)
+            Text(totalPutts > 0 ? "\(totalPutts)" : "—")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(Color(white: 0.40))
+                .frame(width: 44, alignment: .center)
+        }
+        .padding(.horizontal, 14)
         .padding(.vertical, 9)
+        .background(Color(white: 0.88))
     }
 
-    private var yardage: Int? {
-        guard let gh = golfHole, let tee = teeBox else { return nil }
-        return gh.teeYardsByTeeBox[tee.id]
+    // MARK: - Legend
+
+    private var legendRow: some View {
+        HStack(spacing: 14) {
+            legendItem(isCircle: true,  color: Color(red: 0.20, green: 0.65, blue: 0.30).opacity(0.85), label: "Birdie or Better")
+            legendItem(isCircle: true,  color: Color(white: 0.82),                                       label: "Par")
+            legendItem(isCircle: false, color: Color(red: 0.85, green: 0.65, blue: 0.20).opacity(0.85), label: "Bogey or Worse")
+        }
+        .tcCard()
     }
 
-    private func scoreColor(_ s: Int) -> Color {
-        let diff = s - hole.par
-        if diff < -1 { return BSTheme.gold }
-        if diff == -1 { return BSTheme.fairwayGreen }
-        if diff == 0 { return BSTheme.textPrimary }
-        if diff == 1 { return BSTheme.gold }
-        return BSTheme.dangerRed
+    private func legendItem(isCircle: Bool, color: Color, label: String) -> some View {
+        HStack(spacing: 6) {
+            if isCircle {
+                Circle()
+                    .fill(color)
+                    .frame(width: 12, height: 12)
+            } else {
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(color)
+                    .frame(width: 12, height: 12)
+            }
+            Text(label)
+                .font(.system(size: 10))
+                .foregroundColor(TCTheme.textMuted)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: - Summary Strip
+
+    private var summaryStrip: some View {
+        HStack(spacing: 0) {
+            summaryCell(label: "OUT",
+                        value: frontNine.reduce(0) { $0 + ($1.score ?? $1.par) },
+                        isScore: false)
+            Rectangle().fill(TCTheme.border).frame(width: 1, height: 44)
+            summaryCell(label: "IN",
+                        value: backNine.reduce(0) { $0 + ($1.score ?? $1.par) },
+                        isScore: false)
+            Rectangle().fill(TCTheme.border).frame(width: 1, height: 44)
+            summaryCell(label: "TOTAL", value: totalScore, isScore: false)
+            Rectangle().fill(TCTheme.border).frame(width: 1, height: 44)
+            summaryCell(label: "+/-",   value: scoreDiff,  isScore: true)
+            Rectangle().fill(TCTheme.border).frame(width: 1, height: 44)
+            summaryCell(label: "PUTTS",
+                        value: round.scoreSummary.totalPutts,
+                        isScore: false)
+        }
+        .tcCard(padding: 0)
+        .padding(.vertical, 0)
+    }
+
+    private func summaryCell(label: String, value: Int, isScore: Bool) -> some View {
+        VStack(spacing: 3) {
+            let color: Color = isScore
+                ? (value < 0 ? TCTheme.sage : value == 0 ? TCTheme.cyan : TCTheme.textPrimary)
+                : TCTheme.textPrimary
+            let display: String = isScore
+                ? (value == 0 ? "E" : value > 0 ? "+\(value)" : "\(value)")
+                : "\(value)"
+
+            Text(display)
+                .font(.system(size: 18, weight: .black, design: .rounded))
+                .foregroundColor(color)
+            Text(label)
+                .font(.system(size: 9, weight: .bold))
+                .foregroundColor(TCTheme.textMuted)
+                .tracking(0.8)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+    }
+
+    // MARK: - Stats Card
+
+    private var statsCard: some View {
+        let s = round.scoreSummary
+        return VStack(spacing: 12) {
+            TCSectionHeader(title: "Round Stats")
+            LazyVGrid(
+                columns: [GridItem(.flexible()), GridItem(.flexible()),
+                          GridItem(.flexible()), GridItem(.flexible())],
+                spacing: 10
+            ) {
+                TCMetricTile(label: "FIR",   value: "\(s.fairwaysHit)", accent: TCTheme.sage)
+                TCMetricTile(label: "GIR",   value: "\(s.greensInReg)", accent: TCTheme.cyan)
+                TCMetricTile(label: "Putts", value: "\(s.totalPutts)",  accent: TCTheme.gold)
+                TCMetricTile(label: "Score", value: "\(s.totalScore)",  accent: TCTheme.textPrimary)
+            }
+        }
+        .tcCard()
+    }
+
+    // MARK: - Date Helper
+
+    private func formattedDate(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        return f.string(from: date)
+    }
+}
+
+// MARK: - AnyShape helper (iOS 16 polyfill)
+
+private struct AnyShape: Shape {
+    private let pathBuilder: (CGRect) -> Path
+    init<S: Shape>(_ shape: S) {
+        pathBuilder = { shape.path(in: $0) }
+    }
+    func path(in rect: CGRect) -> Path {
+        pathBuilder(rect)
+    }
+}
+
+// MARK: - Rounded top corners only
+
+private struct RoundedTopCornersShape: Shape {
+    let radius: CGFloat
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+        p.addLine(to: CGPoint(x: rect.minX, y: rect.minY + radius))
+        p.addQuadCurve(to: CGPoint(x: rect.minX + radius, y: rect.minY),
+                       control: CGPoint(x: rect.minX, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.maxX - radius, y: rect.minY))
+        p.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY + radius),
+                       control: CGPoint(x: rect.maxX, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        p.closeSubpath()
+        return p
     }
 }

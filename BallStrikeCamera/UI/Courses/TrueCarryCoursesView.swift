@@ -3,23 +3,51 @@ import SwiftUI
 struct TrueCarryCoursesView: View {
     @EnvironmentObject var session: AuthSessionStore
     @EnvironmentObject var camera: CameraController
-    @State private var showCourseSearch = false
-    @State private var showCourseMode   = false
+    @State private var selectedCoursesTab = "My Courses"
+    @State private var showCourseSearch  = false
+    @State private var showCourseMode    = false
     @State private var selectedCourse: GolfCourse?
     @State private var selectedTeeBox: TeeBox?
+    @State private var rounds: [CourseRound] = []
+    private let coursesTabs = ["My Courses", "Bucket List", "Discover"]
+
+    // MARK: - Derived helpers
+
+    private var userInitials: String {
+        let name = session.userProfile?.displayName ?? session.currentUser?.name ?? "G"
+        let parts = name.components(separatedBy: " ")
+        if parts.count >= 2, let f = parts[0].first, let l = parts[1].first {
+            return "\(f)\(l)"
+        }
+        return String(name.prefix(2)).uppercased()
+    }
+
+    private var firstName: String {
+        let name = session.userProfile?.displayName ?? session.currentUser?.name ?? "Golfer"
+        return name.components(separatedBy: " ").first ?? name
+    }
+
+    // MARK: - Body
 
     var body: some View {
         ZStack {
             TrueCarryBackground()
             ScrollView(showsIndicators: false) {
-                VStack(spacing: TCTheme.sectionGap) {
-                    headerSection
-                    startRoundCard
-                    recentRoundsSection
-                    Spacer(minLength: 100)
+                VStack(spacing: 0) {
+                    TCHeaderBar(initials: userInitials) {
+                        TCIconButton(icon: "magnifyingglass") {}
+                        TCBellButton(badgeCount: 0) {}
+                    }
+                    VStack(spacing: TCTheme.sectionGap) {
+                        TCUnderlineTabs(tabs: coursesTabs, selected: $selectedCoursesTab)
+                        journeyCard
+                        courseRankingSection
+                        discoverCard
+                        Spacer(minLength: 140)
+                    }
+                    .padding(.horizontal, TCTheme.hPad)
+                    .padding(.top, 8)
                 }
-                .padding(.horizontal, TCTheme.hPad)
-                .padding(.top, 8)
             }
         }
         .navigationBarHidden(true)
@@ -39,9 +67,9 @@ struct TrueCarryCoursesView: View {
             }
         }
         .fullScreenCover(isPresented: $showCourseMode) {
-            if let uid = session.currentUser?.id,
+            if let uid   = session.currentUser?.id,
                let course = selectedCourse,
-               let tee = selectedTeeBox {
+               let tee   = selectedTeeBox {
                 CourseModeGPSHoleView(
                     userId: uid,
                     backend: session.backend,
@@ -50,102 +78,181 @@ struct TrueCarryCoursesView: View {
                 )
             }
         }
-    }
-
-    // MARK: Header
-
-    private var headerSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Courses")
-                .font(.system(size: 32, weight: .black))
-                .foregroundColor(TCTheme.textPrimary)
-            Text("Track every round on the course.")
-                .font(.system(size: 14))
-                .foregroundColor(TCTheme.textMuted)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, 8)
-    }
-
-    // MARK: Start Round Card
-
-    private var startRoundCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            LinearGradient(colors: [TCTheme.sage, TCTheme.deepGreen],
-                           startPoint: .leading, endPoint: .trailing)
-                .frame(height: 3)
-                .clipShape(UnevenRoundedRectangle(
-                    topLeadingRadius: TCTheme.cardRadius,
-                    bottomLeadingRadius: 0,
-                    bottomTrailingRadius: 0,
-                    topTrailingRadius: TCTheme.cardRadius))
-
-            VStack(alignment: .leading, spacing: 16) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Start a Round")
-                        .font(.system(size: 22, weight: .black))
-                        .foregroundColor(TCTheme.textPrimary)
-                    Text("GPS rangefinder + launch monitor data for every shot.")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(TCTheme.textSecondary)
-                }
-                TCPrimaryGoldButton(title: "Find a Course", icon: "magnifyingglass") {
-                    showCourseSearch = true
-                }
-            }
-            .padding(18)
-            .background(TCTheme.panel)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: TCTheme.cardRadius, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: TCTheme.cardRadius, style: .continuous)
-                .strokeBorder(TCTheme.border, lineWidth: 1)
-        )
-        .shadow(color: TCTheme.sage.opacity(0.12), radius: 18, x: 0, y: 6)
-    }
-
-    // MARK: Recent Rounds
-
-    private var recentRoundsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            TCSectionHeader(title: "Recent Rounds")
-            VStack(spacing: 10) {
-                roundRow(course: "Pebble Beach",     date: "Yesterday",   score: "+3", holes: 9)
-                roundRow(course: "Augusta National", date: "3 days ago",  score: "E",  holes: 18)
-                roundRow(course: "TPC Sawgrass",     date: "Last week",   score: "+5", holes: 18)
-            }
+        .task {
+            rounds = (try? await session.backend.loadCourseRounds(
+                userId: session.currentUser?.id ?? UUID()
+            )) ?? []
         }
     }
 
-    private func roundRow(course: String, date: String, score: String, holes: Int) -> some View {
-        HStack(spacing: 14) {
-            Circle()
-                .fill(TCTheme.sage.opacity(0.15))
-                .frame(width: 42, height: 42)
-                .overlay(
-                    Image(systemName: "flag.fill")
-                        .font(.system(size: 16))
-                        .foregroundColor(TCTheme.sage)
-                )
-            VStack(alignment: .leading, spacing: 3) {
-                Text(course)
-                    .font(.system(size: 14, weight: .semibold))
+    // MARK: - Journey Card
+
+    private var journeyCard: some View {
+        VStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("\(firstName)'s Journey")
+                    .font(.system(size: 28, weight: .bold, design: .serif))
                     .foregroundColor(TCTheme.textPrimary)
-                Text("\(holes) holes · \(date)")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text("Your complete golfing history in one place.")
                     .font(.system(size: 12))
                     .foregroundColor(TCTheme.textMuted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Spacer()
-            Text(score)
-                .font(.system(size: 18, weight: .black, design: .rounded))
-                .foregroundColor(scoreColor(score))
+
+            HStack(spacing: 0) {
+                TCStatGroup(
+                    icon: "flag.fill",
+                    value: "37",
+                    label: "Courses\nPlayed",
+                    color: TCTheme.sage
+                )
+                TCStatGroup(
+                    icon: "star.fill",
+                    value: "16",
+                    label: "Course\nReviews",
+                    color: TCTheme.gold
+                )
+                TCStatGroup(
+                    icon: "location.fill",
+                    value: "24",
+                    label: "Local\nRounds",
+                    color: TCTheme.cyan
+                )
+                TCStatGroup(
+                    icon: "chart.bar",
+                    value: "6.2",
+                    label: "Current\nHandicap",
+                    color: TCTheme.gold
+                )
+            }
         }
         .tcCard()
     }
 
-    private func scoreColor(_ score: String) -> Color {
-        if score == "E"             { return TCTheme.cyan }
-        if score.hasPrefix("-")     { return TCTheme.sage }
-        return TCTheme.textPrimary
+    // MARK: - Course Ranking Section
+
+    private var courseRankingSection: some View {
+        VStack(spacing: 12) {
+            HStack {
+                TCSectionHeader(title: "My Course Ranking")
+                Spacer()
+                Button {
+                    showCourseSearch = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text("Add Course")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    .foregroundColor(TCTheme.gold)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(TCTheme.gold.opacity(0.45), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+
+            VStack(spacing: 8) {
+                TCRankingRow(
+                    rank: 1,
+                    courseName: "Augusta National Golf Club",
+                    location: "Augusta, GA",
+                    playedCount: 4,
+                    rating: 9.8,
+                    thumbnailSeed: 0
+                )
+                TCRankingRow(
+                    rank: 2,
+                    courseName: "Pebble Beach Golf Links",
+                    location: "Pebble Beach, CA",
+                    playedCount: 3,
+                    rating: 9.3,
+                    thumbnailSeed: 1
+                )
+                TCRankingRow(
+                    rank: 3,
+                    courseName: "Bandon Dunes Golf Resort",
+                    location: "Bandon, OR",
+                    playedCount: 2,
+                    rating: 9.1,
+                    thumbnailSeed: 2
+                )
+                TCRankingRow(
+                    rank: 4,
+                    courseName: "Pine Valley Golf Club",
+                    location: "Pine Valley, NJ",
+                    playedCount: 2,
+                    rating: 8.9,
+                    thumbnailSeed: 3
+                )
+            }
+        }
+    }
+
+    // MARK: - Discover Card
+
+    private var discoverCard: some View {
+        Button {
+            showCourseSearch = true
+        } label: {
+            ZStack(alignment: .bottomLeading) {
+                // Background fairway gradient
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.04, green: 0.14, blue: 0.08),
+                        Color(red: 0.02, green: 0.08, blue: 0.04)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+
+                // Subtle topo texture
+                TopoLinesCanvas()
+                    .opacity(0.06)
+
+                // Content overlay
+                HStack(alignment: .bottom) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("DISCOVER")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(TCTheme.gold)
+                            .tracking(2)
+                        Text("Top Courses")
+                            .font(.system(size: 22, weight: .black, design: .serif))
+                            .foregroundColor(TCTheme.textPrimary)
+                        Text("Explore highly rated courses curated by golfers like you.")
+                            .font(.system(size: 12))
+                            .foregroundColor(TCTheme.textSecondary)
+                            .lineLimit(2)
+                        Spacer(minLength: 8)
+                    }
+                    Spacer()
+                    // Arrow circle
+                    ZStack {
+                        Circle()
+                            .fill(TCTheme.goldGradient)
+                            .frame(width: 36, height: 36)
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.black)
+                    }
+                }
+                .padding(20)
+            }
+            .frame(height: 140)
+            .clipShape(
+                RoundedRectangle(cornerRadius: TCTheme.cardRadius, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: TCTheme.cardRadius, style: .continuous)
+                    .strokeBorder(TCTheme.borderSage, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
     }
 }
