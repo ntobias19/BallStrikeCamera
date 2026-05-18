@@ -98,9 +98,9 @@ struct EditClubView: View {
                 Text("Club Details")
                     .font(.system(size: 13))
                     .foregroundColor(BSTheme.textMuted)
-                BSTextField(placeholder: "Brand (e.g. Titleist)", text: $brand, icon: "tag")
+                TCAuthTextField(placeholder: "Brand (e.g. Titleist)", text: $brand, icon: "tag")
                     .textInputAutocapitalization(.words)
-                BSTextField(placeholder: "Name (e.g. 7 Iron, TSR3 Driver)", text: $name, icon: "figure.golf")
+                TCAuthTextField(placeholder: "Name (e.g. 7 Iron, TSR3 Driver)", text: $name, icon: "figure.golf")
                     .textInputAutocapitalization(.words)
             }
 
@@ -134,12 +134,12 @@ struct EditClubView: View {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Loft (°)").font(.system(size: 12)).foregroundColor(BSTheme.textMuted)
-                    BSTextField(placeholder: "34.0", text: $loft)
+                    TCAuthTextField(placeholder: "34.0", text: $loft)
                         .keyboardType(.decimalPad)
                 }
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Carry (yd)").font(.system(size: 12)).foregroundColor(BSTheme.textMuted)
-                    BSTextField(placeholder: "150", text: $expectedCarry)
+                    TCAuthTextField(placeholder: "150", text: $expectedCarry)
                         .keyboardType(.numberPad)
                 }
             }
@@ -147,7 +147,7 @@ struct EditClubView: View {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Total (yd)").font(.system(size: 12)).foregroundColor(BSTheme.textMuted)
-                    BSTextField(placeholder: "160", text: $expectedTotal)
+                    TCAuthTextField(placeholder: "160", text: $expectedTotal)
                         .keyboardType(.numberPad)
                 }
                 Spacer(minLength: 0)
