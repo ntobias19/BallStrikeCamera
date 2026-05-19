@@ -47,6 +47,12 @@ struct LaunchMonitorScaffoldView: View {
                             }
                             .padding(.top, 8)
 
+                            // Course context HUD — only while playing a round.
+                            if context?.sourceMode == .course {
+                                courseContextHUD
+                                    .padding(.top, 10)
+                            }
+
                             VStack {
                                 Spacer()
 
@@ -173,6 +179,39 @@ struct LaunchMonitorScaffoldView: View {
                     .foregroundColor(.white)
             }
         }
+    }
+
+    /// Compact hole context shown while hitting from the course, so the golfer sees the
+    /// hole, par, and distance to the pin without leaving the HUD.
+    private var courseContextHUD: some View {
+        HStack(spacing: 10) {
+            if let hole = context?.holeNumber {
+                Label("Hole \(hole)", systemImage: "flag.fill")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.white)
+            }
+            if let par = context?.holePar {
+                Text("Par \(par)")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.7))
+            }
+            if let yd = context?.holeYardage {
+                Divider().frame(height: 12).overlay(Color.white.opacity(0.25))
+                HStack(spacing: 4) {
+                    Text("\(yd)")
+                        .font(.system(size: 14, weight: .black))
+                        .foregroundColor(Color(red: 0.55, green: 0.73, blue: 0.37))
+                    Text("yd to pin")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.7))
+                }
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 7)
+        .background(Color.black.opacity(0.55))
+        .clipShape(Capsule())
+        .overlay(Capsule().strokeBorder(.white.opacity(0.12), lineWidth: 1))
     }
 
     private func exportFrames() {

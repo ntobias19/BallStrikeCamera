@@ -143,6 +143,45 @@ private final class TaggedPolygon: MKPolygon {
 /// Polyline subclass so the renderer can distinguish shot paths from the user→green line.
 private final class ShotPolyline: MKPolyline {}
 
+// MARK: - HUD flight animation primitives
+
+/// One-shot request to animate a ball flying from `start` to `end` on the map.
+/// Identity (`id`) drives the animation trigger; same id = no re-fire.
+private struct FlightRequest: Equatable {
+    let id: UUID
+    let start: CLLocationCoordinate2D
+    let end: CLLocationCoordinate2D
+    static func == (a: FlightRequest, b: FlightRequest) -> Bool { a.id == b.id }
+}
+
+/// Transient growing trail behind the flying ball.
+private final class FlightTrailPolyline: MKPolyline {}
+
+/// Transient flying-ball annotation (white dot) animated by the coordinator.
+private final class FlightBallAnnotation: NSObject, MKAnnotation {
+    @objc dynamic var coordinate: CLLocationCoordinate2D
+    init(coordinate: CLLocationCoordinate2D) { self.coordinate = coordinate }
+}
+
+private final class FlightBallAnnotationView: MKAnnotationView {
+    override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
+        super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
+        frame = CGRect(x: 0, y: 0, width: 16, height: 16)
+        backgroundColor = .clear
+        let dot = UIView(frame: bounds)
+        dot.backgroundColor = .white
+        dot.layer.cornerRadius = 8
+        dot.layer.borderColor = UIColor.black.withAlphaComponent(0.4).cgColor
+        dot.layer.borderWidth = 1
+        dot.layer.shadowColor = UIColor.white.cgColor
+        dot.layer.shadowRadius = 4
+        dot.layer.shadowOpacity = 0.9
+        dot.layer.shadowOffset = .zero
+        addSubview(dot)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+}
+
 private final class ShotEndAnnotation: NSObject, MKAnnotation {
     let coordinate: CLLocationCoordinate2D
     let shotIndex: Int
@@ -218,6 +257,11 @@ private struct SatelliteMapBackground: UIViewRepresentable {
     var focusId:         String = ""
     var recenterToken:   Int = 0
 
+    // HUD flight animation (transient). When a new request id arrives, the coordinator
+    // animates a ball start->end and calls onFlightCompleted with the landing coordinate.
+    var flightRequest:   FlightRequest? = nil
+    var onFlightCompleted: ((CLLocationCoordinate2D) -> Void)? = nil
+
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeUIView(context: Context) -> MKMapView {
@@ -238,8 +282,21 @@ private struct SatelliteMapBackground: UIViewRepresentable {
     }
 
     func updateUIView(_ map: MKMapView, context: Context) {
-        map.removeOverlays(map.overlays)
-        map.removeAnnotations(map.annotations.filter { !($0 is MKUserLocation) })
+        context.coordinator.parent = self
+        // Preserve any in-flight transient ball/trail across SwiftUI re-renders.
+        map.removeOverlays(map.overlays.filter { !($0 is FlightTrailPolyline) })
+        map.removeAnnotations(map.annotations.filter {
+            !($0 is MKUserLocation) && !($0 is FlightBallAnnotation)
+        })
+
+        // Kick off a flight if a new request arrived.
+        if let req = flightRequest, context.coordinator.lastFlightId != req.id {
+            context.coordinator.lastFlightId = req.id
+            context.coordinator.runFlight(on: map, from: req.start, to: req.end) { [weak coordinator = context.coordinator] landing in
+                coordinator?.parent?.onFlightCompleted?(landing)
+            }
+        }
+
         let shouldRecenter = context.coordinator.shouldRecenter(for: focusId,
                                                                 recenterToken: recenterToken)
 
@@ -369,11 +426,87 @@ private struct SatelliteMapBackground: UIViewRepresentable {
         private var lastRecenterToken = -1
         private var isProgrammaticRegionChange = false
 
+        // Flight animation state
+        var lastFlightId: UUID?
+        private var flightTimer: Timer?
+        private weak var flightBall: FlightBallAnnotation?
+        private weak var flightTrail: FlightTrailPolyline?
+
         @objc func handleTap(_ gr: UITapGestureRecognizer) {
             guard let onTap = parent?.onMapTap, let map = gr.view as? MKMapView else { return }
             let pt = gr.location(in: map)
             let coord = map.convert(pt, toCoordinateFrom: map)
             onTap(coord)
+        }
+
+        // MARK: Flight animation
+
+        /// Animate a ball from `start` to `end` over ~2.0s with an ease-out and a growing
+        /// trail, framing both endpoints. Runs entirely in UIKit (no SwiftUI churn).
+        func runFlight(on map: MKMapView,
+                       from start: CLLocationCoordinate2D,
+                       to end: CLLocationCoordinate2D,
+                       completion: @escaping (CLLocationCoordinate2D) -> Void) {
+            flightTimer?.invalidate()
+            if let b = flightBall { map.removeAnnotation(b) }
+            if let t = flightTrail { map.removeOverlay(t) }
+
+            // Frame both endpoints with padding.
+            let midLat = (start.latitude + end.latitude) / 2
+            let midLon = (start.longitude + end.longitude) / 2
+            let spanLat = max(abs(start.latitude - end.latitude) * 1.8, 0.0016)
+            let spanLon = max(abs(start.longitude - end.longitude) * 1.8, 0.0016)
+            setProgrammaticRegionChange(true)
+            map.setRegion(MKCoordinateRegion(
+                center: CLLocationCoordinate2D(latitude: midLat, longitude: midLon),
+                span: MKCoordinateSpan(latitudeDelta: spanLat, longitudeDelta: spanLon)),
+                animated: true)
+
+            let ball = FlightBallAnnotation(coordinate: start)
+            map.addAnnotation(ball)
+            flightBall = ball
+
+            let duration: CFTimeInterval = 2.0
+            let startTime = CACurrentMediaTime()
+            // Slight lateral curve so it reads as a shot, not a ruler line.
+            let curveMagnitude = 0.00018
+
+            flightTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self, weak map] timer in
+                guard let self, let map else { timer.invalidate(); return }
+                let raw = min(1.0, (CACurrentMediaTime() - startTime) / duration)
+                let t = 1 - pow(1 - raw, 2)            // ease-out
+                let lat = start.latitude  + (end.latitude  - start.latitude)  * t
+                let lon = start.longitude + (end.longitude - start.longitude) * t
+                // perpendicular curve, peaks at t=0.5
+                let bump = sin(t * .pi) * curveMagnitude
+                let dx = end.longitude - start.longitude
+                let dy = end.latitude - start.latitude
+                let len = max(sqrt(dx*dx + dy*dy), 1e-9)
+                let px = -dy / len, py = dx / len
+                let cur = CLLocationCoordinate2D(latitude: lat + py * bump,
+                                                 longitude: lon + px * bump)
+                ball.coordinate = cur
+
+                // Rebuild growing trail.
+                if let old = self.flightTrail { map.removeOverlay(old) }
+                var pts = [start, cur]
+                let trail = FlightTrailPolyline(coordinates: &pts, count: 2)
+                map.addOverlay(trail, level: .aboveLabels)
+                self.flightTrail = trail
+
+                if raw >= 1.0 {
+                    timer.invalidate()
+                    self.flightTimer = nil
+                    // Brief settle, then clean up transient visuals and report landing.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak map] in
+                        if let b = self.flightBall { map?.removeAnnotation(b) }
+                        if let tr = self.flightTrail { map?.removeOverlay(tr) }
+                        self.flightBall = nil
+                        self.flightTrail = nil
+                        completion(end)
+                    }
+                }
+            }
         }
 
         func shouldRecenter(for focusId: String, recenterToken: Int) -> Bool {
@@ -421,6 +554,12 @@ private struct SatelliteMapBackground: UIViewRepresentable {
                 }
                 return r
             }
+            if overlay is FlightTrailPolyline, let line = overlay as? MKPolyline {
+                let r         = MKPolylineRenderer(polyline: line)
+                r.strokeColor = UIColor.white.withAlphaComponent(0.95)
+                r.lineWidth   = 3.0
+                return r
+            }
             if overlay is ShotPolyline, let line = overlay as? MKPolyline {
                 let r         = MKPolylineRenderer(polyline: line)
                 r.strokeColor = UIColor(red: 1.0, green: 0.82, blue: 0.0, alpha: 0.95)
@@ -438,6 +577,16 @@ private struct SatelliteMapBackground: UIViewRepresentable {
 
         func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
             guard !(annotation is MKUserLocation) else { return nil }
+
+            if annotation is FlightBallAnnotation {
+                let id = "flightBall"
+                let v  = mapView.dequeueReusableAnnotationView(withIdentifier: id)
+                            as? FlightBallAnnotationView
+                            ?? FlightBallAnnotationView(annotation: annotation, reuseIdentifier: id)
+                v.annotation = annotation
+                v.displayPriority = .required
+                return v
+            }
 
             if let pin = annotation as? GreenPinAnnotation {
                 let id  = "greenPin"
@@ -500,6 +649,11 @@ struct CourseModeGPSHoleView: View {
     @State private var pendingShotEnd: CLLocationCoordinate2D?
     @State private var pendingShotLie: ShotLie = .unknown
     @State private var pendingLaunchMonitorShot: SavedShot?
+    // HUD flight animation state
+    @State private var flightRequest: FlightRequest?
+    @State private var pendingFlight: FlightRequest?     // held until camera cover dismisses
+    @State private var flightStart: Coordinate?
+    @State private var flightShot: SavedShot?
     #if DEBUG
     @State private var showDiagnostics = false
     #endif
@@ -625,7 +779,9 @@ struct CourseModeGPSHoleView: View {
                 trackedShots:   vm.currentHoleTrackedShots,
                 onMapTap:       trackShotMode ? { coord in handleShotTap(coord) } : nil,
                 focusId:        mapFocusId,
-                recenterToken:  recenterToken
+                recenterToken:  recenterToken,
+                flightRequest:  flightRequest,
+                onFlightCompleted: { landing in handleFlightCompleted(landing) }
             )
             .ignoresSafeArea()
 
@@ -768,8 +924,7 @@ struct CourseModeGPSHoleView: View {
                     Task {
                         await vm.addShot(shot)
                         await MainActor.run {
-                            pendingLaunchMonitorShot = shot
-                            setTrackShotMode(true)
+                            beginHudFlight(for: shot)
                         }
                     }
                 }
@@ -848,6 +1003,14 @@ struct CourseModeGPSHoleView: View {
         }
         .onChange(of: gpsOn) { _ in
             recenterToken += 1
+        }
+        .onChange(of: showCamera) { showing in
+            // Camera cover dismissed — now play the deferred HUD flight on the visible map.
+            guard !showing, let pending = pendingFlight else { return }
+            pendingFlight = nil
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                flightRequest = pending
+            }
         }
     }
 
@@ -1258,6 +1421,83 @@ struct CourseModeGPSHoleView: View {
         if !enabled {
             pendingLaunchMonitorShot = nil
         }
+    }
+
+    // MARK: - HUD flight (launch-monitor → on-course)
+
+    /// After a HUD shot, project where the ball landed on THIS hole using the measured
+    /// distance, aimed at the pin and offset by the shot's horizontal launch angle, then
+    /// animate the ball flying there. Falls back to manual placement if there's no pin.
+    private func beginHudFlight(for shot: SavedShot) {
+        guard let start = startCoordForNewShot(),
+              let pin = currentCourseHole?.greenCenterCoordinate else {
+            // No geometry to project onto — let the user place it manually.
+            pendingLaunchMonitorShot = shot
+            setTrackShotMode(true)
+            return
+        }
+        let distanceYds = shot.metrics.totalYards > 0 ? shot.metrics.totalYards
+                        : shot.metrics.carryYards
+        guard distanceYds > 0 else {
+            pendingLaunchMonitorShot = shot
+            setTrackShotMode(true)
+            return
+        }
+        let bearingToPin = Self.bearing(from: start.clCoordinate, to: pin.clCoordinate)
+        let signedHLA = shot.metrics.hlaDirection.lowercased() == "left"
+            ? -shot.metrics.hlaDegrees : shot.metrics.hlaDegrees
+        let landing = Self.project(from: start.clCoordinate,
+                                   bearingDegrees: bearingToPin + signedHLA,
+                                   distanceMeters: distanceYds / 1.09361)
+        flightStart = start
+        flightShot  = shot
+        // Defer the actual animation until the camera cover dismisses (see .onChange below)
+        // so it plays on the visible map, not underneath the full-screen camera.
+        pendingFlight = FlightRequest(id: UUID(), start: start.clCoordinate, end: landing)
+    }
+
+    private func handleFlightCompleted(_ landing: CLLocationCoordinate2D) {
+        guard let start = flightStart, let shot = flightShot else { return }
+        let lie = vm.classifyLie(at: Coordinate(landing), hole: currentCourseHole)
+        Task {
+            _ = await vm.appendTrackedShot(
+                start: start,
+                end:   Coordinate(landing),
+                club:  inferredShotClub(from: shot),
+                lie:   lie,
+                result: .inPlay,
+                linkedSavedShotId: shot.id
+            )
+            await MainActor.run {
+                flightShot = nil
+                flightStart = nil
+                flightRequest = nil
+            }
+        }
+    }
+
+    /// Initial bearing (degrees, 0 = north) from one coordinate to another.
+    private static func bearing(from a: CLLocationCoordinate2D, to b: CLLocationCoordinate2D) -> Double {
+        let lat1 = a.latitude * .pi / 180, lat2 = b.latitude * .pi / 180
+        let dLon = (b.longitude - a.longitude) * .pi / 180
+        let y = sin(dLon) * cos(lat2)
+        let x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dLon)
+        return (atan2(y, x) * 180 / .pi).truncatingRemainder(dividingBy: 360)
+    }
+
+    /// Destination coordinate given a start, bearing (deg), and distance (m). Great-circle.
+    private static func project(from origin: CLLocationCoordinate2D,
+                                bearingDegrees: Double,
+                                distanceMeters: Double) -> CLLocationCoordinate2D {
+        let R = 6_371_000.0
+        let d = distanceMeters / R
+        let brng = bearingDegrees * .pi / 180
+        let lat1 = origin.latitude * .pi / 180
+        let lon1 = origin.longitude * .pi / 180
+        let lat2 = asin(sin(lat1) * cos(d) + cos(lat1) * sin(d) * cos(brng))
+        let lon2 = lon1 + atan2(sin(brng) * sin(d) * cos(lat1),
+                                cos(d) - sin(lat1) * sin(lat2))
+        return CLLocationCoordinate2D(latitude: lat2 * 180 / .pi, longitude: lon2 * 180 / .pi)
     }
 
     // MARK: - Helpers

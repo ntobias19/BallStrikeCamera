@@ -34,6 +34,10 @@ struct ShotResultView: View {
     @State private var animationFinished: Bool   = false
     @State private var showReplay: Bool          = false
 
+    // Course-mode save state
+    @EnvironmentObject private var session: AuthSessionStore
+    @State private var isSavingCourseShot = false
+
     private var m: ShotMetricsResult? { analysis.metrics }
 
     static let airborneColor = Color(red: 0.02, green: 0.16, blue: 0.42)
@@ -91,6 +95,16 @@ struct ShotResultView: View {
     // MARK: - Body
 
     var body: some View {
+        // Course mode shows the shot on the actual course map (back in CourseModeGPSHoleView),
+        // so here we show a clean numbers summary instead of the abstract flight parabola.
+        if context?.sourceMode == .course {
+            courseResultBody
+        } else {
+            rangeResultBody
+        }
+    }
+
+    private var rangeResultBody: some View {
         GeometryReader { geo in
             VStack(spacing: 0) {
                 topBar
@@ -161,6 +175,143 @@ struct ShotResultView: View {
                 onDone()
             }
         }
+    }
+
+    // MARK: - Course Result Body
+
+    private var courseResultBody: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Text(context?.courseName ?? "Course")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.6))
+                    .lineLimit(1)
+                Spacer()
+                if let hole = context?.holeNumber {
+                    Text("Hole \(hole)\(context?.holePar.map { " · Par \($0)" } ?? "")")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(.white)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 18)
+            .padding(.bottom, 8)
+
+            Spacer()
+
+            // Club + hero distance
+            VStack(spacing: 6) {
+                if let club = selectedClubName {
+                    Text(club.uppercased())
+                        .font(.system(size: 12, weight: .bold))
+                        .tracking(2)
+                        .foregroundColor(Color(red: 0.55, green: 0.73, blue: 0.37))
+                }
+                Text(yds(m?.distance.totalYards ?? m?.distance.carryYards))
+                    .font(.system(size: 64, weight: .black, design: .rounded))
+                    .foregroundColor(.white)
+                Text("TOTAL DISTANCE")
+                    .font(.system(size: 10, weight: .bold))
+                    .tracking(1.5)
+                    .foregroundColor(.white.opacity(0.5))
+            }
+
+            // Carry / yd-to-pin / direction
+            HStack(spacing: 0) {
+                courseStat("Carry", yds(m?.distance.carryYards))
+                divider
+                courseStat("To Pin", ydToPin)
+                divider
+                courseStat("Direction", m?.ballLaunch.hlaDisplay ?? "—")
+            }
+            .padding(.top, 24)
+            .padding(.horizontal, 24)
+
+            Spacer()
+
+            // Primary action: persist + return to the course (where the flight plays).
+            Button {
+                Task { await saveAndContinue() }
+            } label: {
+                HStack(spacing: 8) {
+                    if isSavingCourseShot { ProgressView().tint(.black) }
+                    else { Image(systemName: "scope") }
+                    Text(isSavingCourseShot ? "Saving…" : "View Ball Flight on Course")
+                        .font(.system(size: 16, weight: .bold))
+                }
+                .foregroundColor(.black)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .background(Color(red: 0.55, green: 0.73, blue: 0.37))
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .disabled(isSavingCourseShot)
+            .padding(.horizontal, 20)
+
+            Button("Discard") { onDone() }
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(.white.opacity(0.5))
+                .padding(.top, 14)
+                .padding(.bottom, 24)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(white: 0.06).ignoresSafeArea())
+        .preferredColorScheme(.dark)
+        .statusBarHidden(true)
+    }
+
+    private var ydToPin: String {
+        guard let carry = m?.distance.totalYards ?? m?.distance.carryYards,
+              let yd = context?.holeYardage else { return "—" }
+        return "\(max(0, yd - Int(carry)))"
+    }
+
+    private func courseStat(_ label: String, _ value: String) -> some View {
+        VStack(spacing: 4) {
+            Text(value)
+                .font(.system(size: 20, weight: .bold))
+                .foregroundColor(.white)
+                .lineLimit(1).minimumScaleFactor(0.6)
+            Text(label)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(.white.opacity(0.5))
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var divider: some View {
+        Rectangle().fill(Color.white.opacity(0.1)).frame(width: 1, height: 32)
+    }
+
+    /// Persist the shot, then hand it back so the course screen can animate the flight.
+    private func saveAndContinue() async {
+        guard !isSavingCourseShot else { return }
+        guard let uid = session.currentUser?.id, let metrics = analysis.metrics else {
+            onDone(); return
+        }
+        isSavingCourseShot = true
+        defer { isSavingCourseShot = false }
+        do {
+            let service = ShotPersistenceService(userId: uid, backend: session.backend)
+            let shot = try await service.saveShot(
+                metrics: SavedShotMetrics(metrics),
+                compositeImage: nil,
+                clubId: selectedClubId,
+                clubName: selectedClubName,
+                mode: context?.shotMode ?? .course,
+                saveOriginalFrames: false,
+                roundId: context?.courseRoundId,
+                holeNumber: context?.holeNumber,
+                isBadShot: false,
+                badShotReason: nil
+            )
+            onShotSaved?(shot)
+        } catch {
+            // Even if remote save fails, returning lets the user place the shot manually.
+        }
+        onDone()
     }
 
     // MARK: - Animation Control
