@@ -33,6 +33,58 @@ final class CourseRoundViewModel: ObservableObject {
 
     // MARK: - Round control
 
+    /// Enriches the course with real OSM geometry first, then starts the round.
+    /// Falls back to the unenriched course on any OSM error so a round can still be played.
+    func startRoundEnriching(course: GolfCourse, teeBox: TeeBox) async {
+        guard activeRound == nil else { return }
+        // Start GPS acquisition immediately so the blue dot + distances are ready by the
+        // time geometry finishes loading. Do NOT gate this behind the (slow) OSM enrich.
+        location.requestPermission()
+        location.startUpdating()
+        isLoading = true
+        let enriched = await OSMGolfService.shared.enrichBestEffort(course)
+        isLoading = false
+        await startRound(course: enriched, teeBox: teeBox)
+    }
+
+    /// Resumes a previously-saved round (`endedAt == nil`). Rehydrates the course from the OSM
+    /// cache so geometry overlays come back; advances to the first unscored hole.
+    func resumeRound(_ round: CourseRound) async {
+        guard activeRound == nil else { return }
+        let cached = OSMGolfService.shared.loadCached(courseId: round.courseId)
+        let course = cached ?? GolfCourse(
+            id: round.courseId,
+            name: round.courseName,
+            city: "",
+            state: "",
+            country: "US",
+            holes: round.holes.map {
+                GolfHole(id: "\(round.courseId)-hole-\($0.holeNumber)",
+                         courseId: round.courseId,
+                         number: $0.holeNumber,
+                         par: $0.par)
+            },
+            teeBoxes: [TeeBox(id: "\(round.courseId)-tee",
+                              name: round.teeBoxName,
+                              color: "White",
+                              totalYards: 0)]
+        )
+        let tee = course.teeBoxes.first(where: { $0.name == round.teeBoxName })
+               ?? course.teeBoxes.first
+               ?? TeeBox(id: "\(round.courseId)-tee",
+                         name: round.teeBoxName,
+                         color: "White",
+                         totalYards: 0)
+
+        activeRound      = round
+        selectedCourse   = course
+        selectedTeeBox   = tee
+        currentHoleIndex = round.holes.firstIndex(where: { $0.score == nil })
+                          ?? max(round.holes.count - 1, 0)
+        location.requestPermission()
+        location.startUpdating()
+    }
+
     func startRound(course: GolfCourse, teeBox: TeeBox) async {
         guard activeRound == nil else { return }
         var courseHoles = course.holes.sorted { $0.number < $1.number }
@@ -63,6 +115,7 @@ final class CourseRoundViewModel: ObservableObject {
             selectedTeeBox = teeBox
             currentHoleIndex = 0
             location.requestPermission()
+            location.startUpdating()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -87,7 +140,95 @@ final class CourseRoundViewModel: ObservableObject {
         round.holes[holeIndex].greenInRegulation = gir
         round.scoreSummary = computeSummary(round)
         activeRound = round
-        try? await backend.saveRound(round)
+        await saveRoundOfflineSafe(round)
+    }
+
+    // MARK: - Tracked shots (GPS)
+
+    /// All tracked shots for the current hole, in order.
+    var currentHoleTrackedShots: [TrackedShot] {
+        guard let round = activeRound,
+              currentHoleIndex < round.holes.count else { return [] }
+        return round.holes[currentHoleIndex].trackedShots
+    }
+
+    /// Append a tracked shot to the current hole and persist.
+    @discardableResult
+    func appendTrackedShot(start: Coordinate,
+                            end: Coordinate,
+                            club: ShotClub?,
+                            lie: ShotLie,
+                            result: ShotResult,
+                            linkedSavedShotId: UUID? = nil) async -> TrackedShot? {
+        guard var round = activeRound,
+              currentHoleIndex < round.holes.count else { return nil }
+        let holeNumber = round.holes[currentHoleIndex].holeNumber
+        var shot = TrackedShot(
+            roundId: round.id,
+            holeNumber: holeNumber,
+            shotIndex: round.holes[currentHoleIndex].trackedShots.count + 1,
+            userId: userId,
+            startCoordinate: start,
+            endCoordinate: end,
+            club: club,
+            lie: lie,
+            result: result,
+            linkedSavedShotId: linkedSavedShotId
+        )
+        shot.recomputeDistance()
+        round.holes[currentHoleIndex].trackedShots.append(shot)
+        activeRound = round
+        await saveRoundOfflineSafe(round)
+        return shot
+    }
+
+    func updateTrackedShot(_ shot: TrackedShot) async {
+        guard var round = activeRound,
+              currentHoleIndex < round.holes.count else { return }
+        guard let idx = round.holes[currentHoleIndex].trackedShots.firstIndex(where: { $0.id == shot.id }) else { return }
+        var updated = shot
+        updated.recomputeDistance()
+        round.holes[currentHoleIndex].trackedShots[idx] = updated
+        activeRound = round
+        await saveRoundOfflineSafe(round)
+    }
+
+    func removeTrackedShot(id: UUID) async {
+        guard var round = activeRound,
+              currentHoleIndex < round.holes.count else { return }
+        round.holes[currentHoleIndex].trackedShots.removeAll(where: { $0.id == id })
+        // Reindex remaining shots so shotIndex stays contiguous (1-based).
+        for i in round.holes[currentHoleIndex].trackedShots.indices {
+            round.holes[currentHoleIndex].trackedShots[i].shotIndex = i + 1
+        }
+        activeRound = round
+        await saveRoundOfflineSafe(round)
+    }
+
+    /// Classify the lie of a coordinate from the hole's geometry. Best-effort.
+    func classifyLie(at coord: Coordinate, hole: GolfHole?) -> ShotLie {
+        guard let h = hole else { return .unknown }
+        if polygonContains(h.greenPolygon, coord) { return .green }
+        for w in h.waterPolygons where polygonContains(w, coord) { return .water }
+        for b in h.bunkerPolygons where polygonContains(b, coord) { return .sand }
+        if polygonContains(h.fairwayPolygon, coord) { return .fairway }
+        return .rough
+    }
+
+    private func polygonContains(_ ring: PolygonRing?, _ p: Coordinate) -> Bool {
+        guard let coords = ring?.coordinates, coords.count >= 3 else { return false }
+        // Ray casting on lat/lon — accurate enough for the small spans involved here.
+        var inside = false
+        var j = coords.count - 1
+        for i in 0..<coords.count {
+            let xi = coords[i].longitude, yi = coords[i].latitude
+            let xj = coords[j].longitude, yj = coords[j].latitude
+            let intersect = ((yi > p.latitude) != (yj > p.latitude)) &&
+                (p.longitude < (xj - xi) * (p.latitude - yi) / (yj - yi + .leastNonzeroMagnitude) + xi)
+            if intersect { inside.toggle() }
+            j = i
+        }
+        return inside
     }
 
     func addShot(_ shot: SavedShot) async {
@@ -100,7 +241,7 @@ final class CourseRoundViewModel: ObservableObject {
             round.holes[currentHoleIndex].shotIds.append(shot.id)
         }
         activeRound = round
-        try? await backend.saveRound(round)
+        await saveRoundOfflineSafe(round)
     }
 
     func advanceHole() {
@@ -133,6 +274,21 @@ final class CourseRoundViewModel: ObservableObject {
         guard let mid = hole.greenCenterCoordinate else { return nil }
         return location.distanceInYards(to: CLLocationCoordinate2D(latitude: mid.latitude, longitude: mid.longitude))
             .map { Int($0.rounded()) }
+    }
+
+    // MARK: - Offline-safe save
+
+    /// Persists the round via `backend.saveRound` and, on failure, enqueues a deferred sync
+    /// so the local copy isn't orphaned. Used by every score-edit path.
+    private func saveRoundOfflineSafe(_ round: CourseRound) async {
+        do {
+            try await backend.saveRound(round)
+        } catch {
+            await SyncQueue.shared.enqueueRound(roundId: round.id, userId: userId)
+            #if DEBUG
+            print("[Sync] remote saveRound failed (\(error)); enqueued for retry")
+            #endif
+        }
     }
 
     // MARK: - Private

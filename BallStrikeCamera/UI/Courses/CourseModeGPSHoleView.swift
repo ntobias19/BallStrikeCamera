@@ -4,20 +4,29 @@ import MapKit
 // MARK: - Distance Bubble Annotation
 
 private class DistanceBubbleAnnotation: NSObject, MKAnnotation {
+    enum Style {
+        case primary
+        case secondary
+        case compact
+    }
+
     let coordinate: CLLocationCoordinate2D
     let yardage: Int
-    let label: String  // "F", "C", "B"
+    let label: String?
+    let style: Style
 
-    init(coordinate: CLLocationCoordinate2D, yardage: Int, label: String) {
+    init(coordinate: CLLocationCoordinate2D, yardage: Int, label: String? = nil, style: Style = .compact) {
         self.coordinate = coordinate
         self.yardage    = yardage
         self.label      = label
+        self.style      = style
     }
 }
 
 private class DistanceBubbleAnnotationView: MKAnnotationView {
     private let bubbleLabel = UILabel()
     private let container   = UIView()
+    private var bubbleStyle: DistanceBubbleAnnotation.Style = .compact
 
     override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
         super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
@@ -31,14 +40,10 @@ private class DistanceBubbleAnnotationView: MKAnnotationView {
 
     private func setupBubble() {
         container.backgroundColor = UIColor(white: 0.05, alpha: 0.82)
-        container.layer.cornerRadius = 12
-        container.layer.borderWidth  = 1
-        container.layer.borderColor  = UIColor(white: 1.0, alpha: 0.18).cgColor
         container.frame = bounds
         addSubview(container)
 
         bubbleLabel.textColor     = .white
-        bubbleLabel.font          = UIFont.systemFont(ofSize: 13, weight: .bold)
         bubbleLabel.textAlignment = .center
         bubbleLabel.frame         = container.bounds
         container.addSubview(bubbleLabel)
@@ -47,24 +52,61 @@ private class DistanceBubbleAnnotationView: MKAnnotationView {
     override var annotation: MKAnnotation? {
         didSet {
             guard let a = annotation as? DistanceBubbleAnnotation else { return }
-            bubbleLabel.text = "\(a.label) \(a.yardage)"
+            bubbleStyle = a.style
+            bubbleLabel.text = a.label.map { "\($0) \(a.yardage)" } ?? "\(a.yardage)"
+            applyStyle(for: a.style)
             sizeToFit()
         }
     }
 
+    private func applyStyle(for style: DistanceBubbleAnnotation.Style) {
+        switch style {
+        case .primary:
+            bubbleLabel.font = UIFont.systemFont(ofSize: 18, weight: .heavy)
+            container.layer.cornerRadius = 22
+            container.layer.borderWidth  = 2.5
+        case .secondary:
+            bubbleLabel.font = UIFont.systemFont(ofSize: 16, weight: .heavy)
+            container.layer.cornerRadius = 18
+            container.layer.borderWidth  = 2.0
+        case .compact:
+            bubbleLabel.font = UIFont.systemFont(ofSize: 12, weight: .bold)
+            container.layer.cornerRadius = 12
+            container.layer.borderWidth  = 1.0
+        }
+        container.layer.borderColor = UIColor(white: 1.0, alpha: style == .compact ? 0.18 : 0.92).cgColor
+    }
+
     override func sizeThatFits(_ size: CGSize) -> CGSize {
         guard let a = annotation as? DistanceBubbleAnnotation else { return CGSize(width: 68, height: 30) }
-        let text  = "\(a.label) \(a.yardage)"
-        let attrs = [NSAttributedString.Key.font: UIFont.systemFont(ofSize: 13, weight: .bold)]
-        let w     = (text as NSString).size(withAttributes: attrs).width + 24
-        return CGSize(width: max(w, 56), height: 30)
+        let text = a.label.map { "\($0) \(a.yardage)" } ?? "\(a.yardage)"
+        let font: UIFont
+        let minWidth: CGFloat
+        let height: CGFloat
+        switch a.style {
+        case .primary:
+            font = UIFont.systemFont(ofSize: 18, weight: .heavy)
+            minWidth = 62
+            height = 44
+        case .secondary:
+            font = UIFont.systemFont(ofSize: 16, weight: .heavy)
+            minWidth = 56
+            height = 36
+        case .compact:
+            font = UIFont.systemFont(ofSize: 12, weight: .bold)
+            minWidth = 56
+            height = 30
+        }
+        let attrs = [NSAttributedString.Key.font: font]
+        let width = (text as NSString).size(withAttributes: attrs).width + 24
+        return CGSize(width: max(width, minWidth), height: height)
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
         container.frame    = bounds
         bubbleLabel.frame  = container.bounds
-        centerOffset       = CGPoint(x: 0, y: -bounds.height / 2)
+        centerOffset       = CGPoint(x: 0, y: -bounds.height / 2 - 2)
     }
 }
 
@@ -74,6 +116,80 @@ private class GreenPinAnnotation: NSObject, MKAnnotation {
     let coordinate: CLLocationCoordinate2D
     init(coordinate: CLLocationCoordinate2D) { self.coordinate = coordinate }
     var title: String? { "Pin" }
+}
+
+// MARK: - Identifiable coordinate box (for sheet(item:))
+
+private struct CoordinateBox: Identifiable {
+    let id = UUID()
+    let coord: CLLocationCoordinate2D
+}
+
+// MARK: - Tagged Polygon (carries a kind so the renderer can style it)
+
+private final class TaggedPolygon: MKPolygon {
+    var kind: String = "fairway"
+
+    static func make(kind: String, coordinates: [CLLocationCoordinate2D]) -> TaggedPolygon {
+        var pts = coordinates
+        let p = TaggedPolygon(coordinates: &pts, count: pts.count)
+        p.kind = kind
+        return p
+    }
+}
+
+// MARK: - Shot rendering primitives
+
+/// Polyline subclass so the renderer can distinguish shot paths from the user→green line.
+private final class ShotPolyline: MKPolyline {}
+
+private final class ShotEndAnnotation: NSObject, MKAnnotation {
+    let coordinate: CLLocationCoordinate2D
+    let shotIndex: Int
+    let shotId: UUID
+    let clubLabel: String
+    let distanceYds: Int
+
+    init(coordinate: CLLocationCoordinate2D, shotIndex: Int, shotId: UUID,
+         clubLabel: String, distanceYds: Int) {
+        self.coordinate = coordinate
+        self.shotIndex  = shotIndex
+        self.shotId     = shotId
+        self.clubLabel  = clubLabel
+        self.distanceYds = distanceYds
+    }
+    var title: String? { "Shot \(shotIndex)" }
+    var subtitle: String? { "\(distanceYds) yd · \(clubLabel)" }
+}
+
+private final class ShotEndAnnotationView: MKAnnotationView {
+    private let circle = UIView()
+    private let label  = UILabel()
+
+    override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
+        super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
+        frame = CGRect(x: 0, y: 0, width: 26, height: 26)
+        centerOffset = CGPoint(x: 0, y: 0)
+        backgroundColor = .clear
+        circle.frame = bounds
+        circle.backgroundColor = UIColor(red: 1.0, green: 0.82, blue: 0.0, alpha: 0.95)
+        circle.layer.cornerRadius = 13
+        circle.layer.borderColor = UIColor.black.withAlphaComponent(0.6).cgColor
+        circle.layer.borderWidth = 1.5
+        addSubview(circle)
+        label.frame = bounds
+        label.textAlignment = .center
+        label.textColor = .black
+        label.font = UIFont.systemFont(ofSize: 12, weight: .black)
+        addSubview(label)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    override var annotation: MKAnnotation? {
+        didSet {
+            guard let a = annotation as? ShotEndAnnotation else { return }
+            label.text = "\(a.shotIndex)"
+        }
+    }
 }
 
 // MARK: - Satellite Map Background
@@ -88,57 +204,122 @@ private struct SatelliteMapBackground: UIViewRepresentable {
     var centerDist:  Int?
     var backDist:    Int?
 
+    // Hole geometry overlays (optional; only drawn when present)
+    var greenPolygon:    [CLLocationCoordinate2D]?
+    var fairwayPolygon:  [CLLocationCoordinate2D]?
+    var bunkerPolygons:  [[CLLocationCoordinate2D]] = []
+    var waterPolygons:   [[CLLocationCoordinate2D]] = []
+
+    // Tracked shot polylines + markers (current hole only)
+    var trackedShots:    [TrackedShot] = []
+
+    // When non-nil, taps on the map are forwarded to this closure.
+    var onMapTap:        ((CLLocationCoordinate2D) -> Void)? = nil
+    var focusId:         String = ""
+    var recenterToken:   Int = 0
+
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeUIView(context: Context) -> MKMapView {
         let map = MKMapView()
         map.mapType             = .hybrid
-        map.isScrollEnabled     = false
-        map.isZoomEnabled       = false
+        map.isScrollEnabled     = true
+        map.isZoomEnabled       = true
         map.isRotateEnabled     = false
         map.isPitchEnabled      = false
         map.showsUserLocation   = true
         map.showsCompass        = false
         map.delegate            = context.coordinator
+        context.coordinator.parent = self
+        let tap = UITapGestureRecognizer(target: context.coordinator,
+                                          action: #selector(Coordinator.handleTap(_:)))
+        map.addGestureRecognizer(tap)
         return map
     }
 
     func updateUIView(_ map: MKMapView, context: Context) {
         map.removeOverlays(map.overlays)
         map.removeAnnotations(map.annotations.filter { !($0 is MKUserLocation) })
+        let shouldRecenter = context.coordinator.shouldRecenter(for: focusId,
+                                                                recenterToken: recenterToken)
 
         // Region
         if let green = greenCoord, let user = userCoord {
-            let midLat  = (green.latitude  + user.latitude)  / 2
-            let midLon  = (green.longitude + user.longitude) / 2
-            let spanLat = max(abs(green.latitude  - user.latitude)  * 1.55, 0.0019)
-            let spanLon = max(abs(green.longitude - user.longitude) * 1.55, 0.0019)
-            map.setRegion(
-                MKCoordinateRegion(
-                    center: CLLocationCoordinate2D(latitude: midLat, longitude: midLon),
-                    span:   MKCoordinateSpan(latitudeDelta: spanLat, longitudeDelta: spanLon)
-                ),
-                animated: true
-            )
+            if shouldRecenter {
+                let midLat  = (green.latitude  + user.latitude)  / 2
+                let midLon  = (green.longitude + user.longitude) / 2
+                let spanLat = max(abs(green.latitude  - user.latitude)  * 1.55, 0.0019)
+                let spanLon = max(abs(green.longitude - user.longitude) * 1.55, 0.0019)
+                context.coordinator.setProgrammaticRegionChange(true)
+                map.setRegion(
+                    MKCoordinateRegion(
+                        center: CLLocationCoordinate2D(latitude: midLat, longitude: midLon),
+                        span:   MKCoordinateSpan(latitudeDelta: spanLat, longitudeDelta: spanLon)
+                    ),
+                    animated: context.coordinator.hasInitializedRegion
+                )
+                context.coordinator.completeRecenter(focusId: focusId, recenterToken: recenterToken)
+            }
             // Line from user to green
             var pts = [user, green]
             map.addOverlay(MKPolyline(coordinates: &pts, count: 2))
         } else if let green = greenCoord {
-            map.setRegion(
-                MKCoordinateRegion(center: green,
-                                   latitudinalMeters: 400,
-                                   longitudinalMeters: 400),
-                animated: false
-            )
+            if shouldRecenter {
+                context.coordinator.setProgrammaticRegionChange(true)
+                map.setRegion(
+                    MKCoordinateRegion(center: green,
+                                       latitudinalMeters: 400,
+                                       longitudinalMeters: 400),
+                    animated: context.coordinator.hasInitializedRegion
+                )
+                context.coordinator.completeRecenter(focusId: focusId, recenterToken: recenterToken)
+            }
         } else {
             // Always center on the course/hole — never follow the user's GPS alone
             let center = courseCoord ?? CLLocationCoordinate2D(latitude: 37.785834, longitude: -122.406417)
-            map.setRegion(
-                MKCoordinateRegion(center: center,
-                                   latitudinalMeters: 400,
-                                   longitudinalMeters: 400),
-                animated: false
-            )
+            if shouldRecenter {
+                context.coordinator.setProgrammaticRegionChange(true)
+                map.setRegion(
+                    MKCoordinateRegion(center: center,
+                                       latitudinalMeters: 400,
+                                       longitudinalMeters: 400),
+                    animated: context.coordinator.hasInitializedRegion
+                )
+                context.coordinator.completeRecenter(focusId: focusId, recenterToken: recenterToken)
+            }
+        }
+
+        // Polygon overlays — drawn under everything else. Filter water/bunkers against the
+        // visible map region so off-screen polygons don't burn CPU on render.
+        let region = map.region
+        func intersectsVisible(_ ring: [CLLocationCoordinate2D]) -> Bool {
+            guard !ring.isEmpty else { return false }
+            let half = region.span
+            let cLat = region.center.latitude,  cLon = region.center.longitude
+            let minLat = cLat - half.latitudeDelta,  maxLat = cLat + half.latitudeDelta
+            let minLon = cLon - half.longitudeDelta, maxLon = cLon + half.longitudeDelta
+            var rMinLat = ring[0].latitude,  rMaxLat = ring[0].latitude
+            var rMinLon = ring[0].longitude, rMaxLon = ring[0].longitude
+            for c in ring {
+                rMinLat = Swift.min(rMinLat, c.latitude);  rMaxLat = Swift.max(rMaxLat, c.latitude)
+                rMinLon = Swift.min(rMinLon, c.longitude); rMaxLon = Swift.max(rMaxLon, c.longitude)
+            }
+            // AABB intersection test
+            return !(rMaxLat < minLat || rMinLat > maxLat ||
+                     rMaxLon < minLon || rMinLon > maxLon)
+        }
+        // Order matters: water/fairway first (background), then bunkers, then green (on top).
+        for ring in waterPolygons where ring.count >= 3 && intersectsVisible(ring) {
+            map.addOverlay(TaggedPolygon.make(kind: "water", coordinates: ring), level: .aboveRoads)
+        }
+        if let fw = fairwayPolygon, fw.count >= 3 {
+            map.addOverlay(TaggedPolygon.make(kind: "fairway", coordinates: fw), level: .aboveRoads)
+        }
+        for ring in bunkerPolygons where ring.count >= 3 && intersectsVisible(ring) {
+            map.addOverlay(TaggedPolygon.make(kind: "bunker", coordinates: ring), level: .aboveRoads)
+        }
+        if let g = greenPolygon, g.count >= 3 {
+            map.addOverlay(TaggedPolygon.make(kind: "green", coordinates: g), level: .aboveRoads)
         }
 
         // Yellow flag at green center
@@ -151,7 +332,6 @@ private struct SatelliteMapBackground: UIViewRepresentable {
             map.addAnnotation(DistanceBubbleAnnotation(coordinate: coord, yardage: dist, label: "F"))
         }
         if let coord = greenCoord, let dist = centerDist {
-            // Offset the center bubble slightly so it doesn't stack on the flag
             let offsetCoord = CLLocationCoordinate2D(
                 latitude:  coord.latitude  + 0.00005,
                 longitude: coord.longitude - 0.00010
@@ -161,19 +341,99 @@ private struct SatelliteMapBackground: UIViewRepresentable {
         if let coord = backCoord, let dist = backDist {
             map.addAnnotation(DistanceBubbleAnnotation(coordinate: coord, yardage: dist, label: "B"))
         }
+
+        // Tracked shot polylines + markers
+        for shot in trackedShots {
+            var pts = [shot.startCoordinate.clCoordinate, shot.endCoordinate.clCoordinate]
+            let line = ShotPolyline(coordinates: &pts, count: 2)
+            map.addOverlay(line, level: .aboveLabels)
+            map.addAnnotation(ShotEndAnnotation(
+                coordinate: shot.endCoordinate.clCoordinate,
+                shotIndex: shot.shotIndex,
+                shotId: shot.id,
+                clubLabel: shot.club?.category.displayName.prefix(1).uppercased() ?? "·",
+                distanceYds: Int(shot.distanceYards.rounded())
+            ))
+        }
+
+        context.coordinator.parent = self
     }
 
     // MARK: Coordinator
 
-    class Coordinator: NSObject, MKMapViewDelegate {
+    class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
+
+        var parent: SatelliteMapBackground?
+        var hasInitializedRegion = false
+        private var lastFocusId = ""
+        private var lastRecenterToken = -1
+        private var isProgrammaticRegionChange = false
+
+        @objc func handleTap(_ gr: UITapGestureRecognizer) {
+            guard let onTap = parent?.onMapTap, let map = gr.view as? MKMapView else { return }
+            let pt = gr.location(in: map)
+            let coord = map.convert(pt, toCoordinateFrom: map)
+            onTap(coord)
+        }
+
+        func shouldRecenter(for focusId: String, recenterToken: Int) -> Bool {
+            !hasInitializedRegion || focusId != lastFocusId || recenterToken != lastRecenterToken
+        }
+
+        func completeRecenter(focusId: String, recenterToken: Int) {
+            hasInitializedRegion = true
+            lastFocusId = focusId
+            lastRecenterToken = recenterToken
+        }
+
+        func setProgrammaticRegionChange(_ value: Bool) {
+            isProgrammaticRegionChange = value
+        }
+
+        func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
+            if isProgrammaticRegionChange {
+                isProgrammaticRegionChange = false
+            }
+        }
 
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
-            guard let line = overlay as? MKPolyline else { return MKOverlayRenderer(overlay: overlay) }
-            let r            = MKPolylineRenderer(polyline: line)
-            r.strokeColor    = UIColor(white: 1.0, alpha: 0.92)
-            r.lineWidth      = 2.5
-            r.lineDashPattern = [5, 4]
-            return r
+            if let polygon = overlay as? TaggedPolygon {
+                let r = MKPolygonRenderer(polygon: polygon)
+                switch polygon.kind {
+                case "green":
+                    r.fillColor   = UIColor(red: 0.42, green: 0.82, blue: 0.42, alpha: 0.65)
+                    r.strokeColor = UIColor(red: 0.18, green: 0.60, blue: 0.28, alpha: 0.95)
+                    r.lineWidth   = 1.2
+                case "fairway":
+                    r.fillColor   = UIColor(red: 0.36, green: 0.66, blue: 0.34, alpha: 0.45)
+                    r.strokeColor = UIColor(red: 0.20, green: 0.48, blue: 0.22, alpha: 0.60)
+                    r.lineWidth   = 0.8
+                case "bunker":
+                    r.fillColor   = UIColor(red: 0.95, green: 0.86, blue: 0.62, alpha: 0.85)
+                    r.strokeColor = UIColor(red: 0.80, green: 0.68, blue: 0.42, alpha: 1.0)
+                    r.lineWidth   = 1.0
+                case "water":
+                    r.fillColor   = UIColor(red: 0.20, green: 0.50, blue: 0.85, alpha: 0.65)
+                    r.strokeColor = UIColor(red: 0.10, green: 0.35, blue: 0.70, alpha: 0.90)
+                    r.lineWidth   = 1.0
+                default:
+                    r.fillColor   = UIColor.systemGreen.withAlphaComponent(0.4)
+                }
+                return r
+            }
+            if overlay is ShotPolyline, let line = overlay as? MKPolyline {
+                let r         = MKPolylineRenderer(polyline: line)
+                r.strokeColor = UIColor(red: 1.0, green: 0.82, blue: 0.0, alpha: 0.95)
+                r.lineWidth   = 3.5
+                return r
+            }
+            if let line = overlay as? MKPolyline {
+                let r             = MKPolylineRenderer(polyline: line)
+                r.strokeColor     = UIColor(white: 1.0, alpha: 0.92)
+                r.lineWidth       = 3.0
+                return r
+            }
+            return MKOverlayRenderer(overlay: overlay)
         }
 
         func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
@@ -188,6 +448,17 @@ private struct SatelliteMapBackground: UIViewRepresentable {
                 v.markerTintColor = UIColor(red: 1.0, green: 0.82, blue: 0.0, alpha: 1.0)
                 v.glyphImage      = UIImage(systemName: "flag.fill")
                 v.glyphTintColor  = .black
+                v.displayPriority = .required
+                return v
+            }
+
+            if let shot = annotation as? ShotEndAnnotation {
+                let id = "shotEnd"
+                let v  = mapView.dequeueReusableAnnotationView(withIdentifier: id)
+                            as? ShotEndAnnotationView
+                            ?? ShotEndAnnotationView(annotation: shot, reuseIdentifier: id)
+                v.annotation      = shot
+                v.canShowCallout  = true
                 v.displayPriority = .required
                 return v
             }
@@ -224,9 +495,18 @@ struct CourseModeGPSHoleView: View {
     @State private var gpsOn           = true
     @State private var infoMessage: String?
     @State private var roundStartTime  = Date()
+    @State private var recenterToken   = 0
+    @State private var trackShotMode   = false                // when true, taps place a shot
+    @State private var pendingShotEnd: CLLocationCoordinate2D?
+    @State private var pendingShotLie: ShotLie = .unknown
+    @State private var pendingLaunchMonitorShot: SavedShot?
+    #if DEBUG
+    @State private var showDiagnostics = false
+    #endif
 
     let initialCourse: GolfCourse?
     let initialTeeBox: TeeBox?
+    let initialRound:  CourseRound?
 
     // MARK: Computed Properties
 
@@ -304,14 +584,23 @@ struct CourseModeGPSHoleView: View {
             : TCTheme.textMuted
     }
 
+    private var mapFocusId: String {
+        let hole = vm.currentHole?.holeNumber ?? -1
+        let greenLat = currentCourseHole?.greenCenterCoordinate?.latitude ?? 0
+        let greenLon = currentCourseHole?.greenCenterCoordinate?.longitude ?? 0
+        return "\(hole)-\(greenLat)-\(greenLon)-\(gpsOn)"
+    }
+
     // MARK: - Init
 
     init(userId: UUID, backend: AppBackend,
          initialCourse: GolfCourse? = nil,
-         initialTeeBox: TeeBox? = nil) {
+         initialTeeBox: TeeBox? = nil,
+         initialRound:  CourseRound? = nil) {
         _vm = StateObject(wrappedValue: CourseRoundViewModel(userId: userId, backend: backend))
         self.initialCourse = initialCourse
         self.initialTeeBox = initialTeeBox
+        self.initialRound  = initialRound
     }
 
     // MARK: - Body
@@ -328,9 +617,37 @@ struct CourseModeGPSHoleView: View {
                 backCoord:   currentCourseHole?.greenBackCoordinate?.clCoordinate,
                 frontDist:   gpsOn ? gpsDistances.front  : nil,
                 centerDist:  gpsOn ? gpsDistances.center : nil,
-                backDist:    gpsOn ? gpsDistances.back   : nil
+                backDist:    gpsOn ? gpsDistances.back   : nil,
+                greenPolygon:   currentCourseHole?.greenPolygon?.clCoordinates,
+                fairwayPolygon: currentCourseHole?.fairwayPolygon?.clCoordinates,
+                bunkerPolygons: currentCourseHole?.bunkerPolygons.map(\.clCoordinates) ?? [],
+                waterPolygons:  currentCourseHole?.waterPolygons.map(\.clCoordinates)  ?? [],
+                trackedShots:   vm.currentHoleTrackedShots,
+                onMapTap:       trackShotMode ? { coord in handleShotTap(coord) } : nil,
+                focusId:        mapFocusId,
+                recenterToken:  recenterToken
             )
             .ignoresSafeArea()
+
+            // Loading geometry indicator
+            if vm.isLoading {
+                VStack {
+                    Spacer()
+                    HStack(spacing: 8) {
+                        ProgressView().tint(.white)
+                        Text("Loading course map…")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(Color.black.opacity(0.65))
+                    .clipShape(Capsule())
+                    Spacer()
+                }
+                .transition(.opacity)
+                .zIndex(5)
+            }
 
             // Top dark gradient
             VStack(spacing: 0) {
@@ -338,14 +655,14 @@ struct CourseModeGPSHoleView: View {
                     colors: [Color.black.opacity(0.72), Color.black.opacity(0.36), .clear],
                     startPoint: .top, endPoint: .bottom
                 )
-                .frame(height: 200)
+                .frame(height: 150)
                 .ignoresSafeArea(edges: .top)
                 Spacer()
                 LinearGradient(
                     colors: [.clear, Color.black.opacity(0.85)],
                     startPoint: .top, endPoint: .bottom
                 )
-                .frame(height: 220)
+                .frame(height: 180)
             }
             .ignoresSafeArea()
 
@@ -369,17 +686,55 @@ struct CourseModeGPSHoleView: View {
             leftSidebar
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                 .padding(.leading, 12)
-                .padding(.top, topSafeArea + 100)
-                .padding(.bottom, 200)
+                .padding(.top, topSafeArea + 84)
+                .padding(.bottom, 170)
                 .ignoresSafeArea(edges: .bottom)
 
             // Right sidebar
             rightSidebar
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
                 .padding(.trailing, 12)
-                .padding(.top, topSafeArea + 100)
-                .padding(.bottom, 200)
+                .padding(.top, topSafeArea + 132)
+                .padding(.bottom, 210)
                 .ignoresSafeArea(edges: .bottom)
+
+            // Track-shot mode banner
+            placeModeBanner
+
+            // OSM attribution — bottom-left, translucent, compliant.
+            VStack {
+                Spacer()
+                HStack {
+                    OSMAttributionBadge()
+                        .padding(.leading, 10)
+                        .padding(.bottom, 96)   // above the bottom bar
+                        // Long-press attribution badge to toggle the dev overlay.
+                        #if DEBUG
+                        .onLongPressGesture(minimumDuration: 0.6) {
+                            showDiagnostics.toggle()
+                        }
+                        #endif
+                    Spacer()
+                }
+            }
+            .allowsHitTesting(true)
+            .ignoresSafeArea(edges: .bottom)
+
+            #if DEBUG
+            if showDiagnostics {
+                VStack {
+                    HStack {
+                        Spacer()
+                        DiagnosticsOverlay(hole: currentCourseHole,
+                                            courseSource: vm.selectedCourse?.source)
+                            .padding(.top, topSafeArea + 60)
+                            .padding(.trailing, 60)
+                    }
+                    Spacer()
+                }
+                .allowsHitTesting(false)
+            }
+            #endif
         }
         // Bottom bar
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -409,7 +764,15 @@ struct CourseModeGPSHoleView: View {
             RangeCameraScreen(
                 shotCount: vm.activeRound?.shotIds.count ?? 0,
                 context:   buildContext(),
-                onShotSaved: { shot in Task { await vm.addShot(shot) } }
+                onShotSaved: { shot in
+                    Task {
+                        await vm.addShot(shot)
+                        await MainActor.run {
+                            pendingLaunchMonitorShot = shot
+                            setTrackShotMode(true)
+                        }
+                    }
+                }
             )
             .ignoresSafeArea()
             .statusBarHidden(true)
@@ -438,10 +801,53 @@ struct CourseModeGPSHoleView: View {
                 .preferredColorScheme(.dark)
             }
         }
-        .task {
-            if let course = initialCourse, let tee = initialTeeBox {
-                await vm.startRound(course: course, teeBox: tee)
+        .sheet(item: Binding(
+            get: { pendingShotEnd.map { CoordinateBox(coord: $0) } },
+            set: { if $0 == nil { pendingShotEnd = nil } }
+        )) { box in
+            if let start = startCoordForNewShot() {
+                ShotEntryConfirmSheet(
+                    startCoord: start,
+                    endCoord:   Coordinate(box.coord),
+                    preselectedLie: pendingShotLie,
+                    preselectedClub: inferredShotClub(from: pendingLaunchMonitorShot),
+                    onSave: { club, lie, result in
+                        Task {
+                            _ = await vm.appendTrackedShot(
+                                start: start,
+                                end:   Coordinate(box.coord),
+                                club:  club,
+                                lie:   lie,
+                                result: result,
+                                linkedSavedShotId: pendingLaunchMonitorShot?.id
+                            )
+                            pendingShotEnd = nil
+                            pendingLaunchMonitorShot = nil
+                            setTrackShotMode(false)
+                        }
+                    },
+                    onCancel: {
+                        pendingShotEnd = nil
+                        pendingLaunchMonitorShot = nil
+                        setTrackShotMode(false)
+                    }
+                )
+                .preferredColorScheme(.dark)
             }
+        }
+        .task {
+            if let round = initialRound {
+                await vm.resumeRound(round)
+            } else if let course = initialCourse, let tee = initialTeeBox {
+                await vm.startRoundEnriching(course: course, teeBox: tee)
+            }
+        }
+        .onChange(of: vm.currentHoleIndex) { _ in
+            recenterToken += 1
+            setTrackShotMode(false)
+        }
+        .onChange(of: gpsOn) { _ in
+            recenterToken += 1
         }
     }
 
@@ -449,67 +855,93 @@ struct CourseModeGPSHoleView: View {
 
     private var topBar: some View {
         HStack(spacing: 0) {
-            // Back / X button
             Button { showFinishAlert = true } label: {
                 ZStack {
                     Circle()
-                        .fill(Color.black.opacity(0.52))
-                        .frame(width: 36, height: 36)
-                    Image(systemName: "xmark")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.white)
+                        .fill(Color.white)
+                        .frame(width: 44, height: 44)
+                    Image(systemName: "arrow.left")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.black.opacity(0.82))
                 }
             }
             .buttonStyle(.plain)
 
             Spacer()
 
-            // Center: chevron + HOLE NUMBER + chevron
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 Button {
                     if vm.currentHoleIndex > 0 { vm.goToHole(vm.currentHoleIndex - 1) }
                 } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.80))
+                    ZStack {
+                        Circle()
+                            .fill(Color.white.opacity(0.14))
+                            .frame(width: 28, height: 28)
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(.white.opacity(0.92))
+                    }
                 }
                 .buttonStyle(.plain)
 
-                if let hole = vm.currentHole {
-                    Text(ordinal(hole.holeNumber).uppercased())
-                        .font(.system(size: 17, weight: .black))
-                        .foregroundColor(.white)
-                        .frame(minWidth: 52)
-                } else {
-                    Text("—")
-                        .font(.system(size: 17, weight: .black))
-                        .foregroundColor(.white.opacity(0.5))
-                        .frame(minWidth: 52)
+                HStack(spacing: 8) {
+                    Image(systemName: "flag.fill")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(Color(red: 0.72, green: 0.90, blue: 0.22))
+
+                    if let hole = vm.currentHole {
+                        HStack(alignment: .firstTextBaseline, spacing: 1) {
+                            Text("\(hole.holeNumber)")
+                                .font(.system(size: 28, weight: .black, design: .rounded))
+                                .foregroundColor(.white)
+                            Text(ordinalSuffix(hole.holeNumber).uppercased())
+                                .font(.system(size: 12, weight: .black, design: .rounded))
+                                .foregroundColor(.white.opacity(0.90))
+                                .baselineOffset(8)
+                        }
+                    } else {
+                        Text("—")
+                            .font(.system(size: 24, weight: .black, design: .rounded))
+                            .foregroundColor(.white.opacity(0.5))
+                    }
                 }
+                .frame(minWidth: 84)
 
                 Button {
                     if let round = vm.activeRound, vm.currentHoleIndex < round.holes.count - 1 {
                         vm.advanceHole()
                     }
                 } label: {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.80))
+                    ZStack {
+                        Circle()
+                            .fill(Color.white.opacity(0.14))
+                            .frame(width: 28, height: 28)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(.white.opacity(0.92))
+                    }
                 }
                 .buttonStyle(.plain)
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color.black.opacity(0.66))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(.white.opacity(0.10), lineWidth: 1)
+            )
 
             Spacer()
 
-            // GPS signal icon
-            Button { gpsOn.toggle() } label: {
+            Button { recenterToken += 1 } label: {
                 ZStack {
                     Circle()
-                        .fill(Color.black.opacity(0.52))
-                        .frame(width: 36, height: 36)
-                    Image(systemName: gpsOn ? "location.fill" : "location.slash")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(gpsOn ? Color(red: 0.22, green: 0.84, blue: 0.46) : .white.opacity(0.45))
+                        .fill(Color.black.opacity(0.72))
+                        .frame(width: 44, height: 44)
+                    Image(systemName: "scope")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.white)
                 }
             }
             .buttonStyle(.plain)
@@ -522,16 +954,23 @@ struct CourseModeGPSHoleView: View {
     private var holeInfoStrip: some View {
         Group {
             if let hole = vm.currentHole {
-                let parStr  = "Par \(hole.par)"
-                let ydsStr  = scorecardYardage.map { "\($0) yds" } ?? "— yds"
-                let hcpStr  = "Hcp \(holeHandicap)"
-                Text("\(parStr)  ·  \(ydsStr)  ·  \(hcpStr)")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.white.opacity(0.90))
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 7)
-                    .background(Color.black.opacity(0.50))
-                    .clipShape(Capsule())
+                HStack(spacing: 12) {
+                    Text("Par \(hole.par)")
+                    Rectangle()
+                        .fill(Color.white.opacity(0.88))
+                        .frame(width: 8, height: 8)
+                    Text(scorecardYardage.map { "\($0) yds" } ?? "— yds")
+                    Circle()
+                        .strokeBorder(Color.white.opacity(0.92), lineWidth: 1.2)
+                        .frame(width: 8, height: 8)
+                    Text("Hcp \(holeHandicap)")
+                }
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundColor(.white.opacity(0.94))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+                .background(Color.black.opacity(0.62))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
         }
         .frame(maxWidth: .infinity)
@@ -541,97 +980,41 @@ struct CourseModeGPSHoleView: View {
 
     private var leftSidebar: some View {
         VStack(alignment: .leading, spacing: 8) {
+            Spacer(minLength: 0)
 
-            // GPS signal card
-            sideCard {
-                HStack(spacing: 5) {
-                    Image(systemName: "location.fill")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(gpsOn ? Color(red: 0.22, green: 0.84, blue: 0.46) : .white.opacity(0.35))
-                    Text(gpsOn ? "GPS" : "GPS OFF")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundColor(.white.opacity(0.85))
-                    if gpsOn {
-                        HStack(spacing: 2) {
-                            ForEach(0..<4, id: \.self) { i in
-                                RoundedRectangle(cornerRadius: 1)
-                                    .fill(Color(red: 0.22, green: 0.84, blue: 0.46))
-                                    .frame(width: 3, height: CGFloat(5 + i * 2))
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Compass widget
-            sideCard {
-                ZStack {
-                    Circle()
-                        .stroke(.white.opacity(0.14), lineWidth: 1)
-                        .frame(width: 32, height: 32)
-                    VStack(spacing: 0) {
-                        Text("N")
-                            .font(.system(size: 8, weight: .black))
-                            .foregroundColor(Color(red: 0.95, green: 0.28, blue: 0.28))
-                        Image(systemName: "arrowtriangle.up.fill")
-                            .font(.system(size: 8))
-                            .foregroundColor(Color(red: 0.95, green: 0.28, blue: 0.28))
-                    }
-                }
-            }
-
-            // Round timer
-            sideCard {
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "timer")
-                            .font(.system(size: 10))
-                            .foregroundColor(.white.opacity(0.55))
-                        Text(timeElapsed)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(.white.opacity(0.90))
-                    }
-                    let holeCount = min(vm.currentHoleIndex, (vm.activeRound?.holes.count ?? 18))
-                    Text("thru \(holeCount)")
-                        .font(.system(size: 10))
-                        .foregroundColor(.white.opacity(0.45))
-                }
-            }
-
-            // Distance card — only when GPS active
             if gpsOn && gpsDistances.isAvailable {
                 sideCard {
-                    VStack(alignment: .leading, spacing: 3) {
+                    VStack(alignment: .leading, spacing: 6) {
                         if let f = gpsDistances.front {
                             HStack(spacing: 4) {
                                 Image(systemName: "arrow.up")
-                                    .font(.system(size: 9))
-                                    .foregroundColor(.white.opacity(0.45))
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(Color(red: 0.67, green: 0.92, blue: 0.25))
                                 Text("\(f)")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(.white.opacity(0.75))
+                                    .font(.system(size: 19, weight: .bold, design: .rounded))
+                                    .foregroundColor(.white)
                             }
                         }
                         if let c = gpsDistances.center {
                             Text("\(c)")
-                                .font(.system(size: 16, weight: .black))
+                                .font(.system(size: 34, weight: .black, design: .rounded))
                                 .foregroundColor(.white)
+                                .lineLimit(1)
                         }
                         if let b = gpsDistances.back {
                             HStack(spacing: 4) {
                                 Image(systemName: "arrow.down")
-                                    .font(.system(size: 9))
-                                    .foregroundColor(.white.opacity(0.45))
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(.white.opacity(0.70))
                                 Text("\(b)")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(.white.opacity(0.75))
+                                    .font(.system(size: 19, weight: .bold, design: .rounded))
+                                    .foregroundColor(.white.opacity(0.92))
                             }
                         }
                     }
+                    .frame(minWidth: 84, alignment: .leading)
                 }
             }
-
-            Spacer(minLength: 0)
         }
     }
 
@@ -652,13 +1035,25 @@ struct CourseModeGPSHoleView: View {
     // MARK: - Right Sidebar
 
     private var rightSidebar: some View {
-        VStack(spacing: 8) {
-            toolButton("ruler.fill",          "Measure")
-            toolButton("target",              "Targets")
-            toolButton("arrow.down.to.line",  "Layup")
-            toolButton("circle.fill",         "Green")
-            toolButton("list.number",         "Card")   { showScorecard = true }
-            toolButton("flag.checkered",      "Finish") { showFinishAlert = true }
+        VStack {
+            Spacer(minLength: 0)
+            VStack(spacing: 18) {
+                railButton("location.fill", isActive: gpsOn) { gpsOn.toggle() }
+                railButton(trackShotMode ? "scope" : "figure.golf", isActive: trackShotMode) {
+                    setTrackShotMode(!trackShotMode)
+                }
+                railButton("camera.fill", isActive: false) { showCamera = true }
+                railButton("list.number", isActive: false) { showScorecard = true }
+                railButton("plus", isActive: false) { showScoreEntry = true }
+            }
+            .padding(.vertical, 18)
+            .frame(width: 58)
+            .background(Color.black.opacity(0.72))
+            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .strokeBorder(.white.opacity(0.10), lineWidth: 1)
+            )
             Spacer(minLength: 0)
         }
     }
@@ -684,67 +1079,185 @@ struct CourseModeGPSHoleView: View {
         .buttonStyle(.plain)
     }
 
+    private func railButton(_ icon: String, isActive: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            ZStack {
+                if isActive {
+                    Circle()
+                        .fill(Color(red: 0.11, green: 0.48, blue: 0.20))
+                        .frame(width: 34, height: 34)
+                        .overlay(
+                            Circle()
+                                .strokeBorder(.white.opacity(0.14), lineWidth: 1)
+                        )
+                }
+
+                Image(systemName: icon)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundColor(isActive ? .white : .white.opacity(0.86))
+            }
+            .frame(width: 40, height: 40)
+        }
+        .buttonStyle(.plain)
+    }
+
     // MARK: - Bottom Bar
 
     private var bottomBar: some View {
         HStack(spacing: 14) {
-            // Player avatar + name + score
             HStack(spacing: 10) {
                 ZStack {
                     Circle()
-                        .fill(TCTheme.panelRaised)
-                        .frame(width: 38, height: 38)
+                        .fill(Color(red: 0.31, green: 0.17, blue: 0.21))
+                        .frame(width: 44, height: 44)
                     Circle()
-                        .strokeBorder(.white.opacity(0.18), lineWidth: 1.5)
-                        .frame(width: 38, height: 38)
+                        .strokeBorder(.white.opacity(0.75), lineWidth: 1.5)
+                        .frame(width: 44, height: 44)
                     Text(userInitials)
-                        .font(.system(size: 13, weight: .bold))
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
                         .foregroundColor(.white)
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(userName)
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(TCTheme.textPrimary)
-                    HStack(spacing: 5) {
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
+                    HStack(spacing: 6) {
                         Text(scoreToParString)
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
                             .foregroundColor(scoreToParColor)
-                        Text("·  Hole \(vm.currentHoleIndex + 1)/\(vm.activeRound?.holes.count ?? 18)")
-                            .font(.system(size: 12))
-                            .foregroundColor(TCTheme.textMuted)
+                        Text("Hole \(vm.currentHoleIndex + 1)")
+                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .foregroundColor(.white.opacity(0.70))
                     }
                 }
             }
 
             Spacer()
 
-            // Add Score button
-            Button { showScoreEntry = true } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "pencil")
+            Button { setTrackShotMode(!trackShotMode) } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: trackShotMode ? "scope" : "target")
                         .font(.system(size: 14, weight: .semibold))
-                    Text("Add Score")
-                        .font(.system(size: 14, weight: .semibold))
+                    Text(trackShotMode ? "Tap Map" : "Track")
+                        .font(.system(size: 13, weight: .semibold))
                 }
-                .foregroundColor(.white)
-                .padding(.horizontal, 18)
-                .padding(.vertical, 12)
-                .background(Color.black.opacity(0.60))
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .foregroundColor(trackShotMode ? .black : .white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(trackShotMode ? TCTheme.gold : Color.black.opacity(0.60))
+                .clipShape(Capsule())
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    Capsule()
                         .strokeBorder(.white.opacity(0.18), lineWidth: 1)
                 )
             }
             .buttonStyle(.plain)
+
+            Button { showCamera = true } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "camera.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("HUD")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(Color.black.opacity(0.60))
+                .clipShape(Capsule())
+                .overlay(
+                    Capsule()
+                        .strokeBorder(.white.opacity(0.18), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+
+            Button { showScoreEntry = true } label: {
+                VStack(alignment: .trailing, spacing: 0) {
+                    Text("Add")
+                    Text("Score")
+                }
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .foregroundColor(.white)
+                .multilineTextAlignment(.trailing)
+            }
+            .buttonStyle(.plain)
         }
-        .padding(.horizontal, 18)
-        .padding(.top, 14)
-        .padding(.bottom, 20)
-        .background(.ultraThinMaterial.opacity(0.25))
-        .background(Color.black.opacity(0.78))
-        .overlay(Rectangle().fill(.white.opacity(0.07)).frame(height: 1), alignment: .top)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(Color.black.opacity(0.86))
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .strokeBorder(.white.opacity(0.08), lineWidth: 1)
+        )
+        .padding(.horizontal, 8)
+        .padding(.top, 8)
+        .padding(.bottom, 8)
+    }
+
+    // MARK: - Place-mode banner
+
+    @ViewBuilder
+    private var placeModeBanner: some View {
+        if trackShotMode {
+            VStack {
+                HStack(spacing: 8) {
+                    Image(systemName: "scope")
+                        .foregroundColor(.black)
+                    Text(pendingLaunchMonitorShot == nil
+                         ? "Tap the map to place where the ball landed"
+                         : "Tap the map to place the launch-monitor shot on the hole")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.black)
+                    Spacer()
+                    Button("Cancel") { setTrackShotMode(false) }
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.black.opacity(0.65))
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
+                .background(TCTheme.gold)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .padding(.horizontal, 16)
+                .padding(.top, topSafeArea + 76)
+                Spacer()
+            }
+            .allowsHitTesting(true)
+        }
+    }
+
+    // MARK: - Shot tap handler
+
+    private func handleShotTap(_ coord: CLLocationCoordinate2D) {
+        guard trackShotMode else { return }
+        pendingShotEnd = coord
+        pendingShotLie = vm.classifyLie(
+            at: Coordinate(coord),
+            hole: currentCourseHole
+        )
+    }
+
+    /// Compute the start coordinate for a new shot:
+    /// 1. If there is a previous tracked shot for this hole, start = its end.
+    /// 2. Otherwise start = current GPS.
+    /// 3. As a last resort, start = current hole's tee coordinate.
+    private func startCoordForNewShot() -> Coordinate? {
+        if let last = vm.currentHoleTrackedShots.last {
+            return last.endCoordinate
+        }
+        if let user = vm.location.currentLocation {
+            return Coordinate(user)
+        }
+        return currentCourseHole?.teeCoordinate
+    }
+
+    private func setTrackShotMode(_ enabled: Bool) {
+        trackShotMode = enabled
+        if !enabled {
+            pendingLaunchMonitorShot = nil
+        }
     }
 
     // MARK: - Helpers
@@ -761,6 +1274,26 @@ struct CourseModeGPSHoleView: View {
         )
     }
 
+    private func inferredShotClub(from shot: SavedShot?) -> ShotClub? {
+        guard let name = shot?.clubName, !name.isEmpty else { return nil }
+        let lower = name.lowercased()
+        let category: ShotClub.ClubCategory
+        if lower.contains("putter") {
+            category = .putter
+        } else if lower.contains("wedge") || lower.contains("pw") || lower.contains("gw") || lower.contains("sw") || lower.contains("lw") {
+            category = .wedge
+        } else if lower.contains("driver") {
+            category = .driver
+        } else if lower.contains("wood") || lower.contains("3w") || lower.contains("5w") {
+            category = .wood
+        } else if lower.contains("hybrid") || lower.contains("rescue") {
+            category = .hybrid
+        } else {
+            category = .iron
+        }
+        return ShotClub(clubId: shot?.clubId, name: name, category: category)
+    }
+
     private func ordinal(_ n: Int) -> String {
         let suffix: String
         switch n {
@@ -774,5 +1307,9 @@ struct CourseModeGPSHoleView: View {
             }
         }
         return "\(n)\(suffix)"
+    }
+
+    private func ordinalSuffix(_ n: Int) -> String {
+        String(ordinal(n).drop { $0.isNumber })
     }
 }

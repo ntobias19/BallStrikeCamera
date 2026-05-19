@@ -53,7 +53,7 @@ struct ModeSelectionView: View {
         .toolbarBackground(.clear, for: .navigationBar)
         .fullScreenCover(isPresented: $showRange)  { RangeModeView()  }
         .sheet(isPresented: $showSim)              { SimModeView()    }
-        .sheet(isPresented: $showCourse)           { CourseModeView() }
+        .sheet(isPresented: $showCourse)           { EmptyView() } // Course flow lives in TrueCarryPlayView
     }
 
     private var headerSection: some View {

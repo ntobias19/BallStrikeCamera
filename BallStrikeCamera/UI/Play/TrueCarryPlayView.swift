@@ -14,6 +14,10 @@ struct TrueCarryPlayView: View {
     @State private var selectedCourse: GolfCourse?
     @State private var selectedTeeBox: TeeBox?
     @State private var showSessions = false
+    @State private var unfinishedRound: CourseRound?
+    @State private var resumeRound: CourseRound?
+    @StateObject private var prewarmer = NearbyCoursePrewarmer()
+    @StateObject private var prewarmLocation = LocationService()
 
     enum PlayMode { case range, sim, course }
 
@@ -57,6 +61,7 @@ struct TrueCarryPlayView: View {
                         TCBellButton(badgeCount: 0) { showSessions = true }
                     }
                     pageTitleSection
+                    if let r = unfinishedRound { resumeRoundCard(r) }
                     modeCardsSection
                     sessionSetupSection
                     startButtonSection
@@ -131,6 +136,73 @@ struct TrueCarryPlayView: View {
             }
             .preferredColorScheme(.dark)
         }
+        .fullScreenCover(item: $resumeRound) { round in
+            if let uid = session.currentUser?.id {
+                CourseModeGPSHoleView(
+                    userId: uid,
+                    backend: session.backend,
+                    initialRound: round
+                )
+            }
+        }
+        .task {
+            await refreshUnfinishedRound()
+            prewarmLocation.requestPermission()
+            // Flush any deferred remote writes from prior offline rounds.
+            await SyncQueue.shared.flush(using: session.backend)
+        }
+        .onChange(of: showCourseMode) { isShowing in
+            // Recheck unfinished rounds after the user leaves a round screen.
+            if !isShowing { Task { await refreshUnfinishedRound() } }
+        }
+        .onChange(of: prewarmLocation.currentLocation?.latitude) { _ in
+            guard let loc = prewarmLocation.currentLocation else { return }
+            prewarmer.warm(near: loc)
+        }
+        .onDisappear { prewarmer.cancel() }
+    }
+
+    // MARK: Resume
+
+    private func resumeRoundCard(_ round: CourseRound) -> some View {
+        Button { resumeRound = round } label: {
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(TCTheme.goldGradient)
+                        .frame(width: 40, height: 40)
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.white)
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Resume Round")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(TCTheme.gold)
+                        .tracking(0.5)
+                    Text(round.courseName)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(TCTheme.textPrimary)
+                        .lineLimit(1)
+                    let played = round.holes.filter { $0.score != nil }.count
+                    Text("\(played)/\(round.holes.count) holes scored  ·  \(round.teeBoxName) Tees")
+                        .font(.system(size: 11))
+                        .foregroundColor(TCTheme.textMuted)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(TCTheme.textMuted)
+            }
+            .tcCard()
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func refreshUnfinishedRound() async {
+        guard let uid = session.currentUser?.id else { return }
+        let all = (try? await session.backend.loadCourseRounds(userId: uid)) ?? []
+        unfinishedRound = all.first(where: { $0.endedAt == nil })
     }
 
     // MARK: Page Title

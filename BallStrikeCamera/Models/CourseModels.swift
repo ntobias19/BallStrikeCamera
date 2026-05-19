@@ -15,15 +15,20 @@ struct GolfCourse: Codable, Identifiable {
     var teeBoxes: [TeeBox]     = []
     var source: CourseSource   = .mock
     var cachedAt: Date?
+    var coursePolygon: PolygonRing?  = nil    // outer course boundary if available
 
     var coordinate: CLLocationCoordinate2D? {
         guard let lat = latitude, let lng = longitude else { return nil }
         return CLLocationCoordinate2D(latitude: lat, longitude: lng)
     }
+
+    var hasRealGeometry: Bool {
+        holes.contains(where: { $0.greenPolygon != nil })
+    }
 }
 
 enum CourseSource: String, Codable {
-    case mock, golfCourseAPI, bundled, manual, mapKit
+    case mock, golfCourseAPI, bundled, manual, mapKit, openStreetMap
 }
 
 // MARK: - Tee Box
@@ -51,6 +56,27 @@ struct GolfHole: Codable, Identifiable {
     var greenBackCoordinate: Coordinate?
     var teeCoordinateByTeeBox: [String: Coordinate]? = nil
     var hazards: [Hazard]                   = []
+
+    // MARK: - Geometry (OpenStreetMap derived)
+
+    /// Primary tee coordinate (centroid of the matched OSM tee polygon)
+    var teeCoordinate: Coordinate?          = nil
+    /// Green polygon (outer ring)
+    var greenPolygon: PolygonRing?          = nil
+    /// Fairway polygon (outer ring)
+    var fairwayPolygon: PolygonRing?        = nil
+    /// All bunker polygons matched to this hole
+    var bunkerPolygons: [PolygonRing]       = []
+    /// All water polygons matched to this hole
+    var waterPolygons: [PolygonRing]        = []
+
+    /// Tee-to-green straight-line yardage when both coordinates exist.
+    var measuredYardage: Int? {
+        guard let tee = teeCoordinate, let g = greenCenterCoordinate else { return nil }
+        let a = CLLocation(latitude: tee.latitude, longitude: tee.longitude)
+        let b = CLLocation(latitude: g.latitude,   longitude: g.longitude)
+        return Int((a.distance(from: b) * 1.09361).rounded())
+    }
 }
 
 // MARK: - Hazard
@@ -70,7 +96,7 @@ enum HazardType: String, Codable {
 
 // MARK: - Coordinate (Codable wrapper for CLLocationCoordinate2D)
 
-struct Coordinate: Codable {
+struct Coordinate: Codable, Hashable {
     var latitude: Double
     var longitude: Double
 
@@ -94,4 +120,39 @@ struct GreenDistances {
     var back: Int?
 
     var isAvailable: Bool { front != nil || center != nil || back != nil }
+}
+
+// MARK: - Polygon Ring (Codable wrapper for a ring of coordinates)
+
+struct PolygonRing: Codable, Hashable {
+    var coordinates: [Coordinate]
+
+    init(coordinates: [Coordinate]) { self.coordinates = coordinates }
+    init(_ coords: [CLLocationCoordinate2D]) {
+        self.coordinates = coords.map { Coordinate($0) }
+    }
+
+    var clCoordinates: [CLLocationCoordinate2D] {
+        coordinates.map { $0.clCoordinate }
+    }
+
+    /// Geographic centroid (arithmetic mean of vertices). Adequate for small polygons.
+    var centroid: Coordinate? {
+        guard !coordinates.isEmpty else { return nil }
+        let lat = coordinates.map { $0.latitude  }.reduce(0, +) / Double(coordinates.count)
+        let lng = coordinates.map { $0.longitude }.reduce(0, +) / Double(coordinates.count)
+        return Coordinate(latitude: lat, longitude: lng)
+    }
+
+    /// Axis-aligned bounding box in (minLat, maxLat, minLng, maxLng).
+    var bounds: (minLat: Double, maxLat: Double, minLng: Double, maxLng: Double)? {
+        guard let first = coordinates.first else { return nil }
+        var minLat = first.latitude, maxLat = first.latitude
+        var minLng = first.longitude, maxLng = first.longitude
+        for c in coordinates.dropFirst() {
+            minLat = Swift.min(minLat, c.latitude);  maxLat = Swift.max(maxLat, c.latitude)
+            minLng = Swift.min(minLng, c.longitude); maxLng = Swift.max(maxLng, c.longitude)
+        }
+        return (minLat, maxLat, minLng, maxLng)
+    }
 }

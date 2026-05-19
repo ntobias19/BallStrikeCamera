@@ -254,7 +254,8 @@ struct RoundHole: Codable, Identifiable {
     var fairwayHit: Bool?
     var greenInRegulation: Bool?
     var penalties: Int = 0
-    var shotIds: [UUID] = []
+    var shotIds: [UUID] = []                       // SavedShot ids (camera captures)
+    var trackedShots: [TrackedShot] = []           // on-course GPS shots, in order
 }
 
 struct RoundScoreSummary: Codable {

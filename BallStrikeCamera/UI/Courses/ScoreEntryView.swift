@@ -19,339 +19,494 @@ struct ScoreEntryView: View {
     @State private var gir: Bool?
     @State private var mishit = false
 
+    private let pageBackground = Color(red: 0.89, green: 0.92, blue: 0.95)
+    private let sheetBackground = Color(red: 0.985, green: 0.988, blue: 0.992)
+    private let cardBorder = Color(red: 0.81, green: 0.87, blue: 0.93)
+    private let softBlue = Color(red: 0.84, green: 0.90, blue: 0.96)
+    private let buttonBlue = Color(red: 0.27, green: 0.50, blue: 0.78)
+    private let olive = Color(red: 0.76, green: 0.87, blue: 0.24)
+    private let textInk = Color(red: 0.20, green: 0.28, blue: 0.37)
+    private let mutedInk = Color(red: 0.40, green: 0.50, blue: 0.60)
+
     init(holeNumber: Int, par: Int,
          existingScore: Int? = nil, existingPutts: Int? = nil,
          holeYardage: Int? = nil, handicap: Int? = nil,
          onSave: @escaping (Int, Int?, Bool?, Bool?) -> Void) {
-        self.holeNumber    = holeNumber
-        self.par           = par
+        self.holeNumber = holeNumber
+        self.par = par
         self.existingScore = existingScore
         self.existingPutts = existingPutts
-        self.holeYardage   = holeYardage
-        self.handicap      = handicap
-        self.onSave        = onSave
+        self.holeYardage = holeYardage
+        self.handicap = handicap
+        self.onSave = onSave
         _score = State(initialValue: existingScore ?? par)
         _putts = State(initialValue: existingPutts ?? 2)
     }
 
-    // MARK: - Body
-
     var body: some View {
         NavigationStack {
-            ZStack(alignment: .top) {
-                // Top map area
-                GeneratedFairwayView()
-                    .frame(height: 220)
-                    .ignoresSafeArea(edges: .top)
-                    .overlay(
-                        LinearGradient(
-                            colors: [.clear, TCTheme.background.opacity(0.88)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
+            ZStack(alignment: .bottom) {
+                pageBackground.ignoresSafeArea()
+
+                VStack(spacing: 0) {
+                    mapHeader
+                    Spacer(minLength: 0)
+                }
+
+                scoreSheet
+            }
+            .toolbar(.hidden, for: .navigationBar)
+        }
+    }
+
+    private var mapHeader: some View {
+        ZStack(alignment: .top) {
+            GeneratedFairwayView()
+                .frame(height: 260)
+                .overlay(
+                    LinearGradient(
+                        colors: [Color.black.opacity(0.10), Color.black.opacity(0.34)],
+                        startPoint: .top,
+                        endPoint: .bottom
                     )
+                )
 
-                // Hole info overlay on map
+            VStack(spacing: 16) {
+                HStack {
+                    Button(action: { dismiss() }) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(width: 34, height: 34)
+                            .background(Color.black.opacity(0.35))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+
+                    Spacer()
+                }
+
                 VStack(spacing: 6) {
-                    holeSelectorPill
-                    let yardStr = holeYardage.map { "\($0) yds  ·  " } ?? ""
-                    let hcpStr  = handicap.map    { "HCP \($0)"       } ?? ""
-                    let infoStr = yardStr + hcpStr
-                    if !infoStr.isEmpty {
-                        Text(infoStr)
-                            .font(.system(size: 12))
-                            .foregroundColor(TCTheme.textMuted)
-                            .shadow(color: .black.opacity(0.6), radius: 3)
+                    Text(ordinal(holeNumber).uppercased())
+                        .font(.system(size: 26, weight: .black, design: .rounded))
+                        .foregroundColor(.white)
+
+                    HStack(spacing: 12) {
+                        Text("Par \(par)")
+                        if let holeYardage {
+                            Text("\(holeYardage) yds")
+                        }
+                        if let handicap {
+                            Text("Hcp \(handicap)")
+                        }
                     }
-                }
-                .padding(.top, 52)
-
-                // Scrollable bottom sheet content
-                ScrollView(showsIndicators: false) {
-                    VStack(spacing: 20) {
-                        // Drag handle
-                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .fill(TCTheme.borderMedium)
-                            .frame(width: 36, height: 4)
-                            .padding(.top, 12)
-
-                        // User row
-                        HStack(spacing: 12) {
-                            ZStack {
-                                Circle()
-                                    .fill(TCTheme.panelRaised)
-                                    .frame(width: 36, height: 36)
-                                Circle()
-                                    .strokeBorder(TCTheme.borderGold, lineWidth: 1.5)
-                                    .frame(width: 36, height: 36)
-                                Text(userInitials)
-                                    .font(.system(size: 12, weight: .bold))
-                                    .foregroundColor(TCTheme.gold)
-                            }
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(userName)
-                                    .font(.system(size: 14, weight: .bold))
-                                    .foregroundColor(TCTheme.textPrimary)
-                                let diff = score - par
-                                HStack(spacing: 0) {
-                                    Text(scoreLabel(diff))
-                                        .font(.system(size: 12))
-                                        .foregroundColor(scoreLabelColor(diff))
-                                    Text(diff == 0 ? " (E)" : diff > 0 ? " (+\(diff))" : " (\(diff))")
-                                        .font(.system(size: 12))
-                                        .foregroundColor(TCTheme.textMuted)
-                                }
-                            }
-
-                            Spacer()
-
-                            Button {
-                                fairwayHit = teeResult == "Fairway"
-                                onSave(score, putts, fairwayHit, gir)
-                                dismiss()
-                            } label: {
-                                Text("Save Score")
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 10)
-                                    .background(TCTheme.goldGradient)
-                                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                            }
-                            .buttonStyle(.plain)
-                        }
-
-                        // Score stepper
-                        VStack(spacing: 12) {
-                            Text("SCORE")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundColor(TCTheme.gold)
-                                .tracking(2)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-
-                            HStack(spacing: 20) {
-                                stepperButton(icon: "minus") { if score > 1 { score -= 1 } }
-                                Text("\(score)")
-                                    .font(.system(size: 44, weight: .black))
-                                    .foregroundColor(TCTheme.textPrimary)
-                                    .frame(minWidth: 60, alignment: .center)
-                                stepperButton(icon: "plus") { score += 1 }
-                            }
-                            .frame(maxWidth: .infinity)
-
-                            let diff = score - par
-                            Text(scoreLabel(diff))
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(scoreLabelColor(diff))
-                        }
-                        .tcCard()
-
-                        // Putts stepper
-                        VStack(spacing: 12) {
-                            Text("PUTTS")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundColor(TCTheme.gold)
-                                .tracking(2)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-
-                            HStack(spacing: 20) {
-                                stepperButton(icon: "minus") { if putts > 0 { putts -= 1 } }
-                                Text("\(putts)")
-                                    .font(.system(size: 44, weight: .black))
-                                    .foregroundColor(TCTheme.cyan)
-                                    .frame(minWidth: 60, alignment: .center)
-                                stepperButton(icon: "plus") { putts += 1 }
-                            }
-                            .frame(maxWidth: .infinity)
-                        }
-                        .tcCard()
-
-                        // Tee shot result
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("TEE SHOT")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundColor(TCTheme.gold)
-                                .tracking(2)
-
-                            let results = ["Left", "Short Left", "Fairway", "Short Right", "Right"]
-                            LazyVGrid(
-                                columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())],
-                                spacing: 8
-                            ) {
-                                ForEach(results, id: \.self) { r in
-                                    Button { teeResult = r } label: {
-                                        Text(r)
-                                            .font(.system(size: 11, weight: .semibold))
-                                            .foregroundColor(teeResult == r ? .black : TCTheme.textMuted)
-                                            .multilineTextAlignment(.center)
-                                            .padding(.horizontal, 10)
-                                            .padding(.vertical, 8)
-                                            .frame(maxWidth: .infinity)
-                                            .background(
-                                                teeResult == r
-                                                ? AnyShapeStyle(TCTheme.sageGradient)
-                                                : AnyShapeStyle(TCTheme.panelRaised)
-                                            )
-                                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                        }
-                        .tcCard()
-
-                        // GIR
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("GREEN IN REGULATION")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundColor(TCTheme.gold)
-                                .tracking(2)
-
-                            HStack(spacing: 10) {
-                                girToggle("Yes",  selected: gir == true,  color: TCTheme.sage)   { gir = true  }
-                                girToggle("No",   selected: gir == false, color: TCTheme.danger) { gir = false }
-                                girToggle("N/A",  selected: gir == nil,   color: TCTheme.textMuted) { gir = nil }
-                            }
-                        }
-                        .tcCard()
-
-                        // Mishit toggle
-                        HStack(spacing: 12) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .font(.system(size: 14))
-                                .foregroundColor(TCTheme.gold)
-                            Text("Did you mishit this shot?")
-                                .font(.system(size: 13))
-                                .foregroundColor(TCTheme.textSecondary)
-                            Spacer()
-                            Toggle("", isOn: $mishit)
-                                .tint(TCTheme.gold)
-                                .labelsHidden()
-                        }
-                        .tcCard()
-
-                        Spacer(minLength: 40)
-                    }
-                    .padding(.horizontal, TCTheme.hPad)
-                    .padding(.top, 190)
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white.opacity(0.94))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+                    .background(Color.black.opacity(0.34))
+                    .clipShape(Capsule())
                 }
             }
-            .background(TCTheme.background.ignoresSafeArea())
-            .navigationTitle("Hole \(holeNumber)")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            .toolbarBackground(.clear, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { dismiss() }
-                        .foregroundColor(TCTheme.textMuted)
+            .padding(.horizontal, 20)
+            .padding(.top, 18)
+        }
+    }
+
+    private var scoreSheet: some View {
+        VStack(spacing: 0) {
+            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                .fill(cardBorder)
+                .frame(width: 44, height: 6)
+                .padding(.top, 10)
+                .padding(.bottom, 14)
+
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 18) {
+                    playerHeader
+                    divider
+                    scoringPanel
+                    divider
+                    detailPanel
+                    saveFooter
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Save") {
-                        fairwayHit = teeResult == "Fairway"
-                        onSave(score, putts, fairwayHit, gir)
-                        dismiss()
+                .padding(.horizontal, 16)
+                .padding(.bottom, 24)
+            }
+        }
+        .background(sheetBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.85), lineWidth: 1)
+        )
+        .padding(.horizontal, 8)
+        .ignoresSafeArea(edges: .bottom)
+    }
+
+    private var playerHeader: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(Color(red: 0.43, green: 0.23, blue: 0.29))
+                    .frame(width: 42, height: 42)
+                Circle()
+                    .strokeBorder(Color.white.opacity(0.92), lineWidth: 2)
+                    .frame(width: 42, height: 42)
+                Text(userInitials)
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 4) {
+                    Text(userName)
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .foregroundColor(textInk)
+                    Text(existingScore == nil ? "New" : "Saved")
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundColor(mutedInk)
+                }
+
+                HStack(spacing: 6) {
+                    Text(scoreSummaryLabel)
+                        .font(.system(size: 16, weight: .heavy, design: .rounded))
+                        .foregroundColor(scoreSummaryColor)
+                    Text(scoreDeltaText)
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundColor(mutedInk)
+                }
+            }
+
+            Spacer()
+
+            Button(action: saveAndDismiss) {
+                Text("Enter")
+                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                    .frame(width: 74, height: 64)
+                    .background(buttonBlue)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var scoringPanel: some View {
+        HStack(alignment: .top, spacing: 14) {
+            metricStepper(
+                title: "Score",
+                value: score,
+                accent: softBlue,
+                decrement: { if score > 1 { score -= 1 } },
+                increment: { score += 1 }
+            )
+
+            metricStepper(
+                title: "Putts",
+                value: putts,
+                accent: softBlue,
+                decrement: { if putts > 0 { putts -= 1 } },
+                increment: { putts += 1 }
+            )
+
+            teeShotPad
+                .frame(maxWidth: .infinity)
+        }
+    }
+
+    private var detailPanel: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Round Details")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundColor(textInk)
+
+                HStack(spacing: 10) {
+                    detailChip("GIR", selected: gir == true, tint: olive) { gir = true }
+                    detailChip("No GIR", selected: gir == false, tint: softBlue) { gir = false }
+                    detailChip("Auto", selected: gir == nil, tint: Color.white) { gir = nil }
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Shot Tags")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundColor(textInk)
+
+                HStack(spacing: 10) {
+                    Button {
+                        mishit.toggle()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: mishit ? "xmark.circle.fill" : "circle")
+                            Text(mishit ? "Mis-Hit" : "Clean Strike")
+                        }
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundColor(mishit ? textInk : mutedInk)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(mishit ? olive.opacity(0.60) : Color.white)
+                        .clipShape(Capsule())
+                        .overlay(
+                            Capsule()
+                                .strokeBorder(mishit ? olive.opacity(0.9) : cardBorder, lineWidth: 1.5)
+                        )
                     }
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundColor(TCTheme.gold)
+                    .buttonStyle(.plain)
+
+                    Text(teeResultLabel)
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundColor(buttonBlue)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(buttonBlue.opacity(0.12))
+                        .clipShape(Capsule())
                 }
             }
         }
     }
 
-    // MARK: - Hole Selector Pill
+    private var saveFooter: some View {
+        HStack(spacing: 12) {
+            Button("Cancel") { dismiss() }
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .foregroundColor(mutedInk)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(Color.white)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(cardBorder, lineWidth: 1.5)
+                )
 
-    private var holeSelectorPill: some View {
-        HStack(spacing: 10) {
-            Text("← \(max(holeNumber - 1, 1))")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(TCTheme.textMuted)
-
-            Spacer()
-
-            HStack(spacing: 6) {
-                Image(systemName: "flag.fill")
-                    .font(.system(size: 11))
-                    .foregroundColor(TCTheme.gold)
-                Text(ordinal(holeNumber))
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundColor(TCTheme.textPrimary)
-                Text("Par \(par)")
-                    .font(.system(size: 12))
-                    .foregroundColor(TCTheme.textMuted)
+            Button(action: saveAndDismiss) {
+                Text("Save Score")
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(buttonBlue)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
-
-            Spacer()
-
-            Text("\(holeNumber + 1) →")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(TCTheme.textMuted)
+            .buttonStyle(.plain)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(.ultraThinMaterial.opacity(0.4))
-        .background(TCTheme.panel.opacity(0.75))
-        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).strokeBorder(TCTheme.borderMedium, lineWidth: 1))
-        .padding(.horizontal, 24)
-        .shadow(color: .black.opacity(0.4), radius: 6)
     }
 
-    // MARK: - Step Button
+    private func metricStepper(title: String,
+                               value: Int,
+                               accent: Color,
+                               decrement: @escaping () -> Void,
+                               increment: @escaping () -> Void) -> some View {
+        VStack(spacing: 12) {
+            Text(title)
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundColor(mutedInk)
 
-    private func stepperButton(icon: String, action: @escaping () -> Void) -> some View {
+            VStack(spacing: 12) {
+                roundStepperButton(icon: "plus", action: increment)
+
+                Text("\(value)")
+                    .font(.system(size: 22, weight: .heavy, design: .rounded))
+                    .foregroundColor(textInk)
+
+                roundStepperButton(icon: "minus", action: decrement)
+            }
+            .frame(width: 58)
+            .padding(.vertical, 10)
+            .background(accent)
+            .clipShape(Capsule())
+            .overlay(
+                Capsule()
+                    .strokeBorder(Color.white.opacity(0.9), lineWidth: 3)
+            )
+        }
+        .frame(width: 64)
+    }
+
+    private func roundStepperButton(icon: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: 20, weight: .bold))
-                .foregroundColor(TCTheme.textSecondary)
-                .frame(width: 52, height: 52)
-                .background(TCTheme.panelRaised)
+            ZStack {
+                Circle()
+                    .fill(Color.white.opacity(0.98))
+                    .frame(width: 34, height: 34)
+                Image(systemName: icon)
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(buttonBlue)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var teeShotPad: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Tee Shot")
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundColor(mutedInk)
+
+            ZStack {
+                teeOuterButton(
+                    systemImage: "arrow.up.left",
+                    selected: teeResult == "Short Left",
+                    offset: CGSize(width: -8, height: -44)
+                ) {
+                    teeResult = "Short Left"
+                }
+
+                teeOuterButton(
+                    systemImage: "chevron.left",
+                    selected: teeResult == "Left",
+                    offset: CGSize(width: -54, height: 0)
+                ) {
+                    teeResult = "Left"
+                }
+
+                teeOuterButton(
+                    systemImage: "chevron.right",
+                    selected: teeResult == "Right",
+                    offset: CGSize(width: 54, height: 0)
+                ) {
+                    teeResult = "Right"
+                }
+
+                teeOuterButton(
+                    systemImage: "arrow.down.right",
+                    selected: teeResult == "Short Right",
+                    offset: CGSize(width: 8, height: 44)
+                ) {
+                    teeResult = "Short Right"
+                }
+
+                Button {
+                    teeResult = "Fairway"
+                    mishit = false
+                } label: {
+                    Text("HIT")
+                        .font(.system(size: 16, weight: .black, design: .rounded))
+                        .foregroundColor(textInk)
+                        .frame(width: 68, height: 68)
+                        .background(olive)
+                        .clipShape(Circle())
+                        .overlay(
+                            Circle()
+                                .strokeBorder(Color.white.opacity(0.92), lineWidth: 4)
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+            .frame(width: 170, height: 170)
+            .frame(maxWidth: .infinity)
+
+            Text(teeResultLabel)
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundColor(mutedInk)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(softBlue.opacity(0.75))
+                .clipShape(Capsule())
+                .frame(maxWidth: .infinity, alignment: .center)
+        }
+    }
+
+    private func teeOuterButton(systemImage: String,
+                                selected: Bool,
+                                offset: CGSize,
+                                action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 22, weight: .bold))
+                .foregroundColor(selected ? buttonBlue : mutedInk)
+                .frame(width: 54, height: 54)
+                .background(selected ? Color.white : softBlue.opacity(0.95))
                 .clipShape(Circle())
-                .overlay(Circle().strokeBorder(TCTheme.border, lineWidth: 1))
+                .overlay(
+                    Circle()
+                        .strokeBorder(selected ? buttonBlue.opacity(0.30) : Color.white.opacity(0.85), lineWidth: 3)
+                )
         }
         .buttonStyle(.plain)
+        .offset(offset)
     }
 
-    // MARK: - GIR Toggle
-
-    private func girToggle(_ label: String, selected: Bool, color: Color, action: @escaping () -> Void) -> some View {
+    private func detailChip(_ title: String,
+                            selected: Bool,
+                            tint: Color,
+                            action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(label)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(selected ? .black : TCTheme.textMuted)
-                .padding(.horizontal, 20)
+            Text(title)
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundColor(selected ? textInk : mutedInk)
+                .padding(.horizontal, 14)
                 .padding(.vertical, 10)
-                .background(selected ? color : TCTheme.panelRaised)
-                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).strokeBorder(selected ? color : TCTheme.border, lineWidth: 1))
+                .background(selected ? tint : Color.white)
+                .clipShape(Capsule())
+                .overlay(
+                    Capsule()
+                        .strokeBorder(selected ? tint.opacity(0.95) : cardBorder, lineWidth: 1.5)
+                )
         }
         .buttonStyle(.plain)
     }
 
-    // MARK: - Helpers
+    private var divider: some View {
+        Rectangle()
+            .fill(cardBorder.opacity(0.72))
+            .frame(height: 1)
+    }
+
+    private var scoreDelta: Int { score - par }
+
+    private var scoreSummaryLabel: String {
+        scoreLabel(scoreDelta)
+    }
+
+    private var scoreSummaryColor: Color {
+        scoreLabelColor(scoreDelta)
+    }
+
+    private var scoreDeltaText: String {
+        if scoreDelta == 0 { return "E" }
+        return scoreDelta > 0 ? "+\(scoreDelta)" : "\(scoreDelta)"
+    }
+
+    private var teeResultLabel: String {
+        switch teeResult {
+        case "Fairway": return "Center Cut"
+        case "Short Left": return "Short Left"
+        case "Short Right": return "Short Right"
+        default: return teeResult
+        }
+    }
+
+    private func saveAndDismiss() {
+        fairwayHit = teeResult == "Fairway"
+        onSave(score, putts, fairwayHit, gir)
+        dismiss()
+    }
 
     private func scoreLabel(_ diff: Int) -> String {
         switch diff {
         case ..<(-1): return "Eagle"
-        case -1:      return "Birdie"
-        case 0:       return "Par"
-        case 1:       return "Bogey"
-        case 2:       return "Double"
-        default:      return "+\(diff)"
+        case -1: return "Birdie"
+        case 0: return "Par"
+        case 1: return "Bogey"
+        case 2: return "Double"
+        default: return "+\(diff)"
         }
     }
 
     private func scoreLabelColor(_ diff: Int) -> Color {
-        if diff < 0  { return TCTheme.sage }
-        if diff == 0 { return TCTheme.cyan }
-        return TCTheme.gold
+        if diff < 0 { return Color(red: 0.29, green: 0.60, blue: 0.30) }
+        if diff == 0 { return buttonBlue }
+        return Color(red: 0.76, green: 0.53, blue: 0.22)
     }
 
     private func ordinal(_ n: Int) -> String {
         let suffix: String
         switch n {
-        case 11, 12, 13: suffix = "th"
+        case 11, 12, 13:
+            suffix = "th"
         default:
             switch n % 10 {
             case 1: suffix = "st"
@@ -368,12 +523,11 @@ struct ScoreEntryView: View {
     }
 
     private var userInitials: String {
-        let name = userName
-        let parts = name.split(separator: " ")
+        let parts = userName.split(separator: " ")
         if parts.count >= 2 {
-            return String((parts[0].first ?? "P")).uppercased()
-                 + String((parts[1].first ?? "L")).uppercased()
+            return String(parts[0].first ?? "P").uppercased()
+                + String(parts[1].first ?? "L").uppercased()
         }
-        return String(name.prefix(2)).uppercased()
+        return String(userName.prefix(2)).uppercased()
     }
 }
