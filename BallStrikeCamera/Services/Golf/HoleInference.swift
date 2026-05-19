@@ -21,10 +21,10 @@ enum HoleInference {
                       courseId: String,
                       startingTees: [TeeBox]) -> [GolfHole] {
 
-        // Path 1 — authoritative `golf=hole` ways with par+ref tags.
-        let authoritative = classified.holeWays.filter {
-            $0.intTag("ref") != nil && $0.intTag("par") != nil
-        }
+        // Path 1 — authoritative `golf=hole` ways with a hole number (`ref`). Par is optional
+        // here because the aggregator overlays accurate par from GolfCourseAPI; what we really
+        // want from OSM is the correct hole NUMBER → green mapping for accurate pins.
+        let authoritative = classified.holeWays.filter { $0.intTag("ref") != nil }
         if authoritative.count >= 9 {
             return buildAuthoritative(holeWays: authoritative,
                                       classified: classified,
@@ -53,9 +53,11 @@ enum HoleInference {
 
         return sorted.compactMap { holeWay -> GolfHole? in
             guard let number = holeWay.intTag("ref"),
-                  let par    = holeWay.intTag("par"),
                   let first  = holeWay.coordinates.first,
                   let last   = holeWay.coordinates.last else { return nil }
+            // Par from OSM if present; otherwise infer (aggregator overrides with GolfCourseAPI).
+            let par = holeWay.intTag("par")
+                   ?? inferPar(distanceYds: yardsBetween(first, last))
 
             // tee end = first node; green end = last node.
             let teeEnd   = first

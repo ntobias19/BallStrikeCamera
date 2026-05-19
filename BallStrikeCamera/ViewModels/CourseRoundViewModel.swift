@@ -42,9 +42,13 @@ final class CourseRoundViewModel: ObservableObject {
         location.requestPermission()
         location.startUpdating()
         isLoading = true
-        let enriched = await OSMGolfService.shared.enrichBestEffort(course)
+        // Merge GolfCourseAPI scorecard (accurate par/yardage/handicap) with OSM geometry.
+        let enriched = await CourseDataAggregator.shared.enrich(course)
+        // The user picked a generic tee from MapKit search; map it to the authoritative
+        // tee box on the enriched course so per-hole yardages resolve correctly.
+        let resolvedTee = CourseDataAggregator.shared.resolveTeeBox(teeBox, in: enriched)
         isLoading = false
-        await startRound(course: enriched, teeBox: teeBox)
+        await startRound(course: enriched, teeBox: resolvedTee)
     }
 
     /// Resumes a previously-saved round (`endedAt == nil`). Rehydrates the course from the OSM

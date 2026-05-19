@@ -370,6 +370,14 @@ final class OSMGolfService {
         try? AppStorageManager.save(course, to: cacheURL(for: course.id))
     }
 
+    /// Public passthrough so the multi-source aggregator can persist a merged course
+    /// (OSM geometry + GolfCourseAPI scorecard) into the same cache `loadCached` reads.
+    func cacheMergedCourse(_ course: GolfCourse) {
+        var c = course
+        c.cachedAt = Date()
+        save(c)
+    }
+
     /// Load cached enrichment.
     /// - Parameter allowExpired: when `true`, ignores `cacheTTL` for stale-cache rescue.
     func loadCached(courseId: String, allowExpired: Bool = false) -> GolfCourse? {
