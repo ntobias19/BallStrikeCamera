@@ -24,8 +24,9 @@ final class GolfCourseAPIProvider: CourseProvider {
     func searchCourses(query: String, near location: CLLocationCoordinate2D?) async throws -> [GolfCourse] {
         var components = URLComponents(string: "\(GolfCourseAPIConfig.baseURL)/\(Endpoint.search)")!
         var queryItems: [URLQueryItem] = []
-        if !query.isEmpty { queryItems.append(URLQueryItem(name: "search", value: query)) }
-        if let loc = location {
+        if !query.isEmpty {
+            queryItems.append(URLQueryItem(name: "search", value: query))
+        } else if let loc = location {
             queryItems.append(URLQueryItem(name: "latitude",  value: String(loc.latitude)))
             queryItems.append(URLQueryItem(name: "longitude", value: String(loc.longitude)))
         }

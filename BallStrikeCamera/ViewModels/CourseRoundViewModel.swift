@@ -35,9 +35,14 @@ final class CourseRoundViewModel: ObservableObject {
 
     func startRound(course: GolfCourse, teeBox: TeeBox) async {
         guard activeRound == nil else { return }
-        let holes = course.holes.sorted { $0.number < $1.number }.map { hole -> RoundHole in
-            RoundHole(holeNumber: hole.number, par: hole.par)
+        var courseHoles = course.holes.sorted { $0.number < $1.number }
+        if courseHoles.isEmpty {
+            courseHoles = (1...18).map { n in
+                GolfHole(id: "\(course.id)-hole-\(n)", courseId: course.id,
+                         number: n, par: Self.defaultPar(for: n))
+            }
         }
+        let holes = courseHoles.map { RoundHole(holeNumber: $0.number, par: $0.par) }
         let round = CourseRound(
             userId: userId,
             courseId: course.id,
@@ -48,12 +53,27 @@ final class CourseRoundViewModel: ObservableObject {
         do {
             try await backend.saveRound(round)
             activeRound = round
-            selectedCourse = course
+            selectedCourse = course.holes.isEmpty
+                ? GolfCourse(id: course.id, name: course.name, city: course.city,
+                             state: course.state, country: course.country,
+                             latitude: course.latitude, longitude: course.longitude,
+                             holes: courseHoles, teeBoxes: course.teeBoxes,
+                             source: course.source, cachedAt: course.cachedAt)
+                : course
             selectedTeeBox = teeBox
             currentHoleIndex = 0
             location.requestPermission()
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    private static func defaultPar(for hole: Int) -> Int {
+        // Typical par-72: four par-3s, four par-5s, ten par-4s
+        switch hole {
+        case 3, 7, 12, 16: return 3
+        case 2, 6, 11, 15: return 5
+        default: return 4
         }
     }
 

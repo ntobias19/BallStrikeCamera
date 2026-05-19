@@ -23,7 +23,7 @@ struct GolfCourse: Codable, Identifiable {
 }
 
 enum CourseSource: String, Codable {
-    case mock, golfCourseAPI, bundled, manual
+    case mock, golfCourseAPI, bundled, manual, mapKit
 }
 
 // MARK: - Tee Box

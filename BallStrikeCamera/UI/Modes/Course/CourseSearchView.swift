@@ -1,6 +1,7 @@
 import SwiftUI
 import CoreLocation
 import Combine
+import MapKit
 
 struct CourseSearchView: View {
     @Environment(\.dismiss) private var dismiss
@@ -14,11 +15,11 @@ struct CourseSearchView: View {
     @State private var selectedCourse: GolfCourse?
     @State private var searchTask: Task<Void, Never>?
 
+    let userId: UUID
     let onSelect: (GolfCourse, TeeBox) -> Void
-    private let provider: CourseProvider
 
     init(userId: UUID, onSelect: @escaping (GolfCourse, TeeBox) -> Void) {
-        self.provider = CourseProviderFactory.make(userId: userId)
+        self.userId = userId
         self.onSelect = onSelect
     }
 
@@ -200,8 +201,12 @@ struct CourseSearchView: View {
         }
         .task {
             location.requestPermission()
-            if location.authorizationStatus == .authorizedWhenInUse ||
-               location.authorizationStatus == .authorizedAlways {
+            // Wait briefly for location to arrive after authorization
+            for _ in 0..<10 {
+                if location.currentLocation != nil { break }
+                try? await Task.sleep(nanoseconds: 300_000_000)
+            }
+            if location.currentLocation != nil {
                 await loadNearby()
             }
         }
@@ -340,26 +345,20 @@ struct CourseSearchView: View {
     // MARK: - Data loading
 
     private func loadNearby() async {
+        guard let userLoc = location.currentLocation else { return }
         isLoadingNearby = true
         errorMessage = nil
         defer { isLoadingNearby = false }
         do {
-            let results = try await provider.searchCourses(
-                query: "",
-                near: location.currentLocation
-            )
-            if let userLoc = location.currentLocation {
-                nearbyCourses = results.sorted { a, b in
-                    let da = distanceMiles(course: a, user: userLoc)
-                    let db = distanceMiles(course: b, user: userLoc)
-                    return (da ?? .infinity) < (db ?? .infinity)
-                }
-            } else {
-                nearbyCourses = results
-            }
+            let request = MKLocalSearch.Request()
+            request.naturalLanguageQuery = "golf course"
+            request.region = MKCoordinateRegion(center: userLoc, latitudinalMeters: 80_000, longitudinalMeters: 80_000)
+            let response = try await MKLocalSearch(request: request).start()
+            nearbyCourses = response.mapItems.compactMap { mapKitCourse(from: $0) }
+                .sorted { (distanceMiles(course: $0, user: userLoc) ?? .infinity) < (distanceMiles(course: $1, user: userLoc) ?? .infinity) }
         } catch {
-            errorMessage = "Couldn't load nearby courses. Showing sample courses."
-            nearbyCourses = (try? await MockCourseProvider().searchCourses(query: "", near: location.currentLocation)) ?? []
+            errorMessage = "Couldn't load nearby courses."
+            nearbyCourses = []
         }
     }
 
@@ -368,14 +367,40 @@ struct CourseSearchView: View {
         errorMessage = nil
         defer { isSearching = false }
         do {
-            searchResults = try await provider.searchCourses(
-                query: query,
-                near: location.currentLocation
-            )
+            let request = MKLocalSearch.Request()
+            request.naturalLanguageQuery = query + " golf"
+            let response = try await MKLocalSearch(request: request).start()
+            searchResults = response.mapItems.compactMap { mapKitCourse(from: $0) }
+            if searchResults.isEmpty {
+                errorMessage = "No courses found. Try a shorter name."
+            }
         } catch {
             searchResults = []
-            errorMessage = "Couldn't reach course database. Showing cached results."
+            errorMessage = "Search unavailable. Check your connection."
         }
+    }
+
+    private func mapKitCourse(from item: MKMapItem) -> GolfCourse? {
+        guard let name = item.name else { return nil }
+        let coord = item.placemark.coordinate
+        let sid = "\(name)-\(Int(coord.latitude * 1000))-\(Int(coord.longitude * 1000))"
+        let tees = [("Black", "Black"), ("Blue", "Blue"), ("White", "White"),
+                    ("Gold", "Gold"), ("Red", "Red")].enumerated().map { i, t in
+            TeeBox(id: "\(sid)-tee-\(i)", name: t.0, color: t.1, totalYards: 0)
+        }
+        return GolfCourse(
+            id: sid,
+            name: name,
+            city: item.placemark.locality ?? "",
+            state: item.placemark.administrativeArea ?? "",
+            country: item.placemark.countryCode ?? "US",
+            latitude: coord.latitude,
+            longitude: coord.longitude,
+            holes: [],
+            teeBoxes: tees,
+            source: .mapKit,
+            cachedAt: Date()
+        )
     }
 
     private func distanceMiles(course: GolfCourse, user: CLLocationCoordinate2D) -> Double? {
@@ -424,6 +449,18 @@ private struct TeeSelectorSheet: View {
 
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 10) {
+                        if course.source == .mapKit {
+                            HStack(spacing: 8) {
+                                Image(systemName: "info.circle")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(TCTheme.gold)
+                                Text("GPS distances available. Scorecard data will be added when available.")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(TCTheme.textMuted)
+                            }
+                            .padding(.horizontal, TCTheme.hPad)
+                            .padding(.bottom, 4)
+                        }
                         ForEach(course.teeBoxes) { tee in
                             teeRow(tee)
                         }
@@ -455,9 +492,15 @@ private struct TeeSelectorSheet: View {
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundColor(TCTheme.textPrimary)
                     HStack(spacing: 10) {
-                        Text("\(tee.totalYards) yd")
-                            .font(.system(size: 12))
-                            .foregroundColor(TCTheme.textMuted)
+                        if tee.totalYards > 0 {
+                            Text("\(tee.totalYards) yd")
+                                .font(.system(size: 12))
+                                .foregroundColor(TCTheme.textMuted)
+                        } else {
+                            Text("GPS only")
+                                .font(.system(size: 12))
+                                .foregroundColor(TCTheme.textMuted)
+                        }
                         if let r = tee.rating {
                             Text("Rating \(String(format: "%.1f", r))")
                                 .font(.system(size: 12))
