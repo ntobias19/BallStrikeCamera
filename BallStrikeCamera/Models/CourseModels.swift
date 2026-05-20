@@ -16,6 +16,7 @@ struct GolfCourse: Codable, Identifiable {
     var source: CourseSource   = .mock
     var cachedAt: Date?
     var coursePolygon: PolygonRing?  = nil    // outer course boundary if available
+    var geometryMetadata: CourseGeometryMetadata? = nil
 
     var coordinate: CLLocationCoordinate2D? {
         guard let lat = latitude, let lng = longitude else { return nil }
@@ -25,10 +26,44 @@ struct GolfCourse: Codable, Identifiable {
     var hasRealGeometry: Bool {
         holes.contains(where: { $0.greenPolygon != nil })
     }
+
+    /// True when geometry is good enough to render as course truth. This prevents
+    /// automated drafts from looking like verified GPS data in the round UI.
+    var hasTrustedGeometry: Bool {
+        guard hasRealGeometry else { return false }
+        return geometryMetadata?.isTrusted ?? true
+    }
 }
 
 enum CourseSource: String, Codable {
-    case mock, golfCourseAPI, bundled, manual, mapKit, openStreetMap, merged
+    case mock, golfCourseAPI, bundled, manual, mapKit, openStreetMap, merged, autoBackfill
+}
+
+enum CourseGeometryState: String, Codable {
+    case unknown
+    case autoDraft = "auto_draft"
+    case accepted
+    case rejected
+}
+
+struct CourseGeometryMetadata: Codable, Hashable {
+    var state: CourseGeometryState = .unknown
+    var confidence: Double? = nil
+    var source: String = "unknown"
+    var schemaVersion: Int = 1
+    var generatedBy: String? = nil
+    var validationErrors: [String] = []
+    var imagerySource: String? = nil
+    var updatedAt: Date? = nil
+
+    var isTrusted: Bool {
+        switch state {
+        case .accepted:
+            return validationErrors.isEmpty
+        case .autoDraft, .rejected, .unknown:
+            return false
+        }
+    }
 }
 
 // MARK: - Tee Box

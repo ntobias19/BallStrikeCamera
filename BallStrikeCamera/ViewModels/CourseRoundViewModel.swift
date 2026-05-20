@@ -246,6 +246,16 @@ final class CourseRoundViewModel: ObservableObject {
             course.holes.sort { $0.number < $1.number }
         }
         course.source = course.source == .golfCourseAPI ? .merged : .manual
+        course.geometryMetadata = CourseGeometryMetadata(
+            state: .accepted,
+            confidence: 0.9,
+            source: CourseSource.manual.rawValue,
+            schemaVersion: 1,
+            generatedBy: "debug_manual_setup",
+            validationErrors: [],
+            imagerySource: nil,
+            updatedAt: Date()
+        )
         course.cachedAt = Date()
         selectedCourse = course
         OSMGolfService.shared.cacheMergedCourse(course)
@@ -333,7 +343,7 @@ final class CourseRoundViewModel: ObservableObject {
         do {
             try await backend.saveRound(round)
         } catch {
-            await SyncQueue.shared.enqueueRound(roundId: round.id, userId: userId)
+            SyncQueue.shared.enqueueRound(roundId: round.id, userId: userId)
             #if DEBUG
             print("[Sync] remote saveRound failed (\(error)); enqueued for retry")
             #endif

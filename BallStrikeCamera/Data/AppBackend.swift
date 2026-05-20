@@ -41,6 +41,7 @@ protocol AppBackend {
     // Shared course geometry — keyed by provider/course id, shared across users
     func saveCourseGeometry(_ course: GolfCourse) async throws
     func loadCourseGeometry(courseId: String) async throws -> GolfCourse?
+    func requestCourseGeometryBackfill(_ course: GolfCourse, reason: String) async throws
 
     // Feed — userId embedded in model
     func saveFeedPost(_ post: FeedPost) async throws
@@ -70,6 +71,9 @@ extension AppBackend {
     }
     func loadCourseGeometry(courseId: String) async throws -> GolfCourse? {
         nil
+    }
+    func requestCourseGeometryBackfill(_ course: GolfCourse, reason: String = "missing_geometry") async throws {
+        // no-op for local; the Supabase backend queues server-side geometry work.
     }
 }
 

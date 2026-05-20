@@ -7,8 +7,10 @@ final class AuthSessionStore: ObservableObject {
     @Published var userProfile: UserProfile?
     @Published var isLoading = true
 
-    let backend: AppBackend
+    @Published private(set) var backend: AppBackend
     @Published var entitlementVM: EntitlementViewModel
+    private let configuredBackend: AppBackend
+    private let localGuestBackend = LocalBackendService()
 
     /// Stable device identifier stored in UserDefaults.
     /// Used for device registration / validation with Supabase.
@@ -25,6 +27,7 @@ final class AuthSessionStore: ObservableObject {
 
     init() {
         let b = BackendFactory.make()
+        self.configuredBackend = b
         self.backend = b
         self._entitlementVM = Published(initialValue: EntitlementViewModel(backend: b))
         print("[TrueCarry] DeviceID: \(AuthSessionStore.deviceId)")
@@ -38,7 +41,13 @@ final class AuthSessionStore: ObservableObject {
 
     func restoreSession() async {
         isLoading = true
-        if let user = try? await backend.currentUser() {
+        if let user = try? await configuredBackend.currentUser() {
+            activateBackend(configuredBackend)
+            currentUser = user
+            userProfile = await ensureProfileAndBag(for: user)
+            await entitlementVM.load(userId: user.id)
+        } else if let user = try? await localGuestBackend.currentUser() {
+            activateBackend(localGuestBackend)
             currentUser = user
             userProfile = await ensureProfileAndBag(for: user)
             await entitlementVM.load(userId: user.id)
@@ -49,28 +58,42 @@ final class AuthSessionStore: ObservableObject {
     // MARK: - Auth Actions
 
     func signIn(email: String, password: String) async throws {
-        let user = try await backend.signIn(email: email, password: password)
+        activateBackend(configuredBackend)
+        let user = try await configuredBackend.signIn(email: email, password: password)
         currentUser = user
         userProfile = await ensureProfileAndBag(for: user)
         await entitlementVM.load(userId: user.id)
     }
 
     func createAccount(name: String, email: String, password: String) async throws {
-        let user = try await backend.createAccount(name: name, email: email, password: password)
+        activateBackend(configuredBackend)
+        let user = try await configuredBackend.createAccount(name: name, email: email, password: password)
         currentUser = user
         userProfile = await ensureProfileAndBag(for: user)
         await entitlementVM.load(userId: user.id)
     }
 
     func continueAsGuest() async throws {
-        let user = try await backend.continueAsGuest()
+        let user: AppUser
+        do {
+            activateBackend(configuredBackend)
+            user = try await configuredBackend.continueAsGuest()
+        } catch {
+            #if DEBUG
+            print("[TrueCarry] Supabase guest unavailable (\(error.localizedDescription)) — using local guest")
+            #endif
+            activateBackend(localGuestBackend)
+            user = try await localGuestBackend.continueAsGuest()
+        }
         currentUser = user
         userProfile = await ensureProfileAndBag(for: user)
         await entitlementVM.load(userId: user.id)
     }
 
     func signOut() async {
-        try? await backend.signOut()
+        try? await configuredBackend.signOut()
+        try? await localGuestBackend.signOut()
+        activateBackend(configuredBackend)
         currentUser = nil
         userProfile = nil
     }
@@ -115,5 +138,10 @@ final class AuthSessionStore: ObservableObject {
         }
 
         return profile
+    }
+
+    private func activateBackend(_ nextBackend: AppBackend) {
+        backend = nextBackend
+        entitlementVM = EntitlementViewModel(backend: nextBackend)
     }
 }

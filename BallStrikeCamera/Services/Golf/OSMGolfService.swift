@@ -79,6 +79,22 @@ final class OSMTelemetry: ObservableObject {
     }
 }
 
+private actor OSMInFlightRegistry {
+    private var tasks: [String: Task<GolfCourse, Error>] = [:]
+
+    func task(for courseId: String,
+              create: () -> Task<GolfCourse, Error>) -> Task<GolfCourse, Error> {
+        if let existing = tasks[courseId] { return existing }
+        let task = create()
+        tasks[courseId] = task
+        return task
+    }
+
+    func clear(_ courseId: String) {
+        tasks[courseId] = nil
+    }
+}
+
 // MARK: - OSMGolfService
 
 /// Enriches a `GolfCourse` with real geometry pulled from OpenStreetMap via Overpass.
@@ -99,10 +115,10 @@ final class OSMGolfService {
     private let mirrors:      [OverpassMirror]
     private let session:      URLSession
     private let maxAttemptsPerMirror = 2
+    private let cacheSchemaVersion = 3
 
     // In-flight task dedup keyed by course id.
-    private var inFlight: [String: Task<GolfCourse, Error>] = [:]
-    private let inFlightLock = NSLock()
+    private let inFlight = OSMInFlightRegistry()
 
     init(mirrors: [OverpassMirror] = OverpassMirror.defaults) {
         self.mirrors = mirrors
@@ -155,21 +171,17 @@ final class OSMGolfService {
 
     private func dedupe(_ courseId: String,
                         _ work: @escaping () async throws -> GolfCourse) async throws -> GolfCourse {
-        inFlightLock.lock()
-        if let existing = inFlight[courseId] {
-            inFlightLock.unlock()
-            return try await existing.value
+        let task = await inFlight.task(for: courseId) {
+            Task { try await work() }
         }
-        let task = Task { try await work() }
-        inFlight[courseId] = task
-        inFlightLock.unlock()
-
-        defer {
-            inFlightLock.lock()
-            inFlight[courseId] = nil
-            inFlightLock.unlock()
+        do {
+            let value = try await task.value
+            await inFlight.clear(courseId)
+            return value
+        } catch {
+            await inFlight.clear(courseId)
+            throw error
         }
-        return try await task.value
     }
 
     // MARK: - Single enrich attempt across mirrors
@@ -290,9 +302,25 @@ final class OSMGolfService {
           way["golf"="fairway"](around:\(r),\(lat),\(lon));
           way["golf"="tee"](around:\(r),\(lat),\(lon));
           way["golf"="bunker"](around:\(r),\(lat),\(lon));
+          way["natural"="sand"](around:\(r),\(lat),\(lon));
+          way["golf"="water_hazard"](around:\(r),\(lat),\(lon));
+          way["golf"="lateral_water_hazard"](around:\(r),\(lat),\(lon));
           way["natural"="water"](around:\(r),\(lat),\(lon));
           way["natural"="wetland"](around:\(r),\(lat),\(lon));
           way["golf"="hole"](around:\(r),\(lat),\(lon));
+          way["leisure"="golf_course"](around:\(r),\(lat),\(lon));
+          node["golf"="pin"](around:\(r),\(lat),\(lon));
+          relation["golf"="green"](around:\(r),\(lat),\(lon));
+          relation["golf"="fairway"](around:\(r),\(lat),\(lon));
+          relation["golf"="tee"](around:\(r),\(lat),\(lon));
+          relation["golf"="bunker"](around:\(r),\(lat),\(lon));
+          relation["natural"="sand"](around:\(r),\(lat),\(lon));
+          relation["golf"="water_hazard"](around:\(r),\(lat),\(lon));
+          relation["golf"="lateral_water_hazard"](around:\(r),\(lat),\(lon));
+          relation["natural"="water"](around:\(r),\(lat),\(lon));
+          relation["natural"="wetland"](around:\(r),\(lat),\(lon));
+          relation["golf"="hole"](around:\(r),\(lat),\(lon));
+          relation["leisure"="golf_course"](around:\(r),\(lat),\(lon));
         );
         out body;
         >;
@@ -323,6 +351,17 @@ final class OSMGolfService {
             enriched.latitude  = center.latitude
             enriched.longitude = center.longitude
         }
+        enriched.coursePolygon = classified.courseBoundaries.first?.ring
+        enriched.geometryMetadata = CourseGeometryMetadata(
+            state: .accepted,
+            confidence: 1.0,
+            source: CourseSource.openStreetMap.rawValue,
+            schemaVersion: cacheSchemaVersion,
+            generatedBy: "osm_overpass",
+            validationErrors: [],
+            imagerySource: nil,
+            updatedAt: Date()
+        )
         return enriched
     }
 
@@ -334,27 +373,76 @@ final class OSMGolfService {
                 nodeMap[e.id] = Coordinate(latitude: lat, longitude: lon)
             }
         }
-        var result = OSMClassified()
+
+        var wayMap: [Int64: OSMWayGeometry] = [:]
         for e in elements where e.type == .way {
-            guard let nodeRefs = e.nodes, let tags = e.tags else { continue }
+            guard let nodeRefs = e.nodes else { continue }
             let coords = nodeRefs.compactMap { nodeMap[$0] }
             guard coords.count >= 2 else { continue }
-            let geom = OSMWayGeometry(id: e.id, coordinates: coords, tags: tags)
+            wayMap[e.id] = OSMWayGeometry(id: e.id, coordinates: coords, tags: e.tags ?? [:])
+        }
+
+        var result = OSMClassified()
+        for e in elements where e.type == .node {
+            guard let lat = e.lat, let lon = e.lon, let tags = e.tags else { continue }
+            if tags["golf"] == "pin" {
+                result.pins.append(OSMPointGeometry(
+                    id: e.id,
+                    coordinate: Coordinate(latitude: lat, longitude: lon),
+                    tags: tags
+                ))
+            }
+        }
+
+        for e in elements where e.type == .way {
+            guard let geom = wayMap[e.id], let tags = e.tags else { continue }
+            classify(geom, tags: tags, into: &result)
+        }
+
+        for e in elements where e.type == .relation {
+            guard let tags = e.tags,
+                  let members = e.members else { continue }
+            let outerWays = members
+                .filter { $0.type == .way && ($0.role == nil || $0.role == "" || $0.role == "outer") }
+                .compactMap { wayMap[$0.ref] }
+            guard let geom = mergedRelationGeometry(id: e.id, ways: outerWays, tags: tags) else { continue }
+            classify(geom, tags: tags, into: &result)
+        }
+        return result
+    }
+
+    private func classify(_ geom: OSMWayGeometry,
+                          tags: [String: String],
+                          into result: inout OSMClassified) {
             if let g = tags["golf"] {
                 switch g {
                 case "green":    result.greens.append(geom)
                 case "fairway":  result.fairways.append(geom)
                 case "tee":      result.tees.append(geom)
                 case "bunker":   result.bunkers.append(geom)
+                case "water_hazard", "lateral_water_hazard":
+                    result.water.append(geom)
                 case "hole":     result.holeWays.append(geom)
                 default: break
                 }
             }
+            if tags["leisure"] == "golf_course" {
+                result.courseBoundaries.append(geom)
+            }
+            if tags["natural"] == "sand" {
+                result.bunkers.append(geom)
+            }
             if tags["natural"] == "water" || tags["natural"] == "wetland" {
                 result.water.append(geom)
             }
-        }
-        return result
+    }
+
+    private func mergedRelationGeometry(id: Int64,
+                                        ways: [OSMWayGeometry],
+                                        tags: [String: String]) -> OSMWayGeometry? {
+        let coords = ways.flatMap(\.coordinates)
+        guard coords.count >= 2 else { return nil }
+        return OSMWayGeometry(id: id, coordinates: coords, tags: tags)
     }
 
     private func centroidOfAll(_ ways: [OSMWayGeometry]) -> Coordinate? {
@@ -371,7 +459,7 @@ final class OSMGolfService {
         let safeId = courseId.replacingOccurrences(of: "/", with: "_")
         let dir    = AppStorageManager.globalCourseCacheDir()
         AppStorageManager.ensureDirectory(dir)
-        return dir.appendingPathComponent("osm-\(safeId).json")
+        return dir.appendingPathComponent("osm-v\(cacheSchemaVersion)-\(safeId).json")
     }
 
     private func save(_ course: GolfCourse) {

@@ -218,16 +218,32 @@ final class SupabaseBackendService: AppBackend {
     // MARK: - Shared Course Geometry
 
     func saveCourseGeometry(_ course: GolfCourse) async throws {
-        guard course.hasRealGeometry else { return }
+        guard course.hasTrustedGeometry else { return }
+        let metadata = course.geometryMetadata ?? CourseGeometryMetadata(
+            state: .accepted,
+            confidence: 1.0,
+            source: course.source.rawValue,
+            schemaVersion: 1,
+            generatedBy: "ios",
+            validationErrors: [],
+            imagerySource: nil,
+            updatedAt: Date()
+        )
         var body: [String: Any] = [
             "course_id": course.id,
             "course_name": course.name,
             "city": course.city,
             "state": course.state,
-            "source": course.source.rawValue,
+            "source": metadata.source,
+            "geometry_state": metadata.state.rawValue,
+            "schema_version": metadata.schemaVersion,
+            "validation_errors": metadata.validationErrors,
             "payload": try toDict(course),
             "updated_at": ISO8601DateFormatter().string(from: Date())
         ]
+        if let confidence = metadata.confidence { body["confidence"] = confidence }
+        if let generatedBy = metadata.generatedBy { body["generated_by"] = generatedBy }
+        if let imagerySource = metadata.imagerySource { body["imagery_source"] = imagerySource }
         if let user = try? await currentUser() {
             body["submitted_by"] = user.id.uuidString
         }
@@ -237,7 +253,39 @@ final class SupabaseBackendService: AppBackend {
     func loadCourseGeometry(courseId: String) async throws -> GolfCourse? {
         let rows: [SupabaseCourseGeometryRow] = try await selectWhere(
             table: "course_geometries", column: "course_id", value: courseId)
-        return rows.first?.payload
+        return rows.map { $0.toGolfCourse() }.first(where: { $0.hasTrustedGeometry })
+    }
+
+    func requestCourseGeometryBackfill(_ course: GolfCourse, reason: String = "missing_geometry") async throws {
+        var body: [String: Any] = [
+            "course_id": course.id,
+            "course_name": course.name,
+            "city": course.city,
+            "state": course.state,
+            "country": course.country,
+            "reason": reason,
+            "status": "queued",
+            "last_requested_at": ISO8601DateFormatter().string(from: Date()),
+            "scorecard_payload": try toDict(course)
+        ]
+        if let lat = course.latitude { body["latitude"] = lat }
+        if let lon = course.longitude { body["longitude"] = lon }
+        if let tee = course.teeBoxes.first {
+            body["selected_tee_name"] = tee.name
+            body["selected_tee_yards"] = tee.totalYards
+        }
+
+        var components = URLComponents(url: restURL("geometry_backfill_requests"), resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "on_conflict", value: "course_id")]
+        var req = authorizedRequest(url: components.url!, method: "POST")
+        req.setValue("return=minimal,resolution=merge-duplicates", forHTTPHeaderField: "Prefer")
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, response) = try await session.data(for: req)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard status == 200 || status == 201 || status == 204 else {
+            logError("upsert:geometry_backfill_requests", data: data, response: response)
+            throw BackendError.saveFailed("geometry_backfill_requests")
+        }
     }
 
     // MARK: - Feed
@@ -303,6 +351,7 @@ final class SupabaseBackendService: AppBackend {
         req.httpMethod = method
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue(config.anonKey, forHTTPHeaderField: "apikey")
+        req.setValue("Bearer \(config.anonKey)", forHTTPHeaderField: "Authorization")
         return req
     }
 

@@ -14,6 +14,7 @@ struct CourseSearchView: View {
     @State private var errorMessage: String?
     @State private var selectedCourse: GolfCourse?
     @State private var searchTask: Task<Void, Never>?
+    @State private var resolvingCourseId: String?
 
     let userId: UUID
     let onSelect: (GolfCourse, TeeBox) -> Void
@@ -189,10 +190,16 @@ struct CourseSearchView: View {
                 isSearching = false
                 return
             }
+            let trimmed = newVal.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard trimmed.count >= 3 else {
+                searchResults = []
+                isSearching = false
+                return
+            }
             searchTask = Task {
                 try? await Task.sleep(nanoseconds: 350_000_000)
                 guard !Task.isCancelled else { return }
-                await searchCourses(query: newVal)
+                await searchCourses(query: trimmed)
             }
         }
         .onChange(of: location.currentLocation?.latitude) { _ in
@@ -228,7 +235,7 @@ struct CourseSearchView: View {
     private func courseRow(_ course: GolfCourse) -> some View {
         VStack(spacing: 0) {
             Button {
-                selectedCourse = course
+                Task { await selectCourse(course) }
             } label: {
                 HStack(spacing: 14) {
                     ZStack {
@@ -261,7 +268,11 @@ struct CourseSearchView: View {
                     }
                     Spacer(minLength: 0)
                     VStack(alignment: .trailing, spacing: 3) {
-                        if let dist = distanceText(for: course) {
+                        if resolvingCourseId == course.id {
+                            ProgressView()
+                                .tint(TCTheme.gold)
+                                .scaleEffect(0.75)
+                        } else if let dist = distanceText(for: course) {
                             Text(dist)
                                 .font(.system(size: 12, weight: .semibold))
                                 .foregroundColor(TCTheme.cyan)
@@ -387,14 +398,78 @@ struct CourseSearchView: View {
         }
     }
 
+    private func selectCourse(_ course: GolfCourse) async {
+        resolvingCourseId = course.id
+        defer { resolvingCourseId = nil }
+        selectedCourse = await resolveCourseForSetup(course)
+    }
+
+    private func resolveCourseForSetup(_ course: GolfCourse) async -> GolfCourse {
+        if hasUsableTees(course) {
+            return course
+        }
+        guard GolfCourseAPIConfig.isConfigured else { return course }
+        do {
+            let provider = GolfCourseAPIProvider(userId: userId)
+            let results = try await provider.searchCourses(query: course.name, near: course.coordinate)
+            guard let best = bestCourseMatch(results, to: course) else { return course }
+            if best.holes.isEmpty {
+                return (try? await provider.loadCourseDetails(courseId: best.id)) ?? best
+            }
+            return best
+        } catch {
+            #if DEBUG
+            print("[CourseSearch] API tee resolve failed: \(error.localizedDescription)")
+            #endif
+            return course
+        }
+    }
+
+    private func hasUsableTees(_ course: GolfCourse) -> Bool {
+        course.teeBoxes.contains { $0.totalYards > 0 }
+    }
+
+    private func bestCourseMatch(_ results: [GolfCourse], to course: GolfCourse) -> GolfCourse? {
+        guard !results.isEmpty else { return nil }
+        let target = course.coordinate
+        return results.min { lhs, rhs in
+            score(lhs, target: target, name: course.name) < score(rhs, target: target, name: course.name)
+        }
+    }
+
+    private func score(_ candidate: GolfCourse,
+                       target: CLLocationCoordinate2D?,
+                       name: String) -> Double {
+        var score = 0.0
+        if !hasUsableTees(candidate) { score += 10_000 }
+        if candidate.holes.isEmpty { score += 5_000 }
+        if !namesOverlap(candidate.name, name) { score += 2_500 }
+        if let target, let lat = candidate.latitude, let lon = candidate.longitude {
+            score += LocationService.distanceInYards(
+                from: target,
+                to: CLLocationCoordinate2D(latitude: lat, longitude: lon)
+            )
+        } else {
+            score += 4_000
+        }
+        return score
+    }
+
+    private func namesOverlap(_ a: String, _ b: String) -> Bool {
+        let ignored: Set<String> = ["the", "golf", "club", "course", "country", "links"]
+        func tokens(_ value: String) -> Set<String> {
+            Set(value.lowercased()
+                .components(separatedBy: CharacterSet.alphanumerics.inverted)
+                .filter { $0.count > 2 && !ignored.contains($0) })
+        }
+        return !tokens(a).isDisjoint(with: tokens(b))
+    }
+
     private func mapKitCourse(from item: MKMapItem) -> GolfCourse? {
         guard let name = item.name else { return nil }
         let coord = item.placemark.coordinate
         let sid = "\(name)-\(Int(coord.latitude * 1000))-\(Int(coord.longitude * 1000))"
-        let tees = [("Black", "Black"), ("Blue", "Blue"), ("White", "White"),
-                    ("Gold", "Gold"), ("Red", "Red")].enumerated().map { i, t in
-            TeeBox(id: "\(sid)-tee-\(i)", name: t.0, color: t.1, totalYards: 0)
-        }
+        let tees = [TeeBox(id: "\(sid)-gps", name: "Course GPS", color: "Gray", totalYards: 0)]
         return GolfCourse(
             id: sid,
             name: name,
@@ -456,12 +531,12 @@ private struct TeeSelectorSheet: View {
 
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 10) {
-                        if course.source == .mapKit {
+                        if course.source == .mapKit || !course.teeBoxes.contains(where: { $0.totalYards > 0 }) {
                             HStack(spacing: 8) {
                                 Image(systemName: "info.circle")
                                     .font(.system(size: 12))
                                     .foregroundColor(TCTheme.gold)
-                                Text("GPS distances available. Scorecard data will be added when available.")
+                                Text("No official tee set found yet. GPS estimates will be used.")
                                     .font(.system(size: 11))
                                     .foregroundColor(TCTheme.textMuted)
                             }
@@ -504,7 +579,7 @@ private struct TeeSelectorSheet: View {
                                 .font(.system(size: 12))
                                 .foregroundColor(TCTheme.textMuted)
                         } else {
-                            Text("GPS only")
+                            Text("GPS estimate")
                                 .font(.system(size: 12))
                                 .foregroundColor(TCTheme.textMuted)
                         }
@@ -543,6 +618,8 @@ private struct TeeSelectorSheet: View {
         case "red":            return .red
         case "gold", "yellow": return TCTheme.gold
         case "green":          return TCTheme.sage
+        case "silver", "gray", "grey":
+            return Color(white: 0.68)
         default:               return TCTheme.textMuted
         }
     }

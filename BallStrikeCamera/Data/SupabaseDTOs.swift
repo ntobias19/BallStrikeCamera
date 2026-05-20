@@ -127,6 +127,12 @@ struct SupabaseCourseGeometryRow: Codable {
     var city: String
     var state: String
     var source: String
+    var geometryState: String?
+    var confidence: Double?
+    var schemaVersion: Int?
+    var generatedBy: String?
+    var validationErrors: [String]?
+    var imagerySource: String?
     var payload: GolfCourse
     var submittedBy: String?
     var updatedAt: String?
@@ -137,9 +143,31 @@ struct SupabaseCourseGeometryRow: Codable {
         case city
         case state
         case source
+        case geometryState = "geometry_state"
+        case confidence
+        case schemaVersion = "schema_version"
+        case generatedBy = "generated_by"
+        case validationErrors = "validation_errors"
+        case imagerySource = "imagery_source"
         case payload
         case submittedBy = "submitted_by"
         case updatedAt = "updated_at"
+    }
+
+    func toGolfCourse() -> GolfCourse {
+        var course = payload
+        let state = CourseGeometryState(rawValue: geometryState ?? "") ?? .accepted
+        course.geometryMetadata = CourseGeometryMetadata(
+            state: state,
+            confidence: confidence,
+            source: source,
+            schemaVersion: schemaVersion ?? 1,
+            generatedBy: generatedBy,
+            validationErrors: validationErrors ?? [],
+            imagerySource: imagerySource,
+            updatedAt: updatedAt.flatMap { ISO8601DateFormatter().date(from: $0) }
+        )
+        return course
     }
 }
 

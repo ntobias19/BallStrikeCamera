@@ -196,7 +196,8 @@ final class GolfCourseAPIProvider: CourseProvider {
                 TeeBox(
                     id: t.id ?? "\(courseId)-tee-\(idx)",
                     name: t.tee_name ?? t.name ?? "Tee \(idx+1)",
-                    color: t.tee_color ?? "White",
+                    color: inferredTeeColor(explicit: t.tee_color,
+                                            name: t.tee_name ?? t.name),
                     totalYards: t.total_yards ?? t.total_distance ?? 0,
                     rating: t.course_rating,
                     slope: t.slope_rating
@@ -204,6 +205,21 @@ final class GolfCourseAPIProvider: CourseProvider {
             }
         }
         return [TeeBox(id: "\(courseId)-default", name: "Standard", color: "White", totalYards: 0)]
+    }
+
+    private func inferredTeeColor(explicit: String?, name: String?) -> String {
+        if let explicit, !explicit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return explicit
+        }
+        let lower = (name ?? "").lowercased()
+        if lower.contains("championship") || lower.contains("black") { return "Black" }
+        if lower.contains("blue") { return "Blue" }
+        if lower.contains("white") { return "White" }
+        if lower.contains("green") { return "Green" }
+        if lower.contains("gold") || lower.contains("yellow") { return "Gold" }
+        if lower.contains("red") || lower.contains("forward") { return "Red" }
+        if lower.contains("silver") || lower.contains("fairway") { return "Silver" }
+        return "Gray"
     }
 
     private func buildHoles(raw: RawCourse, courseId: String, teeBoxes: [TeeBox]) -> [GolfHole] {

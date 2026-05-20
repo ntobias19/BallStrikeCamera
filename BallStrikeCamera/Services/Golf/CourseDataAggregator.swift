@@ -28,12 +28,12 @@ final class CourseDataAggregator {
     /// Best-effort: never throws. Returns the richest course it can assemble.
     func enrich(_ course: GolfCourse, backend: AppBackend? = nil) async -> GolfCourse {
         let cached = OSMGolfService.shared.loadCached(courseId: course.id)
-        if let cached, cached.hasRealGeometry {
+        if let cached, cached.hasTrustedGeometry {
             return cached
         }
 
         let sharedGeometry = await loadSharedGeometry(courseId: course.id, backend: backend)
-        if let sharedGeometry, sharedGeometry.hasRealGeometry, isUsableCachedCourse(sharedGeometry) {
+        if let sharedGeometry, sharedGeometry.hasTrustedGeometry, isUsableCachedCourse(sharedGeometry) {
             OSMGolfService.shared.cacheMergedCourse(sharedGeometry)
             return sharedGeometry
         }
@@ -51,7 +51,7 @@ final class CourseDataAggregator {
             }.value
         }
         let geometry: GolfCourse
-        if let sharedGeometry, sharedGeometry.hasRealGeometry {
+        if let sharedGeometry, sharedGeometry.hasTrustedGeometry {
             geometry = sharedGeometry
         } else {
             geometry = await OSMGolfService.shared.enrichBestEffort(course)
@@ -59,8 +59,10 @@ final class CourseDataAggregator {
 
         let merged = merge(base: course, osm: geometry, scorecard: scorecard)
         OSMGolfService.shared.cacheMergedCourse(merged)
-        if merged.hasRealGeometry {
+        if merged.hasTrustedGeometry {
             try? await backend?.saveCourseGeometry(merged)
+        } else if isUsableCachedCourse(merged) {
+            try? await backend?.requestCourseGeometryBackfill(merged, reason: "missing_geometry")
         }
         return merged
     }
@@ -79,7 +81,7 @@ final class CourseDataAggregator {
     }
 
     private func isUsableCachedCourse(_ course: GolfCourse) -> Bool {
-        if course.hasRealGeometry { return true }
+        if course.hasTrustedGeometry { return true }
         let validHoleNumbers = course.holes.filter { $0.number > 0 }.count
         let hasScorecard = validHoleNumbers >= 9 && course.teeBoxes.contains { $0.totalYards > 0 }
         return hasScorecard
@@ -88,7 +90,8 @@ final class CourseDataAggregator {
     private func loadSharedGeometry(courseId: String, backend: AppBackend?) async -> GolfCourse? {
         guard let backend else { return nil }
         do {
-            return try await backend.loadCourseGeometry(courseId: courseId)
+            let course = try await backend.loadCourseGeometry(courseId: courseId)
+            return course?.hasTrustedGeometry == true ? course : nil
         } catch {
             #if DEBUG
             print("[Aggregator] shared course geometry failed: \(error.localizedDescription)")
@@ -181,7 +184,23 @@ final class CourseDataAggregator {
         }
         result.holes = mergedHoles
         if result.name.isEmpty { result.name = sc.name }
-        result.source = result.hasRealGeometry ? .merged : .golfCourseAPI
+        if result.hasRealGeometry {
+            if result.geometryMetadata == nil || result.geometryMetadata?.state == .unknown {
+                result.geometryMetadata = CourseGeometryMetadata(
+                    state: .accepted,
+                    confidence: 1.0,
+                    source: osm.source.rawValue,
+                    schemaVersion: 1,
+                    generatedBy: osm.source == .openStreetMap ? "osm_overpass" : "shared_geometry",
+                    validationErrors: [],
+                    imagerySource: nil,
+                    updatedAt: Date()
+                )
+            }
+            result.source = .merged
+        } else {
+            result.source = .golfCourseAPI
+        }
         result.cachedAt = Date()
         return result
     }

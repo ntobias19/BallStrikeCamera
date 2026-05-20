@@ -14,8 +14,8 @@ enum HoleInference {
 
     // Distance thresholds (yards) used when attaching features to a hole.
     private static let fairwayAttachRadiusYds: Double = 60
-    private static let bunkerAttachRadiusYds:  Double = 80
-    private static let waterAttachRadiusYds:   Double = 120
+    private static let bunkerAttachRadiusYds:  Double = 115
+    private static let waterAttachRadiusYds:   Double = 135
 
     static func infer(classified: OSMClassified,
                       courseId: String,
@@ -50,6 +50,7 @@ enum HoleInference {
         var tees     = classified.tees
         var bunkers  = classified.bunkers
         var water    = classified.water
+        var pins     = classified.pins
 
         return sorted.compactMap { holeWay -> GolfHole? in
             guard let number = holeWay.intTag("ref"),
@@ -66,13 +67,20 @@ enum HoleInference {
             let nearestGreen = popNearest(in: &greens, to: greenEnd)
             let nearestFairway = popNearest(in: &fairways, to: ringMidpoint(holeWay) ?? teeEnd)
             let nearestTee = popNearest(in: &tees, to: teeEnd)
+            let nearestPin = popNearestPoint(in: &pins,
+                                             to: nearestGreen?.centroid ?? greenEnd,
+                                             maxYards: 45)
+            let featureAnchors = holeWay.coordinates
+                + (nearestGreen?.coordinates ?? [])
+                + (nearestFairway?.coordinates ?? [])
+                + (nearestTee?.coordinates ?? [])
 
             let attachedBunkers = drainWithin(&bunkers,
                                               within: bunkerAttachRadiusYds,
-                                              of:     holeWay.coordinates)
+                                              of:     featureAnchors)
             let attachedWater   = drainWithin(&water,
                                               within: waterAttachRadiusYds,
-                                              of:     holeWay.coordinates)
+                                              of:     featureAnchors)
 
             return buildHole(courseId: courseId,
                              number: number,
@@ -80,6 +88,7 @@ enum HoleInference {
                              handicap: holeWay.intTag("handicap"),
                              teeCoord: nearestTee?.centroid ?? teeEnd,
                              path:    holeWay.coordinates,
+                             pinCoord: nearestPin?.coordinate,
                              green:   nearestGreen,
                              fairway: nearestFairway,
                              bunkers: attachedBunkers,
@@ -98,6 +107,7 @@ enum HoleInference {
         var tees      = classified.tees
         var bunkers   = classified.bunkers
         var water     = classified.water
+        var pins      = classified.pins
 
         // Build raw (tee, green, …) groupings.
         var pending: [Pending] = []
@@ -105,12 +115,19 @@ enum HoleInference {
             guard let greenCenter = green.centroid else { continue }
             let nearestTee     = popNearest(in: &tees,     to: greenCenter)
             let nearestFairway = popNearest(in: &fairways, to: greenCenter)
+            let featureAnchors = green.coordinates
+                + (nearestFairway?.coordinates ?? [])
+                + (nearestTee?.coordinates ?? [])
             let attachedBunkers = drainWithin(&bunkers, within: bunkerAttachRadiusYds,
-                                              of: green.coordinates)
+                                              of: featureAnchors)
             let attachedWater   = drainWithin(&water,   within: waterAttachRadiusYds,
-                                              of: green.coordinates)
+                                              of: featureAnchors)
+            let nearestPin = popNearestPoint(in: &pins,
+                                             to: greenCenter,
+                                             maxYards: 45)
             pending.append(Pending(green: green, tee: nearestTee, fairway: nearestFairway,
-                                   bunkers: attachedBunkers, water: attachedWater))
+                                   bunkers: attachedBunkers, water: attachedWater,
+                                   pin: nearestPin))
         }
 
         // Order holes by a greedy nearest-tee walk starting from the southernmost tee.
@@ -126,6 +143,7 @@ enum HoleInference {
                              path:    inferredPath(tee: teeCenter,
                                                    fairway: p.fairway,
                                                    green: p.green.centroid!),
+                             pinCoord: p.pin?.coordinate,
                              green:   p.green,
                              fairway: p.fairway,
                              bunkers: p.bunkers,
@@ -166,6 +184,7 @@ enum HoleInference {
                                   handicap: Int?,
                                   teeCoord: Coordinate,
                                   path: [Coordinate]?,
+                                  pinCoord: Coordinate?,
                                   green: OSMWayGeometry?,
                                   fairway: OSMWayGeometry?,
                                   bunkers: [OSMWayGeometry],
@@ -173,7 +192,7 @@ enum HoleInference {
                                   teeBoxes: [TeeBox]) -> GolfHole {
 
         let greenRing = green?.ring
-        let greenCenter = green?.centroid ?? teeCoord
+        let greenCenter = pinCoord ?? green?.centroid ?? teeCoord
         let (front, back) = greenFrontBack(green: greenRing, fromTee: teeCoord, center: greenCenter)
 
         // Map measured yardage onto every existing TeeBox so the in-app yardage display works.
@@ -275,6 +294,17 @@ enum HoleInference {
         return pool.remove(at: bestIdx)
     }
 
+    private static func popNearestPoint(in pool: inout [OSMPointGeometry],
+                                        to point: Coordinate,
+                                        maxYards: Double) -> OSMPointGeometry? {
+        guard let best = pool.enumerated().min(by: {
+            yardsBetween($0.element.coordinate, point)
+          < yardsBetween($1.element.coordinate, point)
+        }) else { return nil }
+        guard yardsBetween(best.element.coordinate, point) <= maxYards else { return nil }
+        return pool.remove(at: best.offset)
+    }
+
     /// Removes from `pool` every way whose centroid is within `threshold` yards of any vertex in `near`.
     private static func drainWithin(_ pool: inout [OSMWayGeometry],
                                      within thresholdYds: Double,
@@ -316,5 +346,6 @@ enum HoleInference {
         let fairway: OSMWayGeometry?
         let bunkers: [OSMWayGeometry]
         let water:   [OSMWayGeometry]
+        let pin: OSMPointGeometry?
     }
 }

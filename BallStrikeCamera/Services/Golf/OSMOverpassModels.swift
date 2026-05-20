@@ -37,11 +37,26 @@ struct OSMWayGeometry {
     let coordinates: [Coordinate]
     let tags: [String: String]
 
-    var ring: PolygonRing { PolygonRing(coordinates: coordinates) }
+    var ring: PolygonRing {
+        guard let first = coordinates.first,
+              let last = coordinates.last,
+              first != last else {
+            return PolygonRing(coordinates: coordinates)
+        }
+        return PolygonRing(coordinates: coordinates + [first])
+    }
     var centroid: Coordinate? { ring.centroid }
 
     func tag(_ key: String) -> String? { tags[key] }
     func intTag(_ key: String) -> Int? { tags[key].flatMap(Int.init) }
+}
+
+struct OSMPointGeometry {
+    let id: Int64
+    let coordinate: Coordinate
+    let tags: [String: String]
+
+    func tag(_ key: String) -> String? { tags[key] }
 }
 
 /// Output of the classifier: ways grouped by golf feature kind.
@@ -51,5 +66,7 @@ struct OSMClassified {
     var tees:      [OSMWayGeometry] = []
     var bunkers:   [OSMWayGeometry] = []
     var water:     [OSMWayGeometry] = []
+    var pins:      [OSMPointGeometry] = []
     var holeWays:  [OSMWayGeometry] = []   // golf=hole linestrings (typically tee→green centerline)
+    var courseBoundaries: [OSMWayGeometry] = []
 }
