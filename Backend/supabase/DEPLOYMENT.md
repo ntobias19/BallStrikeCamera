@@ -16,6 +16,8 @@ Dashboard: https://supabase.com/dashboard/project/aoxturoezgecwceudeef
    Backend/supabase/migrations/002_entitlements.sql
    Backend/supabase/migrations/003_rls_policies.sql
    Backend/supabase/migrations/004_storage_policies.sql
+   Backend/supabase/migrations/005_course_geometries.sql
+   Backend/supabase/migrations/006_geometry_backfill_pipeline.sql
    ```
 
 3. Verify in Table Editor that these tables exist:
@@ -29,8 +31,10 @@ Dashboard: https://supabase.com/dashboard/project/aoxturoezgecwceudeef
    - `user_entitlements`
    - `usage_counters`
    - `user_devices`
-   - `friend_requests`
-   - `friendships`
+  - `friend_requests`
+  - `friendships`
+  - `course_geometries`
+  - `geometry_backfill_requests`
 
 4. Verify RLS is enabled on each table:
    Dashboard → Authentication → Policies → confirm each table has policies.

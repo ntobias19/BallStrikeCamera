@@ -133,16 +133,17 @@ enum HoleInference {
         // Order holes by a greedy nearest-tee walk starting from the southernmost tee.
         let ordered = orderByNearestWalk(pending: pending)
 
-        return ordered.enumerated().map { idx, p in
-            let teeCenter = p.tee?.centroid ?? p.green.centroid!
+        return ordered.enumerated().compactMap { idx, p in
+            guard let greenCenter = p.green.centroid else { return nil }
+            let teeCenter = p.tee?.centroid ?? greenCenter
             return buildHole(courseId: courseId,
                              number: idx + 1,
-                             par:    inferPar(distanceYds: yardsBetween(p.green.centroid!, teeCenter)),
+                             par:    inferPar(distanceYds: yardsBetween(greenCenter, teeCenter)),
                              handicap: nil,
                              teeCoord: teeCenter,
                              path:    inferredPath(tee: teeCenter,
                                                    fairway: p.fairway,
-                                                   green: p.green.centroid!),
+                                                   green: greenCenter),
                              pinCoord: p.pin?.coordinate,
                              green:   p.green,
                              fairway: p.fairway,
@@ -164,12 +165,12 @@ enum HoleInference {
         var ordered: [Pending] = [current]
 
         while !remaining.isEmpty {
-            let cursor = current.green.centroid!
-            let nextIdx = remaining.enumerated().min { l, r in
-                let lc = l.element.tee?.centroid ?? l.element.green.centroid!
-                let rc = r.element.tee?.centroid ?? r.element.green.centroid!
+            guard let cursor = current.green.centroid else { break }
+            guard let nextIdx = remaining.enumerated().min(by: { l, r in
+                let lc = l.element.tee?.centroid ?? l.element.green.centroid ?? cursor
+                let rc = r.element.tee?.centroid ?? r.element.green.centroid ?? cursor
                 return yardsBetween(cursor, lc) < yardsBetween(cursor, rc)
-            }!.offset
+            })?.offset else { break }
             current = remaining.remove(at: nextIdx)
             ordered.append(current)
         }
@@ -245,7 +246,12 @@ enum HoleInference {
 
     private static func cleanedPath(_ path: [Coordinate]?,
                                     fallback: [Coordinate]) -> [Coordinate] {
-        let source = (path?.count ?? 0) >= 2 ? path! : fallback
+        let source: [Coordinate]
+        if let path, path.count >= 2 {
+            source = path
+        } else {
+            source = fallback
+        }
         var cleaned: [Coordinate] = []
         for coord in source {
             if let last = cleaned.last, yardsBetween(last, coord) < 3 { continue }
@@ -274,8 +280,9 @@ enum HoleInference {
         guard len > 0 else { return (nil, nil) }
         let ux = centerP.x / len, uy = centerP.y / len
 
+        guard let first = coords.first else { return (nil, nil) }
         var minT = Double.infinity, maxT = -Double.infinity
-        var minC = coords.first!, maxC = coords.first!
+        var minC = first, maxC = first
         for c in coords {
             let p = project(c)
             let t = p.x * ux + p.y * uy

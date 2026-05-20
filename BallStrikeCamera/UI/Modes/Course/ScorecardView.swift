@@ -413,7 +413,7 @@ struct ScorecardView: View {
 
 // MARK: - AnyShape helper (iOS 16 polyfill)
 
-private struct AnyShape: Shape {
+private struct AnyShape: Shape, @unchecked Sendable {
     private let pathBuilder: (CGRect) -> Path
     init<S: Shape>(_ shape: S) {
         pathBuilder = { shape.path(in: $0) }
