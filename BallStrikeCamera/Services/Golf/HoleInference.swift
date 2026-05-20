@@ -312,14 +312,14 @@ enum HoleInference {
         return pool.remove(at: best.offset)
     }
 
-    /// Removes from `pool` every way whose centroid is within `threshold` yards of any vertex in `near`.
+    /// Removes from `pool` every way whose centroid is close to the active hole route.
     private static func drainWithin(_ pool: inout [OSMWayGeometry],
                                      within thresholdYds: Double,
                                      of near: [Coordinate]) -> [OSMWayGeometry] {
         var taken: [OSMWayGeometry] = []
         pool.removeAll { way in
             guard let c = way.centroid else { return false }
-            for n in near where yardsBetween(c, n) <= thresholdYds {
+            if yardsFromPointToPath(c, path: near) <= thresholdYds {
                 taken.append(way); return true
             }
             return false
@@ -336,6 +336,41 @@ enum HoleInference {
         let la = CLLocation(latitude: a.latitude, longitude: a.longitude)
         let lb = CLLocation(latitude: b.latitude, longitude: b.longitude)
         return la.distance(from: lb) * 1.09361
+    }
+
+    private static func yardsFromPointToPath(_ point: Coordinate,
+                                             path: [Coordinate]) -> Double {
+        guard !path.isEmpty else { return .infinity }
+        guard path.count >= 2 else { return yardsBetween(point, path[0]) }
+        return zip(path, path.dropFirst()).map { start, end in
+            yardsFromPointToSegment(point, start: start, end: end)
+        }.min() ?? .infinity
+    }
+
+    private static func yardsFromPointToSegment(_ point: Coordinate,
+                                                start: Coordinate,
+                                                end: Coordinate) -> Double {
+        let lat0 = point.latitude * .pi / 180
+        let metersPerDegreeLat = 111_320.0
+        let metersPerDegreeLon = metersPerDegreeLat * cos(lat0)
+
+        let px = point.longitude * metersPerDegreeLon
+        let py = point.latitude * metersPerDegreeLat
+        let ax = start.longitude * metersPerDegreeLon
+        let ay = start.latitude * metersPerDegreeLat
+        let bx = end.longitude * metersPerDegreeLon
+        let by = end.latitude * metersPerDegreeLat
+
+        let dx = bx - ax
+        let dy = by - ay
+        let denom = dx * dx + dy * dy
+        let t = denom <= .leastNonzeroMagnitude
+            ? 0
+            : max(0, min(1, ((px - ax) * dx + (py - ay) * dy) / denom))
+        let cx = ax + t * dx
+        let cy = ay + t * dy
+        let meters = hypot(px - cx, py - cy)
+        return meters * 1.09361
     }
 
     /// Crude par inference from tee→green distance (yards). Used only in inferred mode.

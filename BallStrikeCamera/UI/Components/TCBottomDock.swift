@@ -3,7 +3,7 @@ import SwiftUI
 // MARK: - Tab Enum
 
 enum TCTab: Int, CaseIterable {
-    case home = 0, insights = 1, play = 2, locker = 3, profile = 4
+    case home = 0, insights = 1, play = 2, locker = 3
 
     var label: String {
         switch self {
@@ -11,7 +11,6 @@ enum TCTab: Int, CaseIterable {
         case .insights: return "Insights"
         case .play:     return "Play"
         case .locker:   return "Locker"
-        case .profile:  return "Profile"
         }
     }
     var icon: String {
@@ -19,8 +18,7 @@ enum TCTab: Int, CaseIterable {
         case .home:     return "house.fill"
         case .insights: return "chart.bar.xaxis"
         case .play:     return "flag.fill"
-        case .locker:   return "folder.fill"
-        case .profile:  return "person.fill"
+        case .locker:   return "person.crop.circle.fill"
         }
     }
     var isCenter: Bool { self == .play }
@@ -128,8 +126,6 @@ struct TrueCarryAppShell: View {
             NavigationStack { TrueCarryPlayView() }
         case .locker:
             NavigationStack { TrueCarryLockerView() }
-        case .profile:
-            NavigationStack { TrueCarryProfileView() }
         }
     }
 }

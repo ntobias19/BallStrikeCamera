@@ -10,6 +10,7 @@ final class CourseRoundViewModel: ObservableObject {
     @Published var currentHoleIndex: Int = 0
     @Published var isLoading = false
     @Published var errorMessage: String?
+    @Published var courseUnavailable: CourseAvailabilityReport?
 
     private let backend: AppBackend
     private let userId: UUID
@@ -42,11 +43,28 @@ final class CourseRoundViewModel: ObservableObject {
         location.requestPermission()
         location.startUpdating()
         isLoading = true
+        courseUnavailable = nil
+        errorMessage = nil
         // Merge GolfCourseAPI scorecard (accurate par/yardage/handicap) with OSM geometry.
         let enriched = await CourseDataAggregator.shared.enrich(course, backend: backend)
         // The user picked a generic tee from MapKit search; map it to the authoritative
         // tee box on the enriched course so per-hole yardages resolve correctly.
         let resolvedTee = CourseDataAggregator.shared.resolveTeeBox(teeBox, in: enriched)
+        if let unavailable = CourseAvailability.evaluateCourseMode(course: enriched, teeBox: resolvedTee) {
+            CourseAvailability.recordUnavailable(unavailable, teeBox: resolvedTee)
+            await CourseDataAggregator.shared.queueBackfill(
+                enriched,
+                backend: backend,
+                reason: unavailable.reasonCode
+            )
+            selectedCourse = enriched
+            selectedTeeBox = resolvedTee
+            courseUnavailable = unavailable
+            errorMessage = unavailable.message
+            isLoading = false
+            location.stopUpdating()
+            return
+        }
         isLoading = false
         await startRound(course: enriched, teeBox: resolvedTee)
     }

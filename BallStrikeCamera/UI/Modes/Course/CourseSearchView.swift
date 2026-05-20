@@ -262,7 +262,9 @@ struct CourseSearchView: View {
                                 courseBadge("Scorecard", TCTheme.sage)
                             }
                             if course.holes.contains(where: { $0.greenCenterCoordinate != nil }) {
-                                courseBadge("GPS", TCTheme.cyan)
+                                courseBadge("GPS Map", TCTheme.gold)
+                            } else {
+                                courseBadge("Map Check", TCTheme.textMuted)
                             }
                         }
                     }
@@ -536,7 +538,7 @@ private struct TeeSelectorSheet: View {
                                 Image(systemName: "info.circle")
                                     .font(.system(size: 12))
                                     .foregroundColor(TCTheme.gold)
-                                Text("No official tee set found yet. GPS estimates will be used.")
+                                Text("True Carry verifies tee, green, and route geometry before Course Mode opens.")
                                     .font(.system(size: 11))
                                     .foregroundColor(TCTheme.textMuted)
                             }

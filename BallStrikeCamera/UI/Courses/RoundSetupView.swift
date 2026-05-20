@@ -138,8 +138,8 @@ struct RoundSetupView: View {
                         TCDivider()
                         TCSettingsRow(
                             icon: "location.circle.fill",
-                            title: "Rangefinder",
-                            value: "Phone GPS",
+                            title: "Course Map",
+                            value: course.hasTrustedGeometry ? "Verified" : "Verifies on start",
                             accent: TCTheme.cyan
                         )
                         TCDivider()

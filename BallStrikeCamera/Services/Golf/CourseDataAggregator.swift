@@ -81,6 +81,14 @@ final class CourseDataAggregator {
         return course.teeBoxes.first ?? selected
     }
 
+    func queueBackfill(_ course: GolfCourse,
+                       backend: AppBackend?,
+                       reason: String = "missing_geometry") async {
+        guard isUsableCachedCourse(course) else { return }
+        try? await sharedGeometryBackend(preferred: backend)?
+            .requestCourseGeometryBackfill(course, reason: reason)
+    }
+
     private func isUsableCachedCourse(_ course: GolfCourse) -> Bool {
         if course.hasTrustedGeometry { return true }
         let validHoleNumbers = course.holes.filter { $0.number > 0 }.count
@@ -217,5 +225,218 @@ final class CourseDataAggregator {
         }
         result.cachedAt = Date()
         return result
+    }
+}
+
+// MARK: - Course Mode Availability
+
+struct CourseAvailabilityReport: Identifiable, Equatable {
+    let id = UUID()
+    let courseId: String
+    let courseName: String
+    let city: String
+    let state: String
+    let country: String
+    let reasonCode: String
+    let message: String
+    let missingHoleNumbers: [Int]
+    let scorecardHoleCount: Int
+    let geometryHoleCount: Int
+    let csvURL: URL
+    let createdAt: Date
+
+    var locationLabel: String {
+        [city, state].filter { !$0.isEmpty }.joined(separator: ", ")
+    }
+}
+
+enum CourseAvailability {
+    private static let minimumHoleCount = 9
+
+    static var unavailableCSVURL: URL {
+        AppStorageManager.globalRoot
+            .appendingPathComponent("courseAvailability")
+            .appendingPathComponent("unavailable_courses.csv")
+    }
+
+    static func evaluateCourseMode(course: GolfCourse,
+                                   teeBox: TeeBox?) -> CourseAvailabilityReport? {
+        let scorecardHoles = course.holes.filter { $0.number > 0 }
+        let expectedCount = expectedPlayableHoleCount(for: scorecardHoles)
+        let geometryHoles = scorecardHoles.filter(isHoleGeometryPlayable)
+        var missing: [Int] = []
+        var validationErrors: [String] = []
+
+        if !course.hasTrustedGeometry {
+            validationErrors.append("missing_trusted_geometry")
+        }
+
+        guard scorecardHoles.count >= minimumHoleCount else {
+            return report(
+                course: course,
+                reasonCode: "missing_scorecard",
+                message: "This course does not have a complete scorecard yet, so True Carry cannot start a verified GPS round.",
+                missing: Array(1...18),
+                scorecardHoleCount: scorecardHoles.count,
+                geometryHoleCount: geometryHoles.count
+            )
+        }
+
+        guard hasAuthoritativeScorecard(scorecardHoles, teeBox: teeBox, expectedCount: expectedCount) else {
+            return report(
+                course: course,
+                reasonCode: "missing_scorecard_yardages",
+                message: "This course has map geometry, but it is missing verified tee-box yardages. True Carry is holding it until the scorecard and GPS map can be matched.",
+                missing: [],
+                scorecardHoleCount: scorecardHoles.count,
+                geometryHoleCount: geometryHoles.count
+            )
+        }
+
+        for number in 1...expectedCount {
+            guard let hole = scorecardHoles.first(where: { $0.number == number }) else {
+                missing.append(number)
+                continue
+            }
+            if !isHoleGeometryPlayable(hole) {
+                missing.append(number)
+            }
+            if let mismatch = yardageMismatch(for: hole, teeBox: teeBox) {
+                validationErrors.append(mismatch)
+            }
+        }
+
+        guard validationErrors.isEmpty, missing.isEmpty else {
+            let code = validationErrors.first ?? "partial_geometry"
+            let message: String
+            if !missing.isEmpty {
+                message = "This course is not available yet because verified tee, green, and route geometry is missing for \(missing.count) hole\(missing.count == 1 ? "" : "s")."
+            } else {
+                message = "This course map failed True Carry's yardage validation, so it is being held for review instead of showing unreliable pins."
+            }
+            return report(
+                course: course,
+                reasonCode: code,
+                message: message,
+                missing: missing,
+                scorecardHoleCount: scorecardHoles.count,
+                geometryHoleCount: geometryHoles.count
+            )
+        }
+
+        return nil
+    }
+
+    static func recordUnavailable(_ report: CourseAvailabilityReport,
+                                  teeBox: TeeBox?) {
+        let url = unavailableCSVURL
+        AppStorageManager.ensureDirectory(url.deletingLastPathComponent())
+        let header = "timestamp,course_id,course_name,city,state,country,tee_name,tee_yards,reason,missing_holes,scorecard_holes,geometry_holes\n"
+        let line = [
+            csvDate(report.createdAt),
+            report.courseId,
+            report.courseName,
+            report.city,
+            report.state,
+            report.country,
+            teeBox?.name ?? "",
+            teeBox?.totalYards.description ?? "",
+            report.reasonCode,
+            report.missingHoleNumbers.map(String.init).joined(separator: "|"),
+            String(report.scorecardHoleCount),
+            String(report.geometryHoleCount)
+        ].map(csvEscape).joined(separator: ",") + "\n"
+
+        if !FileManager.default.fileExists(atPath: url.path) {
+            try? (header + line).data(using: .utf8)?.write(to: url, options: .atomic)
+            return
+        }
+
+        guard let handle = try? FileHandle(forWritingTo: url) else { return }
+        defer { try? handle.close() }
+        _ = try? handle.seekToEnd()
+        if let data = line.data(using: .utf8) {
+            handle.write(data)
+        }
+    }
+
+    private static func expectedPlayableHoleCount(for holes: [GolfHole]) -> Int {
+        if holes.count >= 18 { return 18 }
+        if holes.count >= 9 { return 9 }
+        return 18
+    }
+
+    private static func isHoleGeometryPlayable(_ hole: GolfHole) -> Bool {
+        guard hole.number > 0,
+              hole.teeCoordinate != nil,
+              hole.greenCenterCoordinate != nil,
+              let green = hole.greenPolygon?.coordinates,
+              green.count >= 3 else { return false }
+        return true
+    }
+
+    private static func hasAuthoritativeScorecard(_ holes: [GolfHole],
+                                                  teeBox: TeeBox?,
+                                                  expectedCount: Int) -> Bool {
+        guard let teeBox, teeBox.totalYards > 0 else { return false }
+        let yardageCount = (1...expectedCount).filter { number in
+            guard let hole = holes.first(where: { $0.number == number }) else { return false }
+            return (hole.teeYardsByTeeBox[teeBox.id] ?? 0) > 0
+        }.count
+        return yardageCount == expectedCount
+    }
+
+    private static func yardageMismatch(for hole: GolfHole,
+                                        teeBox: TeeBox?) -> String? {
+        guard let teeBox,
+              let scorecardYards = hole.teeYardsByTeeBox[teeBox.id],
+              scorecardYards > 0 else { return nil }
+        let geometryYards = routeYards(for: hole) ?? hole.measuredYardage
+        guard let geometryYards, geometryYards > 0 else { return nil }
+        let tolerance = max(25, Int((Double(scorecardYards) * 0.08).rounded()))
+        let delta = abs(scorecardYards - geometryYards)
+        guard delta > tolerance else { return nil }
+        return "hole_\(hole.number)_yardage_mismatch_\(geometryYards)_vs_\(scorecardYards)"
+    }
+
+    private static func routeYards(for hole: GolfHole) -> Int? {
+        guard let path = hole.pathCoordinates, path.count >= 2 else { return nil }
+        let meters = zip(path, path.dropFirst()).reduce(0.0) { partial, pair in
+            let a = CLLocation(latitude: pair.0.latitude, longitude: pair.0.longitude)
+            let b = CLLocation(latitude: pair.1.latitude, longitude: pair.1.longitude)
+            return partial + a.distance(from: b)
+        }
+        return Int((meters * 1.09361).rounded())
+    }
+
+    private static func report(course: GolfCourse,
+                               reasonCode: String,
+                               message: String,
+                               missing: [Int],
+                               scorecardHoleCount: Int,
+                               geometryHoleCount: Int) -> CourseAvailabilityReport {
+        CourseAvailabilityReport(
+            courseId: course.id,
+            courseName: course.name,
+            city: course.city,
+            state: course.state,
+            country: course.country,
+            reasonCode: reasonCode,
+            message: message,
+            missingHoleNumbers: missing,
+            scorecardHoleCount: scorecardHoleCount,
+            geometryHoleCount: geometryHoleCount,
+            csvURL: unavailableCSVURL,
+            createdAt: Date()
+        )
+    }
+
+    private static func csvDate(_ date: Date) -> String {
+        ISO8601DateFormatter().string(from: date)
+    }
+
+    private static func csvEscape(_ value: String) -> String {
+        let escaped = value.replacingOccurrences(of: "\"", with: "\"\"")
+        return "\"\(escaped)\""
     }
 }

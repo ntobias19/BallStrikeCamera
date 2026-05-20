@@ -1153,6 +1153,11 @@ struct CourseModeGPSHoleView: View {
                 .zIndex(5)
             }
 
+            if let unavailable = vm.courseUnavailable {
+                courseUnavailableOverlay(unavailable)
+                    .zIndex(30)
+            }
+
             // Top dark gradient
             VStack(spacing: 0) {
                 LinearGradient(
@@ -1365,6 +1370,126 @@ struct CourseModeGPSHoleView: View {
         }
     }
 
+    // MARK: - Course Unavailable
+
+    private func courseUnavailableOverlay(_ report: CourseAvailabilityReport) -> some View {
+        ZStack {
+            TrueCarryBackground()
+                .ignoresSafeArea()
+
+            VStack(spacing: 22) {
+                Spacer()
+
+                VStack(spacing: 16) {
+                    ZStack {
+                        Circle()
+                            .fill(TCTheme.panelRaised)
+                            .frame(width: 72, height: 72)
+                        Circle()
+                            .strokeBorder(TCTheme.borderMedium, lineWidth: 1)
+                            .frame(width: 72, height: 72)
+                        Image(systemName: "map.fill")
+                            .font(.system(size: 28, weight: .semibold))
+                            .foregroundColor(TCTheme.gold)
+                    }
+
+                    VStack(spacing: 8) {
+                        Text("Course Not Available Yet")
+                            .font(.system(size: 26, weight: .semibold))
+                            .foregroundColor(TCTheme.textPrimary)
+                            .multilineTextAlignment(.center)
+
+                        Text(report.courseName)
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(TCTheme.textSecondary)
+                            .multilineTextAlignment(.center)
+
+                        if !report.locationLabel.isEmpty {
+                            Text(report.locationLabel)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(TCTheme.textMuted)
+                        }
+                    }
+
+                    Text(report.message)
+                        .font(.system(size: 14))
+                        .foregroundColor(TCTheme.textMuted)
+                        .lineSpacing(4)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 4)
+
+                    VStack(spacing: 0) {
+                        unavailableMetricRow(
+                            title: "Scorecard",
+                            value: "\(report.scorecardHoleCount) holes",
+                            icon: "list.bullet.rectangle"
+                        )
+                        TCDivider()
+                        unavailableMetricRow(
+                            title: "Verified GPS",
+                            value: "\(report.geometryHoleCount) holes",
+                            icon: "location.viewfinder"
+                        )
+                        if !report.missingHoleNumbers.isEmpty {
+                            TCDivider()
+                            unavailableMetricRow(
+                                title: "Missing",
+                                value: missingHoleLabel(report.missingHoleNumbers),
+                                icon: "exclamationmark.triangle"
+                            )
+                        }
+                    }
+                    .tcCard(padding: 0)
+                }
+                .padding(.horizontal, 24)
+
+                VStack(spacing: 10) {
+                    TCPrimaryGoldButton(title: "Back to Play", icon: "arrow.left") {
+                        dismiss()
+                    }
+
+                    Text("We logged this course for geometry backfill and added it to unavailable_courses.csv.")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(TCTheme.textUltraMuted)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 28)
+                }
+                .padding(.horizontal, 24)
+
+                Spacer()
+            }
+        }
+        .allowsHitTesting(true)
+    }
+
+    private func unavailableMetricRow(title: String, value: String, icon: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(TCTheme.gold)
+                .frame(width: 24, alignment: .leading)
+            Text(title)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(TCTheme.textSecondary)
+            Spacer()
+            Text(value)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(TCTheme.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 13)
+    }
+
+    private func missingHoleLabel(_ holes: [Int]) -> String {
+        guard !holes.isEmpty else { return "None" }
+        if holes.count <= 6 {
+            return holes.map(String.init).joined(separator: ", ")
+        }
+        return "\(holes.prefix(6).map(String.init).joined(separator: ", ")) +\(holes.count - 6)"
+    }
+
     // MARK: - Top Bar
 
     private var topBar: some View {
@@ -1372,11 +1497,12 @@ struct CourseModeGPSHoleView: View {
             Button { showFinishAlert = true } label: {
                 ZStack {
                     Circle()
-                        .fill(Color.white)
+                        .fill(Color.black.opacity(0.70))
                         .frame(width: 44, height: 44)
+                        .overlay(Circle().strokeBorder(.white.opacity(0.14), lineWidth: 1))
                     Image(systemName: "arrow.left")
                         .font(.system(size: 16, weight: .bold))
-                        .foregroundColor(.black.opacity(0.82))
+                        .foregroundColor(.white.opacity(0.92))
                 }
             }
             .buttonStyle(.plain)
@@ -1439,10 +1565,10 @@ struct CourseModeGPSHoleView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(Color.black.opacity(0.66))
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .background(Color.black.opacity(0.70))
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .strokeBorder(.white.opacity(0.10), lineWidth: 1)
             )
 
