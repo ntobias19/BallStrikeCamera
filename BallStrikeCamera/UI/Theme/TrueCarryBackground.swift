@@ -97,15 +97,17 @@ struct TrueCarryLogo: View {
 struct TCHeaderBar<RightContent: View>: View {
     let initials: String
     @ViewBuilder let rightContent: () -> RightContent
+    private let sideWidth: CGFloat = 80
 
     var body: some View {
         HStack(alignment: .center, spacing: 0) {
-            Color.clear.frame(width: 44)
-            Spacer(minLength: 6)
+            Color.clear
+                .frame(width: sideWidth, height: 44)
             TrueCarryLogo(size: 20)
-                .frame(maxWidth: .infinity, alignment: .center)
-            Spacer(minLength: 6)
-            HStack(spacing: 6) { rightContent() }.frame(width: 80, alignment: .trailing)
+                .frame(maxWidth: .infinity)
+                .multilineTextAlignment(.center)
+            HStack(spacing: 6) { rightContent() }
+                .frame(width: sideWidth, height: 44, alignment: .trailing)
         }
         .padding(.horizontal, TCTheme.hPad)
         .padding(.top, 8)
