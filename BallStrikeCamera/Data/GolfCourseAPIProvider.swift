@@ -2,19 +2,17 @@ import Foundation
 import CoreLocation
 
 // MARK: - GolfCourseAPI Live Provider
-// Docs: https://www.golfcourseapi.com
+// Docs: https://api.golfcourseapi.com/docs/api/
 // Authorization header: "Key <API_KEY>"
-// TODO: Verify exact endpoint paths after testing against live docs.
 
 final class GolfCourseAPIProvider: CourseProvider {
 
     private let userId: UUID
     private let session = URLSession.shared
 
-    // TODO: Adjust these if the live endpoint paths differ.
     private enum Endpoint {
-        static let search  = "courses"          // GET /courses?search=<query>
-        static let detail  = "courses"          // GET /courses/<id>
+        static let search  = "search"           // GET /v1/search?search_query=<query>
+        static let detail  = "courses"          // GET /v1/courses/<id>
     }
 
     init(userId: UUID) { self.userId = userId }
@@ -25,10 +23,14 @@ final class GolfCourseAPIProvider: CourseProvider {
         var components = URLComponents(string: "\(GolfCourseAPIConfig.baseURL)/\(Endpoint.search)")!
         var queryItems: [URLQueryItem] = []
         if !query.isEmpty {
-            queryItems.append(URLQueryItem(name: "search", value: query))
+            queryItems.append(URLQueryItem(name: "search_query", value: query))
         } else if let loc = location {
-            queryItems.append(URLQueryItem(name: "latitude",  value: String(loc.latitude)))
-            queryItems.append(URLQueryItem(name: "longitude", value: String(loc.longitude)))
+            // GolfCourseAPI does not expose a coordinate-search endpoint. Use a compact
+            // lat/lon search string as a last resort; MapKit handles true nearby search.
+            queryItems.append(URLQueryItem(
+                name: "search_query",
+                value: "\(loc.latitude),\(loc.longitude)"
+            ))
         }
         components.queryItems = queryItems.isEmpty ? nil : queryItems
 
@@ -93,7 +95,6 @@ final class GolfCourseAPIProvider: CourseProvider {
     }
 
     // MARK: - Decode helpers
-    // TODO: Adjust key names to match actual GolfCourseAPI JSON schema.
 
     private func decodeSearchResponse(_ data: Data) throws -> [GolfCourse] {
         do {
@@ -189,7 +190,7 @@ final class GolfCourseAPIProvider: CourseProvider {
     }
 
     private func buildTeeBoxes(raw: RawCourse, courseId: String) -> [TeeBox] {
-        let rawTees = (raw.tees?.male ?? []) + (raw.tees?.female ?? [])
+        let rawTees = allRawTees(raw)
         if !rawTees.isEmpty {
             return rawTees.enumerated().map { idx, t in
                 TeeBox(
@@ -206,25 +207,52 @@ final class GolfCourseAPIProvider: CourseProvider {
     }
 
     private func buildHoles(raw: RawCourse, courseId: String, teeBoxes: [TeeBox]) -> [GolfHole] {
-        // Try to get holes from tee boxes (they may contain per-hole yardages)
+        // GolfCourseAPI holes are ordered arrays and usually do not include a hole_number.
+        // Treat the array index as the canonical hole number.
         var holesMap: [Int: GolfHole] = [:]
-        for (tee, teeBox) in zip(raw.tees?.male ?? [], teeBoxes) {
-            for rawHole in tee.holes ?? [] {
-                let num = rawHole.hole_number ?? rawHole.number ?? 0
-                var hole = holesMap[num] ?? GolfHole(id: "\(courseId)-hole-\(num)", courseId: courseId, number: num, par: rawHole.par ?? 4, handicap: rawHole.handicap)
+        for (tee, teeBox) in zip(allRawTees(raw), teeBoxes) {
+            for (idx, rawHole) in (tee.holes ?? []).enumerated() {
+                let num = rawHole.hole_number ?? rawHole.number ?? idx + 1
+                guard num > 0 else { continue }
+                var hole = holesMap[num] ?? GolfHole(
+                    id: "\(courseId)-hole-\(num)",
+                    courseId: courseId,
+                    number: num,
+                    par: rawHole.par ?? 4,
+                    handicap: rawHole.handicap
+                )
+                if let par = rawHole.par {
+                    hole.par = par
+                }
+                if let handicap = rawHole.handicap {
+                    hole.handicap = handicap
+                }
                 let yds = rawHole.yardage ?? rawHole.yards ?? rawHole.distance ?? 0
-                hole.teeYardsByTeeBox[teeBox.id] = yds
+                if yds > 0 {
+                    hole.teeYardsByTeeBox[teeBox.id] = yds
+                }
                 holesMap[num] = hole
             }
         }
         // Fallback to top-level holes
-        for rawHole in raw.holes ?? [] {
-            let num = rawHole.hole_number ?? rawHole.number ?? 0
+        for (idx, rawHole) in (raw.holes ?? []).enumerated() {
+            let num = rawHole.hole_number ?? rawHole.number ?? idx + 1
+            guard num > 0 else { continue }
             if holesMap[num] == nil {
-                holesMap[num] = GolfHole(id: "\(courseId)-hole-\(num)", courseId: courseId, number: num, par: rawHole.par ?? 4, handicap: rawHole.handicap)
+                holesMap[num] = GolfHole(
+                    id: "\(courseId)-hole-\(num)",
+                    courseId: courseId,
+                    number: num,
+                    par: rawHole.par ?? 4,
+                    handicap: rawHole.handicap
+                )
             }
         }
         return holesMap.values.sorted { $0.number < $1.number }
+    }
+
+    private func allRawTees(_ raw: RawCourse) -> [RawTeeBox] {
+        (raw.tees?.male ?? []) + (raw.tees?.female ?? [])
     }
 
     // MARK: - Cache

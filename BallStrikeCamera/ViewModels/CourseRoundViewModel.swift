@@ -43,7 +43,7 @@ final class CourseRoundViewModel: ObservableObject {
         location.startUpdating()
         isLoading = true
         // Merge GolfCourseAPI scorecard (accurate par/yardage/handicap) with OSM geometry.
-        let enriched = await CourseDataAggregator.shared.enrich(course)
+        let enriched = await CourseDataAggregator.shared.enrich(course, backend: backend)
         // The user picked a generic tee from MapKit search; map it to the authoritative
         // tee box on the enriched course so per-hole yardages resolve correctly.
         let resolvedTee = CourseDataAggregator.shared.resolveTeeBox(teeBox, in: enriched)
@@ -209,6 +209,51 @@ final class CourseRoundViewModel: ObservableObject {
         await saveRoundOfflineSafe(round)
     }
 
+    func saveManualHoleGeometry(holeNumber: Int, tee: Coordinate, green: Coordinate) {
+        guard var course = selectedCourse else { return }
+        let index = course.holes.firstIndex(where: { $0.number == holeNumber })
+        let existing = index.map { course.holes[$0] }
+        var hole = existing ?? GolfHole(
+            id: "\(course.id)-hole-\(holeNumber)",
+            courseId: course.id,
+            number: holeNumber,
+            par: currentHole?.par ?? Self.defaultPar(for: holeNumber)
+        )
+
+        let heading = Self.bearing(from: tee.clCoordinate, to: green.clCoordinate)
+        let front = Self.project(from: green.clCoordinate, bearingDegrees: heading + 180, distanceMeters: 12)
+        let back = Self.project(from: green.clCoordinate, bearingDegrees: heading, distanceMeters: 12)
+        let left = Self.project(from: green.clCoordinate, bearingDegrees: heading - 90, distanceMeters: 10)
+        let right = Self.project(from: green.clCoordinate, bearingDegrees: heading + 90, distanceMeters: 10)
+
+        hole.teeCoordinate = tee
+        hole.greenCenterCoordinate = green
+        hole.greenFrontCoordinate = Coordinate(front)
+        hole.greenBackCoordinate = Coordinate(back)
+        hole.greenPolygon = PolygonRing(coordinates: [
+            Coordinate(front),
+            Coordinate(right),
+            Coordinate(back),
+            Coordinate(left),
+            Coordinate(front)
+        ])
+        hole.pathCoordinates = [tee, green]
+
+        if let index {
+            course.holes[index] = hole
+        } else {
+            course.holes.append(hole)
+            course.holes.sort { $0.number < $1.number }
+        }
+        course.source = course.source == .golfCourseAPI ? .merged : .manual
+        course.cachedAt = Date()
+        selectedCourse = course
+        OSMGolfService.shared.cacheMergedCourse(course)
+        Task { [backend, course] in
+            try? await backend.saveCourseGeometry(course)
+        }
+    }
+
     /// Classify the lie of a coordinate from the hole's geometry. Best-effort.
     func classifyLie(at coord: Coordinate, hole: GolfHole?) -> ShotLie {
         guard let h = hole else { return .unknown }
@@ -306,5 +351,31 @@ final class CourseRoundViewModel: ObservableObject {
             greensInReg:  scored.filter { $0.greenInRegulation == true }.count,
             totalPutts:   scored.compactMap { $0.putts }.reduce(0, +)
         )
+    }
+
+    private static func bearing(from a: CLLocationCoordinate2D, to b: CLLocationCoordinate2D) -> Double {
+        let lat1 = a.latitude * .pi / 180
+        let lat2 = b.latitude * .pi / 180
+        let dLon = (b.longitude - a.longitude) * .pi / 180
+        let y = sin(dLon) * cos(lat2)
+        let x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dLon)
+        return atan2(y, x) * 180 / .pi
+    }
+
+    private static func project(from start: CLLocationCoordinate2D,
+                                bearingDegrees: Double,
+                                distanceMeters: Double) -> CLLocationCoordinate2D {
+        let radius = 6_371_000.0
+        let bearing = bearingDegrees * .pi / 180
+        let lat1 = start.latitude * .pi / 180
+        let lon1 = start.longitude * .pi / 180
+        let angularDistance = distanceMeters / radius
+
+        let lat2 = asin(sin(lat1) * cos(angularDistance)
+                        + cos(lat1) * sin(angularDistance) * cos(bearing))
+        let lon2 = lon1 + atan2(sin(bearing) * sin(angularDistance) * cos(lat1),
+                                cos(angularDistance) - sin(lat1) * sin(lat2))
+        return CLLocationCoordinate2D(latitude: lat2 * 180 / .pi,
+                                      longitude: lon2 * 180 / .pi)
     }
 }

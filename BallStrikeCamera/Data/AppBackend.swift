@@ -38,6 +38,10 @@ protocol AppBackend {
     func saveRound(_ round: CourseRound) async throws
     func loadCourseRounds(userId: UUID) async throws -> [CourseRound]
 
+    // Shared course geometry — keyed by provider/course id, shared across users
+    func saveCourseGeometry(_ course: GolfCourse) async throws
+    func loadCourseGeometry(courseId: String) async throws -> GolfCourse?
+
     // Feed — userId embedded in model
     func saveFeedPost(_ post: FeedPost) async throws
     func deleteFeedPost(postId: UUID, userId: UUID) async throws
@@ -60,6 +64,12 @@ extension AppBackend {
     }
     func incrementUsage(userId: UUID, action: EntitlementAction) async throws {
         // no-op for local
+    }
+    func saveCourseGeometry(_ course: GolfCourse) async throws {
+        // no-op for local; OSMGolfService keeps the on-device cache.
+    }
+    func loadCourseGeometry(courseId: String) async throws -> GolfCourse? {
+        nil
     }
 }
 

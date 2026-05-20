@@ -26,23 +26,42 @@ final class CourseDataAggregator {
 
     /// Enrich a discovered (MapKit) course stub with merged scorecard + geometry.
     /// Best-effort: never throws. Returns the richest course it can assemble.
-    func enrich(_ course: GolfCourse) async -> GolfCourse {
-        // Merged cache hit?
-        if let cached = OSMGolfService.shared.loadCached(courseId: course.id) {
+    func enrich(_ course: GolfCourse, backend: AppBackend? = nil) async -> GolfCourse {
+        let cached = OSMGolfService.shared.loadCached(courseId: course.id)
+        if let cached, cached.hasRealGeometry {
             return cached
+        }
+
+        let sharedGeometry = await loadSharedGeometry(courseId: course.id, backend: backend)
+        if let sharedGeometry, sharedGeometry.hasRealGeometry, isUsableCachedCourse(sharedGeometry) {
+            OSMGolfService.shared.cacheMergedCourse(sharedGeometry)
+            return sharedGeometry
         }
 
         // GolfCourseAPI scorecard is the reliable source (par/yardage/handicap) and is the
         // ONLY accurate data for courses OSM hasn't mapped. Run it in a detached task so a
         // spurious SwiftUI `.task` cancellation can't drop it. Geometry is best-effort.
-        async let osmTask: GolfCourse = OSMGolfService.shared.enrichBestEffort(course)
-        let scorecard = await Task.detached(priority: .userInitiated) { [self] in
-            await fetchScorecard(for: course)
-        }.value
-        let osm = await osmTask
+        let cachedScorecard = [cached, sharedGeometry].compactMap { $0 }.first(where: isUsableCachedCourse)
+        let scorecard: GolfCourse?
+        if let cachedScorecard {
+            scorecard = cachedScorecard
+        } else {
+            scorecard = await Task.detached(priority: .userInitiated) { [self] in
+                await fetchScorecard(for: course)
+            }.value
+        }
+        let geometry: GolfCourse
+        if let sharedGeometry, sharedGeometry.hasRealGeometry {
+            geometry = sharedGeometry
+        } else {
+            geometry = await OSMGolfService.shared.enrichBestEffort(course)
+        }
 
-        let merged = merge(base: course, osm: osm, scorecard: scorecard)
+        let merged = merge(base: course, osm: geometry, scorecard: scorecard)
         OSMGolfService.shared.cacheMergedCourse(merged)
+        if merged.hasRealGeometry {
+            try? await backend?.saveCourseGeometry(merged)
+        }
         return merged
     }
 
@@ -57,6 +76,25 @@ final class CourseDataAggregator {
             $0.color.caseInsensitiveCompare(selected.color) == .orderedSame
         }) { return byColor }
         return course.teeBoxes.first ?? selected
+    }
+
+    private func isUsableCachedCourse(_ course: GolfCourse) -> Bool {
+        if course.hasRealGeometry { return true }
+        let validHoleNumbers = course.holes.filter { $0.number > 0 }.count
+        let hasScorecard = validHoleNumbers >= 9 && course.teeBoxes.contains { $0.totalYards > 0 }
+        return hasScorecard
+    }
+
+    private func loadSharedGeometry(courseId: String, backend: AppBackend?) async -> GolfCourse? {
+        guard let backend else { return nil }
+        do {
+            return try await backend.loadCourseGeometry(courseId: courseId)
+        } catch {
+            #if DEBUG
+            print("[Aggregator] shared course geometry failed: \(error.localizedDescription)")
+            #endif
+            return nil
+        }
     }
 
     // MARK: - GolfCourseAPI scorecard

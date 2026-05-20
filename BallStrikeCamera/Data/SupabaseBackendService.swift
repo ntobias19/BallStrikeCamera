@@ -215,6 +215,31 @@ final class SupabaseBackendService: AppBackend {
         return rows.sorted { $0.startedAt > $1.startedAt }
     }
 
+    // MARK: - Shared Course Geometry
+
+    func saveCourseGeometry(_ course: GolfCourse) async throws {
+        guard course.hasRealGeometry else { return }
+        var body: [String: Any] = [
+            "course_id": course.id,
+            "course_name": course.name,
+            "city": course.city,
+            "state": course.state,
+            "source": course.source.rawValue,
+            "payload": try toDict(course),
+            "updated_at": ISO8601DateFormatter().string(from: Date())
+        ]
+        if let user = try? await currentUser() {
+            body["submitted_by"] = user.id.uuidString
+        }
+        try await upsert(table: "course_geometries", body: body)
+    }
+
+    func loadCourseGeometry(courseId: String) async throws -> GolfCourse? {
+        let rows: [SupabaseCourseGeometryRow] = try await selectWhere(
+            table: "course_geometries", column: "course_id", value: courseId)
+        return rows.first?.payload
+    }
+
     // MARK: - Feed
 
     func saveFeedPost(_ post: FeedPost) async throws {

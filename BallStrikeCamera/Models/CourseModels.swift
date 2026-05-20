@@ -55,6 +55,9 @@ struct GolfHole: Codable, Identifiable {
     var greenCenterCoordinate: Coordinate?
     var greenBackCoordinate: Coordinate?
     var teeCoordinateByTeeBox: [String: Coordinate]? = nil
+    /// Preferred tee-to-green route/centerline for map rendering. Comes from OSM
+    /// `golf=hole` when available, otherwise a best-effort tee/fairway/green path.
+    var pathCoordinates: [Coordinate]? = nil
     var hazards: [Hazard]                   = []
 
     // MARK: - Geometry (OpenStreetMap derived)

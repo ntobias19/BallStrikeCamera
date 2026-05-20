@@ -367,6 +367,13 @@ struct CourseSearchView: View {
         errorMessage = nil
         defer { isSearching = false }
         do {
+            let provider = CourseProviderFactory.make(userId: userId)
+            let apiResults = try await provider.searchCourses(query: query, near: location.currentLocation)
+            if !apiResults.isEmpty {
+                searchResults = apiResults
+                return
+            }
+
             let request = MKLocalSearch.Request()
             request.naturalLanguageQuery = query + " golf"
             let response = try await MKLocalSearch(request: request).start()

@@ -79,6 +79,7 @@ enum HoleInference {
                              par:    par,
                              handicap: holeWay.intTag("handicap"),
                              teeCoord: nearestTee?.centroid ?? teeEnd,
+                             path:    holeWay.coordinates,
                              green:   nearestGreen,
                              fairway: nearestFairway,
                              bunkers: attachedBunkers,
@@ -122,6 +123,9 @@ enum HoleInference {
                              par:    inferPar(distanceYds: yardsBetween(p.green.centroid!, teeCenter)),
                              handicap: nil,
                              teeCoord: teeCenter,
+                             path:    inferredPath(tee: teeCenter,
+                                                   fairway: p.fairway,
+                                                   green: p.green.centroid!),
                              green:   p.green,
                              fairway: p.fairway,
                              bunkers: p.bunkers,
@@ -161,6 +165,7 @@ enum HoleInference {
                                   par: Int,
                                   handicap: Int?,
                                   teeCoord: Coordinate,
+                                  path: [Coordinate]?,
                                   green: OSMWayGeometry?,
                                   fairway: OSMWayGeometry?,
                                   bunkers: [OSMWayGeometry],
@@ -189,6 +194,7 @@ enum HoleInference {
             greenCenterCoordinate: greenCenter,
             greenBackCoordinate:   back,
             teeCoordinateByTeeBox: Dictionary(uniqueKeysWithValues: teeBoxes.map { ($0.id, teeCoord) }),
+            pathCoordinates: cleanedPath(path, fallback: [teeCoord, greenCenter]),
             hazards: bunkers.compactMap { hazard(from: $0, type: .bunker) }
                    + water.compactMap   { hazard(from: $0, type: .water)  },
             teeCoordinate: teeCoord,
@@ -203,6 +209,30 @@ enum HoleInference {
         guard let c = way.centroid else { return nil }
         return Hazard(id: "osm-\(way.id)", type: type, name: way.tag("name"),
                       coordinate: c, frontCoordinate: nil, carryCoordinate: nil)
+    }
+
+    private static func inferredPath(tee: Coordinate,
+                                     fairway: OSMWayGeometry?,
+                                     green: Coordinate) -> [Coordinate] {
+        var path = [tee]
+        if let fairwayCenter = fairway?.centroid,
+           yardsBetween(tee, fairwayCenter) > 35,
+           yardsBetween(fairwayCenter, green) > 35 {
+            path.append(fairwayCenter)
+        }
+        path.append(green)
+        return path
+    }
+
+    private static func cleanedPath(_ path: [Coordinate]?,
+                                    fallback: [Coordinate]) -> [Coordinate] {
+        let source = (path?.count ?? 0) >= 2 ? path! : fallback
+        var cleaned: [Coordinate] = []
+        for coord in source {
+            if let last = cleaned.last, yardsBetween(last, coord) < 3 { continue }
+            cleaned.append(coord)
+        }
+        return cleaned.count >= 2 ? cleaned : fallback
     }
 
     // MARK: - Geometry helpers

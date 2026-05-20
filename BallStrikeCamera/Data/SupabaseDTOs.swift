@@ -121,6 +121,28 @@ struct SupabaseEntitlementRow: Codable {
     }
 }
 
+struct SupabaseCourseGeometryRow: Codable {
+    var courseId: String
+    var courseName: String
+    var city: String
+    var state: String
+    var source: String
+    var payload: GolfCourse
+    var submittedBy: String?
+    var updatedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case courseId = "course_id"
+        case courseName = "course_name"
+        case city
+        case state
+        case source
+        case payload
+        case submittedBy = "submitted_by"
+        case updatedAt = "updated_at"
+    }
+}
+
 // MARK: - Generic helpers
 
 struct SupabaseError: Decodable {
