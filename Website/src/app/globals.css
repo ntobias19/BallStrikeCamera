@@ -1720,3 +1720,28 @@ code {
     font-weight:500;
   }
 }
+
+/* ---- Live app-capture demo (auto-playing) ---- */
+.live-screen{ justify-content:flex-start; gap:13px; }
+.live-top{ display:flex; align-items:center; justify-content:space-between; }
+.live-k{ display:flex; align-items:center; justify-content:space-between; font-size:10px; letter-spacing:.2em; text-transform:uppercase; color:var(--faint); margin-bottom:4px; }
+.live-rec{ display:inline-flex; align-items:center; gap:5px; color:var(--gold-bright); font-size:9px; letter-spacing:.18em; }
+.rec-dot{ width:6px; height:6px; border-radius:50%; background:#e0584f; box-shadow:0 0 6px #e0584f; animation:rec 1.4s steps(1) infinite; }
+@keyframes rec{ 0%,50%{ opacity:1 } 51%,100%{ opacity:.25 } }
+.live-sub{ font-size:12px; color:var(--muted); margin-top:4px; }
+.live-scene{ position:relative; flex:1; min-height:150px; border-radius:14px; overflow:hidden; border:1px solid var(--border);
+  background:
+    radial-gradient(130% 90% at 50% 122%, rgba(86,128,92,.55), transparent 62%),
+    linear-gradient(180deg, #223229 0%, #1b2a22 46%, #15211a 100%); }
+.live-scene svg{ position:absolute; inset:0; width:100%; height:100%; }
+.live-flash{ position:absolute; inset:0; opacity:0; pointer-events:none;
+  background:radial-gradient(circle at 50% 88%, rgba(255,255,255,.95), transparent 46%); }
+.live-ground{ stroke:rgba(236,228,210,.16); stroke-width:1; }
+.live-pole{ stroke:rgba(236,228,210,.5); stroke-width:1.2; }
+.live-flag{ fill:var(--gold-bright); }
+.live-cup{ fill:rgba(236,228,210,.45); }
+.live-guide{ stroke:rgba(236,228,210,.12); stroke-width:1.2; stroke-dasharray:3 5; }
+.live-arc{ stroke:var(--gold-bright); stroke-width:2; stroke-linecap:round; filter:drop-shadow(0 0 4px rgba(203,176,121,.55)); }
+.live-burst{ fill:none; stroke:rgba(255,255,255,.55); stroke-width:1.5; opacity:0; }
+.live-ball{ fill:#fff; filter:drop-shadow(0 1px 2px rgba(0,0,0,.55)); }
+.live-foot{ font-size:9px; letter-spacing:.16em; text-transform:uppercase; color:var(--faint); display:flex; align-items:center; gap:6px; }
