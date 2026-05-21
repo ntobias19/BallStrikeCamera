@@ -6,15 +6,14 @@ import { supabase } from "@/lib/supabase";
 import EmbeddedCheckoutPanel from "@/components/EmbeddedCheckoutPanel";
 
 const CHECKOUT_URL = process.env.NEXT_PUBLIC_CREATE_CHECKOUT_FUNCTION_URL!;
+const CHECKOUT_RETURN_PATH = "/?checkout=premium#h07";
 
 type Hole = { n: number; name: string; par: number; yd: number; id: string };
 
 const HOLES: Hole[] = [
   { n: 1, name: "Tee off", par: 4, yd: 372, id: "h01" },
-  { n: 2, name: "The honest number", par: 3, yd: 168, id: "h02" },
   { n: 3, name: "Three readings", par: 5, yd: 542, id: "h03" },
   { n: 4, name: "At last light", par: 4, yd: 411, id: "h04" },
-  { n: 5, name: "A letter from the bag", par: 4, yd: 396, id: "h05" },
   { n: 6, name: "Wednesday at the Presidio", par: 3, yd: 192, id: "h06" },
   { n: 7, name: "One plan", par: 4, yd: 425, id: "h07" },
   { n: 8, name: "When you're ready", par: 3, yd: 158, id: "h08" },
@@ -45,12 +44,28 @@ export default function HomePage() {
     setLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { router.push("/login?redirect=%2F%23h07"); return; }
+      if (!session) {
+        router.push(`/login?redirect=${encodeURIComponent(CHECKOUT_RETURN_PATH)}`);
+        return;
+      }
       setCheckoutToken(session.access_token);
+      if (window.location.search.includes("checkout=premium")) {
+        window.history.replaceState(null, "", "/#h07");
+      }
     } finally {
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("checkout") === "premium") {
+      document.getElementById("h07")?.scrollIntoView({ block: "start" });
+      void startCheckout();
+    }
+    // Run only once on entry so checkout intent opens after login.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Scroll: mark holes played, highlight current, tally carry, move the ball.
   useEffect(() => {
@@ -136,7 +151,7 @@ export default function HomePage() {
           </a>
           <nav className="nav">
             <a className="l" href="#h03">Readings</a>
-            <a className="l" href="#h05">How it works</a>
+            <a className="l" href="#h06">Rounds</a>
             <a className="l" href="#h07">Pricing</a>
             <a className="l btn" href="/login">Sign in</a>
             <a className="l btn primary" href="#h07" onClick={(e) => { e.preventDefault(); startCheckout(); }}>
@@ -161,7 +176,6 @@ export default function HomePage() {
             <img className="atlas" src="/truecarry-logo.png" alt="" />
             <div className="wrap">
               <HoleStrip hole={HOLES[0]} />
-              <p className="lede">— Issue 01 · Vol 1 · Camera launch monitor for iPhone</p>
               <h1>Bear<br />every <span className="yard">yard.</span></h1>
               <div className="tee-off">
                 <div className="links">
@@ -173,19 +187,10 @@ export default function HomePage() {
             </div>
           </section>
 
-          {/* H02 — quote */}
-          <section className="hole h02" id="h02">
-            <div className="wrap">
-              <HoleStrip hole={HOLES[1]} />
-              <blockquote>Carry is the only<br /><span className="gold">honest</span> number<br /><span className="light">in golf.</span></blockquote>
-              <div className="attrib"><span className="rule" /><span>Khaled Mansour · PGA pro · 21 yrs on the lesson tee</span></div>
-            </div>
-          </section>
-
           {/* H03 — readings */}
           <section className="hole h03" id="h03">
             <div className="wrap">
-              <HoleStrip hole={HOLES[2]} />
+              <HoleStrip hole={HOLES[1]} />
               <p className="deck">At 240 frames a second, your phone sees enough to read the strike, the window, and the carry.</p>
               <div className="readings">
                 <div className="reading">
@@ -209,7 +214,7 @@ export default function HomePage() {
 
           {/* H04 — scene */}
           <section className="hole h04" id="h04">
-            <div className="wrap strip-wrap"><HoleStrip hole={HOLES[3]} /></div>
+            <div className="wrap strip-wrap"><HoleStrip hole={HOLES[2]} /></div>
             <div className="scene">
               <div className="ground" />
               <div className="horizon" />
@@ -226,26 +231,10 @@ export default function HomePage() {
             </div>
           </section>
 
-          {/* H05 — letter */}
-          <section className="hole h05" id="h05">
-            <div className="wrap">
-              <HoleStrip hole={HOLES[4]} />
-              <h2>A launch monitor,<br />minus the <span className="it">launch monitor.</span></h2>
-              <p className="par"><span className="drop">M</span>ost launch monitors live on the range. Yours, if you&apos;ve ever owned one, sits on a shelf between sessions; mine sat on three before I sold it. The radar boxes that work outside cost what a decent set of irons costs.</p>
-              <p className="par indent">We thought the device that already lives in your pocket might be enough — that a phone in a clip, watching the strike at 240 frames a second, could read the same things a radar reads. It can.</p>
-              <p className="par"><strong style={{ color: "var(--bone)", fontWeight: 600 }}>True Carry</strong> is an app and a small magnetic phone mount. That&apos;s all. It tells you the only number that doesn&apos;t lie — <span className="it">the yards a ball actually carries through the air</span> — per shot, per club, per round, per season.</p>
-              <p className="par indent">It does not give you streaks, badges, or a feed. It gives you yards.</p>
-              <div className="signoff">
-                <span className="from">— Maren, Daniel &amp; Khaled</span>
-                <span className="meta">Founders · Pacifica · 5.21.26</span>
-              </div>
-            </div>
-          </section>
-
           {/* H06 — round card (paper) */}
           <section className="hole h06" id="h06">
             <div className="wrap">
-              <HoleStrip hole={HOLES[5]} />
+              <HoleStrip hole={HOLES[3]} />
               <div className="top">
                 <h2>Wednesday<br />at the <span className="it">Presidio.</span></h2>
                 <p>Every round becomes an object you can return to. Carry per hole, club per shot, where the misses cluster. This is Maren&apos;s back nine from last week — birdie on 15 with a 168-yard 8-iron.</p>
@@ -276,7 +265,7 @@ export default function HomePage() {
           {/* H07 — pricing */}
           <section className="hole h07" id="h07">
             <div className="wrap">
-              <HoleStrip hole={HOLES[6]} />
+              <HoleStrip hole={HOLES[4]} />
               <h2 className="price"><span className="dollar">$</span>10<span className="per">per<br />month</span></h2>
               <p className="summary">Everything True Carry does, in one plan. <span className="it">Cancel anytime, keep your data.</span></p>
               <ul className="features">
@@ -298,16 +287,15 @@ export default function HomePage() {
           <section className="hole h08" id="h08">
             <div className="atlas-bg"><img src="/truecarry-logo.png" alt="" /></div>
             <div className="wrap">
-              <HoleStrip hole={HOLES[7]} />
+              <HoleStrip hole={HOLES[5]} />
               <p className="copy">When you&apos;re ready,<br />we&apos;ll be in the <span className="gold">bag.</span></p>
               <a href="#h07" className="link" onClick={(e) => { e.preventDefault(); startCheckout(); }}>Start the trial &nbsp;→</a>
             </div>
           </section>
 
           {/* H09 — footer */}
-          <section className="hole h09" id="h09">
+          <footer className="hole h09" id="h09">
             <div className="wrap">
-              <HoleStrip hole={HOLES[8]} />
               <div className="grid">
                 <div className="col">
                   <div className="wm">True <span className="it">Carry.</span></div>
@@ -317,7 +305,7 @@ export default function HomePage() {
                 <div className="col">
                   <h4>Product</h4>
                   <a href="#h03">What it reads</a>
-                  <a href="#h05">How it works</a>
+                  <a href="#h06">Round view</a>
                   <a href="#h07">Pricing</a>
                 </div>
                 <div className="col">
@@ -338,7 +326,7 @@ export default function HomePage() {
                 <span>Set in Instrument Serif &amp; Manrope</span>
               </div>
             </div>
-          </section>
+          </footer>
         </main>
 
         {/* Scorecard rail */}

@@ -817,6 +817,24 @@ label { display: block; font-size: 11px; font-weight: 500; letter-spacing: 0.16e
   line-height: 1.7;
 }
 .checkout-config h3 { font-size: 24px; margin-bottom: 10px; }
+.checkout-error {
+  border-color: rgba(224, 122, 111, 0.55);
+}
+.checkout-error h3 {
+  color: #e07a6f;
+}
+.checkout-retry {
+  margin-top: 18px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--cream);
+  color: var(--button-text);
+  cursor: pointer;
+  font: 700 12px/1 var(--font-sans), sans-serif;
+  letter-spacing: 0.14em;
+  padding: 12px 18px;
+  text-transform: uppercase;
+}
 code {
   border: 1px solid var(--border);
   background: var(--surface-2);
@@ -1177,7 +1195,6 @@ code {
 /* H01 hero */
 .round .h01{ min-height:100vh; display:flex; flex-direction:column; justify-content:center; padding-top:160px; position:relative; }
 .round .h01 .atlas{ position:absolute; right:-6%; top:50%; transform:translateY(-50%); width:64%; max-width:700px; opacity:.13; filter:saturate(.4) brightness(.85); pointer-events:none; mix-blend-mode:luminosity; }
-.round .h01 .lede{ font-family:var(--display); font-style:italic; font-size:clamp(20px,2.2vw,26px); line-height:1.4; max-width:30ch; color:color-mix(in oklab,var(--bone) 88%,transparent); margin:24px 0 0; }
 .round .h01 h1{ font-family:var(--display); font-weight:400; font-size:clamp(82px,16vw,220px); line-height:.88; letter-spacing:-.035em; margin:32px 0 0; max-width:14ch; position:relative; z-index:2; }
 .round .h01 h1 .yard{ font-style:italic; color:var(--carry-gold); }
 .round .h01 .tee-off{ margin-top:clamp(48px,6vw,80px); display:flex; align-items:flex-end; justify-content:space-between; gap:32px; position:relative; z-index:2; }
@@ -1189,13 +1206,6 @@ code {
 .round .h01 .tee-off .links a.ghost:hover{ background:var(--bone); color:var(--ink); }
 .round .h01 .tee-off .note{ font-family:var(--r-mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:color-mix(in oklab,var(--bone) 55%,transparent); text-align:right; line-height:1.5; }
 .round .h01 .tee-off .note .v{ font-family:var(--display); font-size:22px; font-style:italic; color:var(--carry-gold); text-transform:none; letter-spacing:0; }
-
-/* H02 quote */
-.round .h02{ background:var(--forest-deep); padding:clamp(100px,14vw,180px) 0; }
-.round .h02 blockquote{ margin:0; font-family:var(--display); font-style:italic; font-size:clamp(36px,6vw,76px); line-height:1.05; letter-spacing:-.018em; color:var(--bone); max-width:18ch; }
-.round .h02 blockquote .light{ color:color-mix(in oklab,var(--bone) 50%,transparent); font-style:normal; }
-.round .h02 .attrib{ margin-top:56px; display:flex; align-items:baseline; gap:16px; font-family:var(--r-mono); font-size:11px; letter-spacing:.14em; color:color-mix(in oklab,var(--bone) 60%,transparent); }
-.round .h02 .attrib .rule{ width:32px; height:1px; background:color-mix(in oklab,var(--bone) 40%,transparent); }
 
 /* H03 readings */
 .round .h03 .deck{ font-family:var(--display); font-style:italic; font-size:clamp(22px,2.4vw,30px); line-height:1.4; max-width:28ch; margin-bottom:clamp(48px,7vw,80px); color:color-mix(in oklab,var(--bone) 88%,transparent); }
@@ -1230,15 +1240,6 @@ code {
 .round .scene .cap .dot{ width:4px; height:4px; border-radius:50%; background:var(--carry-gold); display:inline-block; margin:0 12px 2px; vertical-align:middle; }
 .round .scene .stamp{ position:absolute; right:var(--gutter); top:28px; font-family:var(--r-mono); font-size:10px; letter-spacing:.22em; text-transform:uppercase; color:color-mix(in oklab,var(--bone) 65%,transparent); text-align:right; }
 .round .scene .stamp .v{ display:block; font-family:var(--display); font-style:italic; font-size:26px; letter-spacing:0; color:var(--bone); text-transform:none; margin-top:4px; }
-
-/* H05 letter */
-.round .h05 h2{ font-family:var(--display); font-weight:400; font-size:clamp(40px,6vw,84px); line-height:.98; letter-spacing:-.022em; margin:0 0 clamp(56px,7vw,96px); max-width:14ch; }
-.round .h05 .par{ font-family:var(--display); font-size:clamp(22px,2.4vw,30px); line-height:1.4; color:color-mix(in oklab,var(--bone) 90%,transparent); max-width:38ch; margin:0 0 32px; }
-.round .h05 .par .drop{ font-family:var(--display); font-style:italic; font-size:1.7em; line-height:.9; color:var(--carry-gold); float:left; margin:.04em 14px 0 0; }
-.round .h05 .par.indent{ margin-left:clamp(24px,6vw,80px); }
-.round .h05 .signoff{ margin-top:48px; display:flex; justify-content:space-between; align-items:baseline; border-top:1px solid color-mix(in oklab,var(--bone) 12%,transparent); padding-top:24px; position:relative; }
-.round .h05 .signoff .from{ font-family:var(--display); font-style:italic; font-size:22px; }
-.round .h05 .signoff .meta{ font-family:var(--r-mono); font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:color-mix(in oklab,var(--bone) 50%,transparent); }
 
 /* H06 paper round card */
 .round .h06{ background:var(--paper); color:var(--ink); }
@@ -1295,15 +1296,14 @@ code {
 .round .h08 .link:hover{ color:var(--carry-gold); border-color:var(--carry-gold); }
 
 /* H09 footer */
-.round .h09{ background:var(--ink); padding:clamp(64px,9vw,100px) 0 36px; border-bottom:none; }
-.round .h09 .hole-strip .name{ color:var(--bone); }
-.round .h09 .grid{ display:grid; grid-template-columns:1fr; gap:48px; margin-top:48px; }
-@media (min-width:760px){ .round .h09 .grid{ grid-template-columns:1.4fr 1fr 1fr 1fr; } }
-.round .h09 .col h4{ margin:0 0 18px; font-family:var(--r-mono); font-size:10.5px; letter-spacing:.22em; text-transform:uppercase; color:color-mix(in oklab,var(--bone) 50%,transparent); font-weight:500; }
-.round .h09 .col a{ display:block; font-family:var(--display); font-size:22px; color:var(--bone); text-decoration:none; margin-bottom:8px; transition:color .2s ease; }
+.round .h09{ background:var(--ink); padding:48px 0 28px; border-top:1px solid color-mix(in oklab,var(--bone) 12%,transparent); border-bottom:none; }
+.round .h09 .grid{ display:grid; grid-template-columns:1fr; gap:32px; }
+@media (min-width:760px){ .round .h09 .grid{ grid-template-columns:1.5fr repeat(3, minmax(120px, .7fr)); align-items:start; } }
+.round .h09 .col h4{ margin:0 0 14px; font-family:var(--r-mono); font-size:10px; letter-spacing:.22em; text-transform:uppercase; color:color-mix(in oklab,var(--bone) 50%,transparent); font-weight:500; }
+.round .h09 .col a{ display:block; font-family:var(--r-sans); font-size:14px; color:color-mix(in oklab,var(--bone) 74%,transparent); text-decoration:none; margin-bottom:8px; transition:color .2s ease; }
 .round .h09 .col a:hover{ color:var(--carry-gold); }
-.round .h09 .col .wm{ font-family:var(--display); font-size:32px; line-height:1; margin-bottom:14px; }
+.round .h09 .col .wm{ font-family:var(--display); font-size:30px; line-height:1; margin-bottom:12px; }
 .round .h09 .col p{ font-family:var(--r-sans); font-size:13.5px; line-height:1.55; color:color-mix(in oklab,var(--bone) 70%,transparent); margin:0 0 18px; max-width:32ch; }
-.round .h09 .col .meta{ font-family:var(--r-mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:color-mix(in oklab,var(--bone) 50%,transparent); }
-.round .h09 .bottom{ margin-top:clamp(60px,8vw,90px); padding-top:22px; border-top:1px solid color-mix(in oklab,var(--bone) 12%,transparent); display:flex; justify-content:space-between; align-items:baseline; font-family:var(--r-mono); font-size:10.5px; letter-spacing:.22em; text-transform:uppercase; color:color-mix(in oklab,var(--bone) 45%,transparent); }
+.round .h09 .col .meta{ font-family:var(--r-mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:color-mix(in oklab,var(--bone) 48%,transparent); }
+.round .h09 .bottom{ margin-top:34px; padding-top:18px; border-top:1px solid color-mix(in oklab,var(--bone) 10%,transparent); display:flex; justify-content:space-between; align-items:baseline; gap:16px; font-family:var(--r-mono); font-size:9.5px; letter-spacing:.16em; text-transform:uppercase; color:color-mix(in oklab,var(--bone) 42%,transparent); }
 @media (max-width:760px){ .round .h09 .bottom{ flex-direction:column; gap:8px; } }

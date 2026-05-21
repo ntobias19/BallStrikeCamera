@@ -86,9 +86,9 @@ Deno.serve(async (req: Request) => {
     },
     ...(useEmbeddedCheckout
       ? {
-          ui_mode: "embedded_page",
+          ui_mode: "embedded",
           return_url: `${websiteURL}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
-          redirect_on_completion: "always",
+          redirect_on_completion: "if_required",
         }
       : {
           success_url: `${websiteURL}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
