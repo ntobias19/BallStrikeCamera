@@ -315,15 +315,13 @@ enum CourseAvailability {
             )
         }
 
-        // Full verified GPS: authoritative scorecard + complete geometry on every expected hole,
-        // with no large yardage disagreements.
-        let authoritative = hasAuthoritativeScorecard(playable, teeBox: teeBox, expectedCount: expectedCount)
+        // Full verified GPS: complete, trusted geometry (tee + green + outline) on every hole.
+        // Licensed pro data is authoritative, so we do NOT second-guess it with route-vs-scorecard
+        // yardage heuristics (those were for rough OSM geometry and wrongly demoted good courses).
         let fullGeomCount = (1...expectedCount).filter { number in
             playable.first(where: { $0.number == number }).map(isHoleGeometryPlayable) ?? false
         }.count
-        let yardageMismatches = playable.compactMap { yardageMismatch(for: $0, teeBox: teeBox) }
-        if authoritative, fullGeomCount == expectedCount, yardageMismatches.isEmpty,
-           course.hasTrustedGeometry {
+        if fullGeomCount == expectedCount, course.hasTrustedGeometry {
             return CourseModeReadiness(tier: .fullGPS, report: nil)
         }
 
@@ -336,7 +334,7 @@ enum CourseAvailability {
                 report: report(
                     course: course,
                     reasonCode: "rangefinder_partial_geometry",
-                    message: "Playing in rangefinder mode — distance to the green is live, but verified tee/green outlines are still being mapped.",
+                    message: "Live GPS active · course visuals improving",
                     missing: (1...expectedCount).filter { number in
                         !(playable.first(where: { $0.number == number })?.hasGreenCenter ?? false)
                     },
@@ -352,7 +350,7 @@ enum CourseAvailability {
             report: report(
                 course: course,
                 reasonCode: "scorecard_only",
-                message: "Playing in scorecard mode — live GPS distances aren't available for this course yet.",
+                message: "Scorecard mode · live distances limited here",
                 missing: [],
                 scorecardHoleCount: playable.count,
                 geometryHoleCount: centerHoles.count

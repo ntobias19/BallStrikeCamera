@@ -257,28 +257,28 @@ private final class AimPointAnnotationView: MKAnnotationView {
 
     override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
         super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
-        frame = CGRect(x: 0, y: 0, width: 92, height: 58)
+        frame = CGRect(x: 0, y: 0, width: 132, height: 58)
         centerOffset = CGPoint(x: 0, y: -12)
         backgroundColor = .clear
 
-        ring.frame = CGRect(x: 30, y: 0, width: 32, height: 32)
+        ring.frame = CGRect(x: 50, y: 0, width: 32, height: 32)
         ring.backgroundColor = UIColor.white.withAlphaComponent(0.12)
         ring.layer.cornerRadius = 16
         ring.layer.borderColor = UIColor.white.withAlphaComponent(0.95).cgColor
         ring.layer.borderWidth = 2
         addSubview(ring)
 
-        dot.frame = CGRect(x: 43, y: 13, width: 6, height: 6)
+        dot.frame = CGRect(x: 63, y: 13, width: 6, height: 6)
         dot.backgroundColor = .white
         dot.layer.cornerRadius = 3
         addSubview(dot)
 
-        label.frame = CGRect(x: 0, y: 34, width: 92, height: 24)
+        label.frame = CGRect(x: 6, y: 34, width: 120, height: 22)
         label.textAlignment = .center
         label.textColor = .white
         label.font = UIFont.systemFont(ofSize: 11, weight: .heavy)
         label.backgroundColor = UIColor(white: 0.04, alpha: 0.72)
-        label.layer.cornerRadius = 12
+        label.layer.cornerRadius = 11
         label.layer.masksToBounds = true
         addSubview(label)
     }
@@ -288,7 +288,7 @@ private final class AimPointAnnotationView: MKAnnotationView {
     override var annotation: MKAnnotation? {
         didSet {
             guard let a = annotation as? AimPointAnnotation else { return }
-            label.text = "\(a.targetYards) / \(a.remainingYards)"
+            label.text = "Aim \(a.targetYards) · \(a.remainingYards) left"
         }
     }
 }
@@ -730,25 +730,27 @@ private struct SatelliteMapBackground: UIViewRepresentable {
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
             if let polygon = overlay as? TaggedPolygon {
                 let r = MKPolygonRenderer(polygon: polygon)
+                // Translucent fills so real satellite detail (turf, sand, water) stays visible —
+                // a refined caddie overlay rather than a flat debug map.
                 switch polygon.kind {
                 case "green":
-                    r.fillColor   = UIColor(red: 0.42, green: 0.82, blue: 0.42, alpha: 0.65)
-                    r.strokeColor = UIColor(red: 0.18, green: 0.60, blue: 0.28, alpha: 0.95)
-                    r.lineWidth   = 1.2
+                    r.fillColor   = UIColor(red: 0.45, green: 0.85, blue: 0.50, alpha: 0.30)
+                    r.strokeColor = UIColor(red: 0.20, green: 0.58, blue: 0.30, alpha: 0.85)
+                    r.lineWidth   = 1.6
                 case "fairway":
-                    r.fillColor   = UIColor(red: 0.36, green: 0.66, blue: 0.34, alpha: 0.45)
-                    r.strokeColor = UIColor(red: 0.20, green: 0.48, blue: 0.22, alpha: 0.60)
-                    r.lineWidth   = 0.8
+                    r.fillColor   = UIColor(red: 0.40, green: 0.70, blue: 0.38, alpha: 0.22)
+                    r.strokeColor = UIColor(red: 0.22, green: 0.50, blue: 0.24, alpha: 0.45)
+                    r.lineWidth   = 1.0
                 case "bunker":
-                    r.fillColor   = UIColor(red: 0.95, green: 0.86, blue: 0.62, alpha: 0.85)
-                    r.strokeColor = UIColor(red: 0.80, green: 0.68, blue: 0.42, alpha: 1.0)
+                    r.fillColor   = UIColor(red: 0.96, green: 0.88, blue: 0.66, alpha: 0.45)
+                    r.strokeColor = UIColor(red: 0.82, green: 0.70, blue: 0.44, alpha: 0.75)
                     r.lineWidth   = 1.0
                 case "water":
-                    r.fillColor   = UIColor(red: 0.20, green: 0.50, blue: 0.85, alpha: 0.65)
-                    r.strokeColor = UIColor(red: 0.10, green: 0.35, blue: 0.70, alpha: 0.90)
+                    r.fillColor   = UIColor(red: 0.22, green: 0.54, blue: 0.88, alpha: 0.40)
+                    r.strokeColor = UIColor(red: 0.12, green: 0.38, blue: 0.72, alpha: 0.70)
                     r.lineWidth   = 1.0
                 default:
-                    r.fillColor   = UIColor.systemGreen.withAlphaComponent(0.4)
+                    r.fillColor   = UIColor.systemGreen.withAlphaComponent(0.28)
                 }
                 return r
             }
@@ -765,17 +767,18 @@ private struct SatelliteMapBackground: UIViewRepresentable {
                 return r
             }
             if overlay is HolePathCasingPolyline, let line = overlay as? MKPolyline {
+                // Soft dark casing = the line's shadow/glow, giving the thin stroke depth.
                 let r             = MKPolylineRenderer(polyline: line)
-                r.strokeColor     = UIColor.black.withAlphaComponent(0.42)
-                r.lineWidth       = 7.0
+                r.strokeColor     = UIColor.black.withAlphaComponent(0.32)
+                r.lineWidth       = 5.0
                 r.lineCap         = .round
                 r.lineJoin        = .round
                 return r
             }
             if overlay is HolePathPolyline, let line = overlay as? MKPolyline {
                 let r             = MKPolylineRenderer(polyline: line)
-                r.strokeColor     = UIColor.white.withAlphaComponent(0.96)
-                r.lineWidth       = 3.6
+                r.strokeColor     = UIColor.white.withAlphaComponent(0.92)
+                r.lineWidth       = 2.4
                 r.lineCap         = .round
                 r.lineJoin        = .round
                 return r
@@ -1038,6 +1041,19 @@ struct CourseModeGPSHoleView: View {
         return scoreToPar > 0 ? "+\(scoreToPar)" : "\(scoreToPar)"
     }
 
+    private var scoreToParWord: String {
+        if scoreToPar == 0 { return "Even" }
+        return scoreToPar > 0 ? "+\(scoreToPar)" : "\(scoreToPar)"
+    }
+
+    private var displayPlayerName: String {
+        let n = userName.trimmingCharacters(in: .whitespaces)
+        if n.isEmpty || n.caseInsensitiveCompare("Guest") == .orderedSame || n.caseInsensitiveCompare("Player") == .orderedSame {
+            return "Guest Player"
+        }
+        return n
+    }
+
     private var scoreToParColor: Color {
         scoreToPar < 0 ? Color(red: 0.22, green: 0.78, blue: 0.42)
             : scoreToPar == 0 ? Color(red: 0.42, green: 0.72, blue: 0.98)
@@ -1123,25 +1139,29 @@ struct CourseModeGPSHoleView: View {
 
             if vm.courseUnavailable == nil, let note = vm.degradedTierNote {
                 VStack {
-                    HStack(spacing: 8) {
-                        Image(systemName: vm.courseTier == .rangefinder ? "location.viewfinder" : "list.bullet.rectangle")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(TCTheme.gold)
+                    HStack(spacing: 6) {
+                        Image(systemName: vm.courseTier == .rangefinder ? "location.fill" : "list.bullet.rectangle")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(HUDStyle.live)
                         Text(note)
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
-                            .foregroundColor(.white)
-                            .multilineTextAlignment(.leading)
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundColor(.white.opacity(0.95))
+                            .lineLimit(1)
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .hudGlass(14)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 96)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .hudGlass(20)
+                    .fixedSize()
+                    .padding(.top, topSafeArea + 128)   // sits below the hole selector + info strip
                     Spacer()
                 }
-                .transition(.opacity)
+                .transition(.move(edge: .top).combined(with: .opacity))
                 .zIndex(6)
                 .allowsHitTesting(false)
+                .task(id: note) {
+                    try? await Task.sleep(nanoseconds: 3_500_000_000)
+                    withAnimation(.easeInOut(duration: 0.4)) { vm.degradedTierNote = nil }
+                }
             }
 
             // Top dark gradient
@@ -1572,66 +1592,67 @@ struct CourseModeGPSHoleView: View {
 
             if mapDistances.isAvailable {
                 let isLive = gpsOn && userIsNearCurrentHole
-                VStack(alignment: .leading, spacing: 2) {
-                    // Source label + live pulse
-                    HStack(spacing: 5) {
-                        if isLive { LivePulseDot() }
-                        Text(isLive ? "LIVE • TO PIN" : "EST • TO PIN")
-                            .font(.system(size: 9, weight: .black, design: .rounded))
-                            .tracking(1.0)
-                            .foregroundColor(isLive ? HUDStyle.live : .white.opacity(0.55))
-                    }
-                    .padding(.bottom, 3)
-
-                    // Back edge (top of stack)
-                    if let b = mapDistances.back {
-                        edgeRow(icon: "arrow.up.to.line.compact", value: b, tint: .white.opacity(0.62), label: "BACK")
-                    }
-
-                    // Center — the hero number
+                VStack(alignment: .leading, spacing: 4) {
+                    // Hero: distance to pin (center)
                     if let c = mapDistances.center {
                         HStack(alignment: .firstTextBaseline, spacing: 3) {
                             Text("\(c)")
-                                .font(.system(size: 52, weight: .black, design: .rounded))
+                                .font(.system(size: 54, weight: .black, design: .rounded))
                                 .foregroundColor(.white)
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.6)
                                 .contentTransition(.numericText())
                                 .shadow(color: .black.opacity(0.5), radius: 6, y: 2)
                             Text("yd")
-                                .font(.system(size: 15, weight: .heavy, design: .rounded))
+                                .font(.system(size: 16, weight: .heavy, design: .rounded))
                                 .foregroundColor(.white.opacity(0.55))
                         }
                     }
 
-                    // Front edge (bottom)
-                    if let f = mapDistances.front {
-                        edgeRow(icon: "arrow.down.to.line.compact", value: f, tint: HUDStyle.live, label: "FRONT")
+                    // Confidence line: GPS live vs estimate
+                    HStack(spacing: 5) {
+                        if isLive {
+                            LivePulseDot()
+                            Text("Pin · GPS live")
+                                .font(.system(size: 10, weight: .bold, design: .rounded))
+                                .foregroundColor(HUDStyle.live)
+                        } else {
+                            Text("Pin · estimate")
+                                .font(.system(size: 10, weight: .bold, design: .rounded))
+                                .foregroundColor(.white.opacity(0.55))
+                        }
+                    }
+
+                    // Compact front · back row
+                    if mapDistances.front != nil || mapDistances.back != nil {
+                        HStack(spacing: 8) {
+                            if let f = mapDistances.front {
+                                frontBackChip(label: "F", value: f, tint: HUDStyle.live)
+                            }
+                            if let b = mapDistances.back {
+                                frontBackChip(label: "B", value: b, tint: .white.opacity(0.55))
+                            }
+                        }
+                        .padding(.top, 2)
                     }
                 }
-                .padding(.horizontal, 14)
+                .padding(.horizontal, 15)
                 .padding(.vertical, 12)
                 .hudGlass(20)
-                .frame(minWidth: 118, alignment: .leading)
+                .frame(minWidth: 116, alignment: .leading)
                 .animation(.spring(response: 0.4, dampingFraction: 0.85), value: mapDistances.center)
             }
         }
     }
 
-    private func edgeRow(icon: String, value: Int, tint: Color, label: String) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: icon)
-                .font(.system(size: 11, weight: .bold))
-                .foregroundColor(tint)
-                .frame(width: 14)
-            Text("\(value)")
-                .font(.system(size: 20, weight: .bold, design: .rounded))
-                .foregroundColor(.white.opacity(0.92))
+    private func frontBackChip(label: String, value: Int, tint: Color) -> some View {
+        HStack(spacing: 4) {
             Text(label)
-                .font(.system(size: 8, weight: .black, design: .rounded))
-                .tracking(0.6)
-                .foregroundColor(.white.opacity(0.4))
-                .baselineOffset(1)
+                .font(.system(size: 9, weight: .black, design: .rounded))
+                .foregroundColor(tint)
+            Text("\(value)")
+                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .foregroundColor(.white.opacity(0.9))
         }
     }
 
@@ -1712,27 +1733,20 @@ struct CourseModeGPSHoleView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(userName)
+                    Text(displayPlayerName)
                         .font(.system(size: 15, weight: .bold, design: .rounded))
                         .foregroundColor(.white)
                         .lineLimit(1)
                     HStack(spacing: 5) {
-                        Text(scoreToParString)
-                            .font(.system(size: 14, weight: .heavy, design: .rounded))
+                        Text(scoreToParWord)
+                            .font(.system(size: 13, weight: .heavy, design: .rounded))
                             .foregroundColor(scoreToParColor)
-                        if let target = suggestedAimPoint {
-                            Text("· aim \(target.targetYards)")
-                                .font(.system(size: 11, weight: .semibold, design: .rounded))
-                                .foregroundColor(HUDStyle.pin.opacity(0.95))
-                                .lineLimit(1)
-                        } else {
-                            Text("· \(timeElapsed)")
-                                .font(.system(size: 11, weight: .medium, design: .rounded))
-                                .foregroundColor(.white.opacity(0.6))
-                        }
+                        Text("· Hole \(vm.currentHoleIndex + 1)")
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundColor(.white.opacity(0.65))
                     }
                 }
-                .frame(maxWidth: 112, alignment: .leading)
+                .frame(maxWidth: 128, alignment: .leading)
             }
 
             Spacer(minLength: 4)

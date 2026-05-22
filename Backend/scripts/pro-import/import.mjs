@@ -280,17 +280,25 @@ function geometryRow(p) {
   };
 }
 
-// Build a green polygon from front/center/back, oriented along the green's long axis.
+// Build a smooth green polygon (oriented ellipse) from front/center/back. A 12-point ellipse
+// reads as a real green rather than a rough diamond, sized to the actual front-back depth.
 function greenPolygon(front, center, back, tee) {
   if (!center) return null;
   const f = front || center;
   const b = back || center;
-  // Long axis bearing (front→back); fall back to tee→center.
   const axis = (front && back) ? bearing(f, b) : (tee ? bearing(tee, center) : 0);
-  const halfWidth = Math.max(7, dist(f, b) * 0.35); // meters
-  const left = project(center, axis - 90, halfWidth);
-  const right = project(center, axis + 90, halfWidth);
-  return [f, right, b, left, f];
+  const semiMajor = Math.max(8, dist(f, b) / 2);    // along the front-back axis (meters)
+  const semiMinor = Math.max(6, semiMajor * 0.62);  // across
+  const pts = [];
+  const N = 12;
+  for (let i = 0; i < N; i++) {
+    const t = (i / N) * 2 * Math.PI;
+    let p = project(center, axis, semiMajor * Math.cos(t));   // along axis
+    p = project(p, axis + 90, semiMinor * Math.sin(t));        // across axis
+    pts.push(p);
+  }
+  pts.push(pts[0]);
+  return pts;
 }
 
 // ── geo helpers ─────────────────────────────────────────────────────────────
