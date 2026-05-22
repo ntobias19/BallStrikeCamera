@@ -1215,6 +1215,18 @@ struct CourseModeGPSHoleView: View {
 
             // Track-shot mode banner
             placeModeBanner
+
+            // OSM attribution — required by the ODbL license whenever OSM geometry is shown.
+            VStack {
+                Spacer()
+                HStack {
+                    OSMAttributionBadge()
+                        .padding(.leading, 10)
+                        .padding(.bottom, 96)   // above the bottom bar
+                    Spacer()
+                }
+            }
+            .ignoresSafeArea(edges: .bottom)
         }
         // Bottom bar
         .safeAreaInset(edge: .bottom, spacing: 0) {
