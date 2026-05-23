@@ -43,6 +43,16 @@ final class CourseDataAggregator {
             return sharedGeometry
         }
 
+        // Course catalog (Supabase): search the 40k-course DB by name+location and fetch the
+        // matched course's geometry from Storage. Our primary data source.
+        if let catalog = await CourseCatalog.findGeometry(name: course.name, coordinate: course.coordinate),
+           catalog.hasTrustedGeometry {
+            var merged = catalog
+            merged.id = course.id            // keep the app's id so caching/resume line up
+            OSMGolfService.shared.cacheMergedCourse(merged)
+            return merged
+        }
+
         // GolfCourseAPI scorecard is the reliable source (par/yardage/handicap). Run it detached so
         // a spurious SwiftUI `.task` cancellation can't drop it. Geometry is best-effort from OSM.
         let cachedScorecard = [cached, sharedGeometry].compactMap { $0 }.first(where: isUsableCachedCourse)

@@ -32,3 +32,7 @@ Website/out/
 
 # Supabase CLI temp artifacts
 .temp/
+
+# large local datasets (never commit)
+courses_combined*.jsonl
+*.jsonl
