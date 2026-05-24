@@ -468,6 +468,11 @@ private struct SatelliteMapBackground: UIViewRepresentable {
         map.showsCompass        = false
         map.delegate            = context.coordinator
         context.coordinator.parent = self
+        // Limit zoom: min 50m (green detail) → max 2500m (~5× a long par-5, keeps view on-hole).
+        map.cameraZoomRange = MKMapView.CameraZoomRange(
+            minCenterCoordinateDistance: 50,
+            maxCenterCoordinateDistance: 2500
+        )
         let tap = UITapGestureRecognizer(target: context.coordinator,
                                           action: #selector(Coordinator.handleTap(_:)))
         map.addGestureRecognizer(tap)
