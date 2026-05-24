@@ -111,8 +111,38 @@ function hasGeometry(o) {
   return (o.holes || []).some(h => h?.green?.center && (h.green.center.latitude ?? h.green.center.lat) != null);
 }
 
+// Resume: list everything already in the bucket so re-runs skip uploaded files.
+const existing = new Set();
+if (UPLOAD) {
+  let offset = 0;
+  while (true) {
+    const { data, error } = await supabase.storage.from(BUCKET).list("", { limit: 1000, offset });
+    if (error) { console.error(`list failed: ${error.message}`); break; }
+    if (!data?.length) break;
+    for (const f of data) existing.add(f.name);
+    offset += data.length;
+    if (data.length < 1000) break;
+  }
+  console.log(`resume: ${existing.size} files already in bucket`);
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function uploadWithRetry(key, gz, tries = 4) {
+  for (let a = 1; a <= tries; a++) {
+    const { error } = await supabase.storage.from(BUCKET).upload(key, gz, {
+      contentType: "application/json", contentEncoding: "gzip", upsert: true,
+    });
+    if (!error) return true;
+    if (a === tries) { console.warn(`  FAILED ${key}: ${error.message}`); return false; }
+    await sleep(800 * a);   // backoff on transient (timeout/429/5xx)
+  }
+}
+
+const CONCURRENCY = parseInt(process.env.CONCURRENCY || "32", 10);  // parallel uploads
 const rl = readline.createInterface({ input: fs.createReadStream(input), crlfDelay: Infinity });
-let n = 0, geom = 0, gzTotal = 0, rawTotal = 0, uploaded = 0;
+let n = 0, geom = 0, gzTotal = 0, rawTotal = 0, uploaded = 0, skipped = 0, failed = 0;
+const inflight = new Set();
+
 for await (const line of rl) {
   if (!line.trim()) continue;
   let o; try { o = JSON.parse(line); } catch { continue; }
@@ -120,20 +150,27 @@ for await (const line of rl) {
   if (!hasGeometry(o)) continue;
   geom++;
   if (geom > LIMIT) break;
+  const key = `${uuidv5(o.course_id || o.slug)}.json.gz`;   // = courses.id, ASCII-safe
+  if (UPLOAD && existing.has(key)) { skipped++; continue; }
   const gc = toGolfCourse(o);
   const json = JSON.stringify(gc);
   const gz = zlib.gzipSync(json, { level: 9 });
   rawTotal += Buffer.byteLength(json);
   gzTotal += gz.length;
-  if (UPLOAD) {
-    const key = `${uuidv5(o.course_id || o.slug)}.json.gz`;   // = courses.id, ASCII-safe
-    const { error } = await supabase.storage.from(BUCKET).upload(key, gz, {
-      contentType: "application/json", contentEncoding: "gzip", upsert: true,
-    });
-    if (error) { console.error(`upload failed (${o.course_id}): ${error.message}`); process.exit(1); }
-    uploaded++;
-    if (uploaded % 500 === 0) console.log(`  uploaded ${uploaded}`);
-  }
+  if (!UPLOAD) continue;
+
+  // Launch upload; cap in-flight at CONCURRENCY.
+  const p = uploadWithRetry(key, gz).then((ok) => {
+    if (ok) uploaded++; else failed++;
+    if ((uploaded + failed) % 500 === 0) console.log(`  progress: uploaded ${uploaded} | failed ${failed} | skipped ${skipped}`);
+    inflight.delete(p);
+  });
+  inflight.add(p);
+  if (inflight.size >= CONCURRENCY) await Promise.race(inflight);
+}
+if (UPLOAD) {
+  await Promise.allSettled(inflight);
+  console.log(`upload summary: uploaded ${uploaded} | skipped(existing) ${skipped} | failed ${failed}`);
 }
 const mb = (x) => (x / 1048576).toFixed(1) + "MB";
 console.log(`scanned ${n} | geometry courses ${geom}`);
