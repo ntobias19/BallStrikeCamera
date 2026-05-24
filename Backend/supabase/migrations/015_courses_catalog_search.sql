@@ -27,8 +27,10 @@ create or replace function search_courses(
 language sql stable as $$
     select *
     from courses c
+    -- Substring match hits the trigram GIN index in ~1ms; the fuzzy `name % q` clause was a
+    -- ~100ms bottleneck, so similarity is used only for ranking (ORDER BY), not filtering.
     where (not only_geometry or c.data_tier = 'gps_ready')
-      and (q is null or q = '' or c.name % q or c.name ilike '%'||q||'%')
+      and (q is null or q = '' or c.name ilike '%'||q||'%')
     order by
       (case when q is not null and q <> '' then similarity(c.name, q) else 0 end) desc,
       (case when lat is not null and c.latitude is not null

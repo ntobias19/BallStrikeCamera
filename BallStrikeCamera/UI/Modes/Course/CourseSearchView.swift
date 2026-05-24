@@ -197,7 +197,7 @@ struct CourseSearchView: View {
                 return
             }
             searchTask = Task {
-                try? await Task.sleep(nanoseconds: 350_000_000)
+                try? await Task.sleep(nanoseconds: 220_000_000)
                 guard !Task.isCancelled else { return }
                 await searchCourses(query: trimmed)
             }
