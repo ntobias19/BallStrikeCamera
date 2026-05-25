@@ -11,7 +11,36 @@ struct PastSessionsView: View {
     @State private var simSessions:   [SimSession]      = []
     @State private var rounds:        [CourseRound]     = []
 
+    @State private var itemToDelete: DeletionTarget?
+
     private let filters = ["All", "Range", "Sim", "Course", "Saved Shots"]
+
+    // MARK: - Deletion target
+
+    private enum DeletionTarget: Identifiable {
+        case rangeSession(PracticeSession)
+        case simSession(SimSession)
+        case courseRound(CourseRound)
+        case shot(SavedShot)
+
+        var id: String {
+            switch self {
+            case .rangeSession(let s): "r_\(s.id)"
+            case .simSession(let s):   "s_\(s.id)"
+            case .courseRound(let r):  "c_\(r.id)"
+            case .shot(let s):         "sh_\(s.id)"
+            }
+        }
+
+        var label: String {
+            switch self {
+            case .rangeSession: "range session"
+            case .simSession:   "sim session"
+            case .courseRound:  "round"
+            case .shot:         "shot"
+            }
+        }
+    }
 
     // MARK: - Body
 
@@ -73,6 +102,20 @@ struct PastSessionsView: View {
         .navigationBarTitleDisplayMode(.large)
         .toolbarBackground(.clear, for: .navigationBar)
         .task { await loadData() }
+        .alert(
+            "Delete \(itemToDelete?.label ?? "item")?",
+            isPresented: Binding(get: { itemToDelete != nil }, set: { if !$0 { itemToDelete = nil } })
+        ) {
+            Button("Delete", role: .destructive) {
+                if let target = itemToDelete {
+                    Task { await performDelete(target) }
+                }
+                itemToDelete = nil
+            }
+            Button("Cancel", role: .cancel) { itemToDelete = nil }
+        } message: {
+            Text("This cannot be undone.")
+        }
     }
 
     // MARK: - Summary Strip
@@ -128,7 +171,16 @@ struct PastSessionsView: View {
                 if filteredRangeSessions.isEmpty {
                     emptySessionCard(icon: "scope", message: "No range sessions yet.")
                 } else {
-                    ForEach(filteredRangeSessions) { rs in rangeSessionCard(rs) }
+                    ForEach(filteredRangeSessions) { rs in
+                        rangeSessionCard(rs)
+                            .contextMenu {
+                                Button(role: .destructive) {
+                                    itemToDelete = .rangeSession(rs)
+                                } label: {
+                                    Label("Delete Session", systemImage: "trash")
+                                }
+                            }
+                    }
                 }
             }
 
@@ -137,7 +189,16 @@ struct PastSessionsView: View {
                 if filteredSimSessions.isEmpty {
                     emptySessionCard(icon: "display", message: "No sim sessions yet.")
                 } else {
-                    ForEach(filteredSimSessions) { ss in simSessionCard(ss) }
+                    ForEach(filteredSimSessions) { ss in
+                        simSessionCard(ss)
+                            .contextMenu {
+                                Button(role: .destructive) {
+                                    itemToDelete = .simSession(ss)
+                                } label: {
+                                    Label("Delete Session", systemImage: "trash")
+                                }
+                            }
+                    }
                 }
             }
 
@@ -146,7 +207,16 @@ struct PastSessionsView: View {
                 if filteredRounds.isEmpty {
                     emptySessionCard(icon: "flag.fill", message: "No rounds yet.")
                 } else {
-                    ForEach(filteredRounds) { r in courseRoundCard(r) }
+                    ForEach(filteredRounds) { r in
+                        courseRoundCard(r)
+                            .contextMenu {
+                                Button(role: .destructive) {
+                                    itemToDelete = .courseRound(r)
+                                } label: {
+                                    Label("Delete Round", systemImage: "trash")
+                                }
+                            }
+                    }
                 }
             }
 
@@ -307,6 +377,13 @@ struct PastSessionsView: View {
                         clubName: shot.clubName ?? "Driver",
                         yards: Int(shot.metrics.carryYards)
                     )
+                    .contextMenu {
+                        Button(role: .destructive) {
+                            itemToDelete = .shot(shot)
+                        } label: {
+                            Label("Delete Shot", systemImage: "trash")
+                        }
+                    }
                 }
             }
         }
@@ -424,5 +501,26 @@ struct PastSessionsView: View {
         rangeSessions = (try? await rangeList)  ?? []
         simSessions   = (try? await simList)    ?? []
         rounds        = (try? await roundList)  ?? []
+    }
+
+    // MARK: - Deletion
+
+    private func performDelete(_ target: DeletionTarget) async {
+        guard let uid = session.currentUser?.id else { return }
+        let backend = session.backend
+        switch target {
+        case .rangeSession(let s):
+            try? await backend.deleteRangeSession(sessionId: s.id, userId: uid)
+            rangeSessions.removeAll { $0.id == s.id }
+        case .simSession(let s):
+            try? await backend.deleteSimSession(sessionId: s.id, userId: uid)
+            simSessions.removeAll { $0.id == s.id }
+        case .courseRound(let r):
+            try? await backend.deleteCourseRound(roundId: r.id, userId: uid)
+            rounds.removeAll { $0.id == r.id }
+        case .shot(let s):
+            try? await backend.deleteShot(shotId: s.id, userId: uid)
+            shots.removeAll { $0.id == s.id }
+        }
     }
 }

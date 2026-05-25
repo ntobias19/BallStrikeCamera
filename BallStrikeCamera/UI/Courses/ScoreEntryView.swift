@@ -101,10 +101,10 @@ struct ScoreEntryView: View {
     private var mapHeader: some View {
         ZStack(alignment: .top) {
             GeneratedFairwayView()
-                .frame(height: 160)
+                .frame(height: 150)
                 .overlay(
                     LinearGradient(
-                        colors: [Color.black.opacity(0.15), Color.black.opacity(0.65)],
+                        colors: [Color.black.opacity(0.10), Color.black.opacity(0.60)],
                         startPoint: .top, endPoint: .bottom
                     )
                 )
@@ -113,25 +113,26 @@ struct ScoreEntryView: View {
                 HStack {
                     Button(action: { dismiss() }) {
                         Image(systemName: "xmark")
-                            .font(.system(size: 13, weight: .bold))
+                            .font(.system(size: 12, weight: .semibold))
                             .foregroundColor(.white)
-                            .frame(width: 32, height: 32)
-                            .background(.ultraThinMaterial.opacity(0.7))
+                            .frame(width: 30, height: 30)
+                            .background(.ultraThinMaterial.opacity(0.6))
                             .clipShape(Circle())
                     }
                     .buttonStyle(.plain)
                     Spacer()
                 }
-                VStack(spacing: 5) {
-                    Text(ordinal(holeNumber).uppercased())
-                        .font(.system(size: 22, weight: .black, design: .serif))
-                        .foregroundColor(.white)
+                VStack(spacing: 6) {
+                    Text("Hole \(holeNumber)")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.70))
+                        .tracking(0.5)
                     HStack(spacing: 0) {
                         holeChip("Par \(par)")
                         if let y = holeYardage { holeChip("\(y) yds") }
                         if let h = handicap     { holeChip("HCP \(h)") }
                     }
-                    .background(Color.black.opacity(0.38))
+                    .background(Color.black.opacity(0.35))
                     .clipShape(Capsule())
                 }
             }
@@ -141,8 +142,8 @@ struct ScoreEntryView: View {
 
     private func holeChip(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 12, weight: .semibold, design: .rounded))
-            .foregroundColor(.white.opacity(0.92))
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundColor(.white.opacity(0.90))
             .padding(.horizontal, 12).padding(.vertical, 6)
     }
 
@@ -188,28 +189,31 @@ struct ScoreEntryView: View {
     private var playerHeaderRow: some View {
         HStack(spacing: 12) {
             ZStack {
-                Circle().fill(TCTheme.goldGradient).frame(width: 38, height: 38)
+                Circle()
+                    .fill(TCTheme.panelRaised)
+                    .frame(width: 36, height: 36)
+                    .overlay(Circle().strokeBorder(TCTheme.border, lineWidth: 1))
                 Text(userInitials)
-                    .font(.system(size: 12, weight: .heavy, design: .rounded))
-                    .foregroundColor(TCTheme.deepGreen)
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(userName)
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(TCTheme.textPrimary)
-                HStack(spacing: 5) {
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                Text(userName)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(TCTheme.textPrimary)
+                HStack(spacing: 6) {
                     Text(scoreSummaryLabel)
-                        .font(.system(size: 12, weight: .heavy, design: .rounded))
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(scoreSummaryColor)
                     Text(scoreDeltaText)
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .font(.system(size: 11))
                         .foregroundColor(TCTheme.textMuted)
                     if computedGIR {
                         Text("GIR")
-                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .font(.system(size: 9, weight: .semibold))
                             .foregroundColor(TCTheme.sage)
-                            .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(TCTheme.sage.opacity(0.18))
+                            .padding(.horizontal, 5).padding(.vertical, 2)
+                            .background(TCTheme.sage.opacity(0.15))
                             .clipShape(Capsule())
                     }
                 }
@@ -217,11 +221,8 @@ struct ScoreEntryView: View {
             Spacer()
             Button(action: saveAndDismiss) {
                 Text("Save")
-                    .font(.system(size: 15, weight: .heavy, design: .rounded))
-                    .foregroundColor(TCTheme.deepGreen)
-                    .padding(.horizontal, 22).frame(height: 44)
-                    .background(TCTheme.goldGradient)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(TCTheme.gold)
             }
             .buttonStyle(.plain)
         }
@@ -246,7 +247,7 @@ struct ScoreEntryView: View {
             colLabel("Score")
             stepCircle("plus") { score += 1 }
             Text("\(score)")
-                .font(.system(size: 34, weight: .black, design: .rounded))
+                .font(.system(size: 34, weight: .bold))
                 .foregroundColor(scoreSummaryColor)
                 .contentTransition(.numericText())
                 .frame(minWidth: 44, alignment: .center)
@@ -260,7 +261,7 @@ struct ScoreEntryView: View {
             colLabel("Putts")
             stepCircle("plus") { putts += 1 }
             Text("\(putts)")
-                .font(.system(size: 34, weight: .black, design: .rounded))
+                .font(.system(size: 34, weight: .bold))
                 .foregroundColor(TCTheme.textPrimary)
                 .contentTransition(.numericText())
                 .frame(minWidth: 44, alignment: .center)
@@ -334,7 +335,7 @@ struct ScoreEntryView: View {
             withAnimation(.spring(response: 0.2)) { teeShotDir = "HIT" }
         } label: {
             Text("HIT")
-                .font(.system(size: 10, weight: .black, design: .rounded))
+                .font(.system(size: 10, weight: .bold))
                 .foregroundColor(sel ? .white : TCTheme.textMuted)
                 .frame(width: 30, height: 30)
                 .background(sel ? TCTheme.sage : TCTheme.panelRaised)
@@ -356,7 +357,7 @@ struct ScoreEntryView: View {
                 HStack(spacing: 10) {
                     stepCircle("minus") { if firstPuttFeet > 0 { firstPuttFeet -= 1 } }
                     Text(firstPuttFeet == 0 ? "—" : "\(firstPuttFeet)ft")
-                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                        .font(.system(size: 17, weight: .semibold))
                         .foregroundColor(firstPuttFeet == 0 ? TCTheme.textUltraMuted : TCTheme.textPrimary)
                         .frame(minWidth: 42, alignment: .center)
                         .contentTransition(.numericText())
@@ -371,19 +372,19 @@ struct ScoreEntryView: View {
                 colLabel("Club")
                 Button { cycleTeeClub(by: +1) } label: {
                     Image(systemName: "chevron.up")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundColor(TCTheme.gold)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(TCTheme.textMuted)
                         .frame(width: 34, height: 26)
                 }
                 .buttonStyle(.plain)
                 Text(teeClub ?? "—")
-                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .font(.system(size: 17, weight: .semibold))
                     .foregroundColor(teeClub == nil ? TCTheme.textUltraMuted : TCTheme.textPrimary)
                     .frame(minWidth: 42, alignment: .center)
                 Button { cycleTeeClub(by: -1) } label: {
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundColor(TCTheme.gold)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(TCTheme.textMuted)
                         .frame(width: 34, height: 26)
                 }
                 .buttonStyle(.plain)
@@ -431,7 +432,7 @@ struct ScoreEntryView: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(isOn.wrappedValue ? chipIconColor(label) : TCTheme.textMuted)
                 Text(label)
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .font(.system(size: 10, weight: .medium))
                     .foregroundColor(isOn.wrappedValue ? TCTheme.textPrimary : TCTheme.textMuted)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
@@ -481,7 +482,7 @@ struct ScoreEntryView: View {
     private var saveFooter: some View {
         HStack(spacing: 10) {
             Button("Cancel") { dismiss() }
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundColor(TCTheme.textMuted)
                 .frame(maxWidth: .infinity).padding(.vertical, 14)
                 .background(TCTheme.panelRaised)
@@ -492,7 +493,7 @@ struct ScoreEntryView: View {
                 )
             Button(action: saveAndDismiss) {
                 Text("Save Score")
-                    .font(.system(size: 15, weight: .heavy, design: .rounded))
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundColor(TCTheme.deepGreen)
                     .frame(maxWidth: .infinity).padding(.vertical, 14)
                     .background(TCTheme.goldGradient)
@@ -515,16 +516,21 @@ struct ScoreEntryView: View {
 
     private func colLabel(_ text: String) -> some View {
         Text(text.uppercased())
-            .font(.system(size: 9, weight: .bold, design: .rounded))
-            .tracking(0.7)
+            .font(.system(size: 9, weight: .semibold))
+            .tracking(0.8)
             .foregroundColor(TCTheme.textMuted)
     }
 
     private func sectionLabel(_ text: String) -> some View {
-        Text(text.uppercased())
-            .font(.system(size: 10, weight: .bold, design: .rounded))
-            .tracking(0.8)
-            .foregroundColor(TCTheme.textMuted)
+        HStack(spacing: 7) {
+            RoundedRectangle(cornerRadius: 1)
+                .fill(TCTheme.gold.opacity(0.7))
+                .frame(width: 2, height: 11)
+            Text(text.uppercased())
+                .font(.system(size: 10, weight: .semibold))
+                .tracking(0.9)
+                .foregroundColor(TCTheme.textMuted)
+        }
     }
 
     private func stepCircle(_ iconName: String, action: @escaping () -> Void) -> some View {

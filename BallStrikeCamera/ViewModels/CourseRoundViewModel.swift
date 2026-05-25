@@ -342,6 +342,14 @@ final class CourseRoundViewModel: ObservableObject {
 
     func finishRound() async {
         guard var round = activeRound else { return }
+        let hasShots  = !round.shotIds.isEmpty
+        let hasScores = round.holes.contains(where: { $0.score != nil })
+        guard hasShots || hasScores else {
+            // Nothing was recorded — silently discard so empty rounds don't litter history.
+            try? await backend.deleteCourseRound(roundId: round.id, userId: userId)
+            activeRound = nil
+            return
+        }
         round.endedAt = Date()
         round.scoreSummary = computeSummary(round)
         do {

@@ -33,6 +33,14 @@ struct GolfCourse: Codable, Identifiable {
         guard hasRealGeometry else { return false }
         return geometryMetadata?.isTrusted ?? true
     }
+
+    /// True only when every playable hole has a tee coordinate. Requires geometry to be loaded;
+    /// returns false for search stubs (holes: []).
+    var hasFullTeeCoords: Bool {
+        let playable = holes.filter { $0.number > 0 }
+        guard !playable.isEmpty else { return false }
+        return playable.allSatisfy { $0.teeCoordinate != nil }
+    }
 }
 
 enum CourseSource: String, Codable {

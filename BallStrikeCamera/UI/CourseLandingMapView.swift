@@ -39,9 +39,11 @@ struct CourseLandingMapView: UIViewRepresentable {
     }
 
     var landingCoordinate: CLLocationCoordinate2D? {
-        guard let o = origin,
-              let green = context.greenCenterCoordinate,
-              let m = metrics else { return nil }
+        guard let o = origin, let m = metrics else { return nil }
+        // Prefer the exact green center; fall back to the last hole-path point so the
+        // carry trail still draws when OSM enrichment fails or GPS data is sparse.
+        let green = context.greenCenterCoordinate ?? context.holePathCoordinates.last
+        guard let green else { return nil }
         guard let carryYds = (m.distance.totalYards ?? m.distance.carryYards)
                 .flatMap({ $0 > 0 ? $0 : nil }) else { return nil }
         let bearing   = GolfGeometry.bearing(from: o, to: green)
@@ -112,12 +114,12 @@ struct CourseLandingMapView: UIViewRepresentable {
 
         // Re-frame whenever the map gets a real size (first layout, orientation change, etc.).
         // setup() can't do this — bounds are zero at the time it first runs.
+        // frameCamera reads context.teeCoordinate/greenCenterCoordinate directly — it does
+        // not need landing to be non-nil, so call it unconditionally once bounds are valid.
         let currentSize = map.bounds.size
         if currentSize.width > 0, currentSize != coord.lastBoundsSize {
             coord.lastBoundsSize = currentSize
-            if let o2 = o, let l2 = landing {
-                frameCamera(map, origin: o2, landing: l2)
-            }
+            frameCamera(map, origin: o, landing: landing)
         }
 
         guard let o, let landing else { return }
@@ -173,12 +175,8 @@ struct CourseLandingMapView: UIViewRepresentable {
             _ = rollPt  // suppress unused warning
         }
 
-        // Lime-green landing ring appears when ball touches down.
-        let landed = fp >= 0.98
-        coord.setLandingVisible(landed)
-        // Hide white ball dot when at rest (lime ring takes over).
-        let atRest = landed && rp >= 0.98
-        coord.setBallVisible(!atRest)
+        // Keep the white ball dot visible throughout — no landing ring in course mode.
+        coord.setBallVisible(true)
     }
 
     // MARK: Setup
@@ -197,7 +195,6 @@ struct CourseLandingMapView: UIViewRepresentable {
 
         if let g = context.greenCenterCoordinate { map.addAnnotation(PinAnnotation(g)) }
         if let o = origin  { map.addAnnotation(BallInFlightAnnotation(o)) }
-        if let l = landing { map.addAnnotation(LandingRingAnnotation(l)) }
         // frameCamera is NOT called here — bounds are zero at first updateUIView.
         // It fires from the bounds-change guard below once the map is laid out.
     }

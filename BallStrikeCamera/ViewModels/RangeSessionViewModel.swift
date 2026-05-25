@@ -79,6 +79,7 @@ final class RangeSessionViewModel: ObservableObject {
 
     func endSession() async {
         guard var session = activeSession else { return }
+        guard !session.shotIds.isEmpty else { await discardSession(); return }
         session.endedAt = Date()
         session.summary = summary
         do {
@@ -92,6 +93,7 @@ final class RangeSessionViewModel: ObservableObject {
 
     func endSessionWithDetails(name: String, description: String?) async {
         guard var session = activeSession else { return }
+        guard !session.shotIds.isEmpty else { await discardSession(); return }
         session.name = name
         session.sessionDescription = description
         session.endedAt = Date()

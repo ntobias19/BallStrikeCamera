@@ -79,6 +79,7 @@ final class SimSessionViewModel: ObservableObject {
 
     func endSession() async {
         guard var session = activeSession else { return }
+        guard !session.shotIds.isEmpty else { await discardSession(); return }
         session.endedAt = Date()
         do {
             try await backend.saveSimSession(session)
@@ -91,6 +92,7 @@ final class SimSessionViewModel: ObservableObject {
 
     func endSessionWithDetails(name: String, description: String?, usedOGS: Bool = false) async {
         guard var session = activeSession else { return }
+        guard !session.shotIds.isEmpty else { await discardSession(); return }
         session.name = name
         session.sessionDescription = description
         session.usedOpenGolfSim = usedOGS

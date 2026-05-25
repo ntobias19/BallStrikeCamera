@@ -255,10 +255,10 @@ struct CourseSearchView: View {
                             .font(.system(size: 12))
                             .foregroundColor(TCTheme.textMuted)
                         HStack(spacing: 6) {
-                            let hasGPS = course.source == .merged
-                                || course.holes.contains(where: { $0.greenCenterCoordinate != nil })
-                            if hasGPS {
+                            if course.hasFullTeeCoords {
                                 courseBadge("GPS Map", TCTheme.gold)
+                            } else if course.source == .merged || course.hasRealGeometry {
+                                courseBadge("Map Data", TCTheme.sage)
                             } else {
                                 courseBadge("Map coming soon", TCTheme.textMuted)
                             }
@@ -361,6 +361,17 @@ struct CourseSearchView: View {
         isLoadingNearby = true
         errorMessage = nil
         defer { isLoadingNearby = false }
+        // Use Supabase catalog so only real golf courses appear (MKLocalSearch lets
+        // venues like Topgolf / Xgolf slip through as "golf courses").
+        let catalog = await CourseCatalog.search(query: "", near: userLoc, limit: 20)
+        if !catalog.isEmpty {
+            nearbyCourses = catalog.sorted {
+                (distanceMiles(course: $0, user: userLoc) ?? .infinity)
+                    < (distanceMiles(course: $1, user: userLoc) ?? .infinity)
+            }
+            return
+        }
+        // Fallback: database unavailable — use MapKit but filter out obvious non-golf venues.
         do {
             let request = MKLocalSearch.Request()
             request.naturalLanguageQuery = "golf course"
@@ -544,7 +555,9 @@ private struct TeeSelectorSheet: View {
                 }
                 .padding(.horizontal, TCTheme.hPad)
                 .padding(.top, 14)
-                .padding(.bottom, 10)
+                .padding(.bottom, 6)
+
+                Divider().opacity(0.4)
 
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 10) {
@@ -558,7 +571,7 @@ private struct TeeSelectorSheet: View {
                                     .foregroundColor(TCTheme.textMuted)
                             }
                             .padding(.horizontal, TCTheme.hPad)
-                            .padding(.bottom, 4)
+                            .padding(.bottom, 2)
                         }
                         ForEach(course.teeBoxes) { tee in
                             teeRow(tee)
@@ -571,7 +584,7 @@ private struct TeeSelectorSheet: View {
                         }
                     }
                     .padding(.horizontal, TCTheme.hPad)
-                    .padding(.top, 8)
+                    .padding(.top, 12)
                     .padding(.bottom, 40)
                 }
             }
