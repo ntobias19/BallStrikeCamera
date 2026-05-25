@@ -1,4 +1,5 @@
 import Foundation
+import CoreLocation
 
 // MARK: - Shot Context
 
@@ -18,6 +19,13 @@ struct ShotContext {
     var holeYardage: Int?          = nil
     var courseName: String?        = nil
     var holeHandicap: Int?         = nil
+
+    // Course-mode geography — used by CourseLandingMapView to show where
+    // the ball lands on the satellite view in the right animation panel.
+    var playerCoordinate: CLLocationCoordinate2D?       = nil
+    var greenCenterCoordinate: CLLocationCoordinate2D?  = nil
+    var teeCoordinate: CLLocationCoordinate2D?          = nil
+    var holePathCoordinates: [CLLocationCoordinate2D]   = []
 
     var shotMode: ShotMode {
         switch sourceMode {

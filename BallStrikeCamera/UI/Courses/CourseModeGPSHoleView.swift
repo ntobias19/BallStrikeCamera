@@ -210,12 +210,6 @@ private struct CoordinateBox: Identifiable {
     let coord: CLLocationCoordinate2D
 }
 
-private struct SuggestedAimPoint {
-    let coordinate: CLLocationCoordinate2D
-    let targetYards: Int
-    let remainingYards: Int
-}
-
 // MARK: - Tagged Polygon (carries a kind so the renderer can style it)
 
 private final class TaggedPolygon: MKPolygon {
@@ -238,57 +232,139 @@ private final class ShotPolyline: MKPolyline {}
 private final class HolePathPolyline: MKPolyline {}
 private final class HolePathCasingPolyline: MKPolyline {}
 
-private final class AimPointAnnotation: NSObject, MKAnnotation {
-    let coordinate: CLLocationCoordinate2D
-    let targetYards: Int
-    let remainingYards: Int
+/// One strategic segment of the aim-path (tee→aim1, aim1→aim2, aim2→green).
+private final class AimSegmentPolyline: MKPolyline {}
+private final class AimSegmentCasingPolyline: MKPolyline {}
 
-    init(coordinate: CLLocationCoordinate2D, targetYards: Int, remainingYards: Int) {
+// MARK: - Aim Point (draggable circle on the map)
+
+private final class AimPointAnnotation: NSObject, MKAnnotation {
+    @objc dynamic var coordinate: CLLocationCoordinate2D
+    let index: Int
+
+    init(coordinate: CLLocationCoordinate2D, index: Int) {
         self.coordinate = coordinate
-        self.targetYards = targetYards
-        self.remainingYards = remainingYards
+        self.index = index
     }
 }
 
 private final class AimPointAnnotationView: MKAnnotationView {
     private let ring = UIView()
-    private let dot = UIView()
-    private let label = UILabel()
+    private let dot  = UIView()
+    /// Called every animation frame while the user drags this aim point.
+    var onCenterChanged: ((CGPoint) -> Void)?
 
     override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
         super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
-        frame = CGRect(x: 0, y: 0, width: 132, height: 58)
-        centerOffset = CGPoint(x: 0, y: -12)
+        frame = CGRect(x: 0, y: 0, width: 44, height: 44)
+        centerOffset = .zero
         backgroundColor = .clear
+        isDraggable = true
 
-        ring.frame = CGRect(x: 50, y: 0, width: 32, height: 32)
-        ring.backgroundColor = UIColor.white.withAlphaComponent(0.12)
-        ring.layer.cornerRadius = 16
-        ring.layer.borderColor = UIColor.white.withAlphaComponent(0.95).cgColor
-        ring.layer.borderWidth = 2
+        ring.frame = bounds
+        ring.backgroundColor = UIColor.white.withAlphaComponent(0.15)
+        ring.layer.cornerRadius = 22
+        ring.layer.borderColor = UIColor.white.withAlphaComponent(0.92).cgColor
+        ring.layer.borderWidth = 2.5
+        ring.layer.shadowColor  = UIColor.black.cgColor
+        ring.layer.shadowRadius = 5
+        ring.layer.shadowOpacity = 0.55
+        ring.layer.shadowOffset = .zero
         addSubview(ring)
 
-        dot.frame = CGRect(x: 63, y: 13, width: 6, height: 6)
+        dot.frame = CGRect(x: 19, y: 19, width: 6, height: 6)
         dot.backgroundColor = .white
         dot.layer.cornerRadius = 3
         addSubview(dot)
+    }
 
-        label.frame = CGRect(x: 6, y: 34, width: 120, height: 22)
+    required init?(coder: NSCoder) { fatalError() }
+
+    // MapKit updates `center` each frame during drag but only sets `coordinate`
+    // at drag-end, so observe center instead for real-time line rebuilds.
+    override var center: CGPoint {
+        didSet {
+            if dragState == .dragging { onCenterChanged?(center) }
+        }
+    }
+}
+
+// MARK: - Tee Marker (navy dot at tee coordinate)
+
+private final class TeeAnnotation: NSObject, MKAnnotation {
+    let coordinate: CLLocationCoordinate2D
+    init(coordinate: CLLocationCoordinate2D) { self.coordinate = coordinate }
+}
+
+private final class TeeAnnotationView: MKAnnotationView {
+    override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
+        super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
+        frame = CGRect(x: 0, y: 0, width: 14, height: 14)
+        backgroundColor = .clear
+        isUserInteractionEnabled = false
+        let dot = UIView(frame: bounds)
+        dot.backgroundColor = UIColor(red: 0.08, green: 0.18, blue: 0.42, alpha: 1.0) // navy
+        dot.layer.cornerRadius = 7
+        dot.layer.borderColor = UIColor.white.withAlphaComponent(0.88).cgColor
+        dot.layer.borderWidth  = 1.5
+        dot.layer.shadowColor  = UIColor.black.cgColor
+        dot.layer.shadowRadius = 3
+        dot.layer.shadowOpacity = 0.45
+        dot.layer.shadowOffset  = .zero
+        addSubview(dot)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+}
+
+// MARK: - Segment Distance Label (floats over the midpoint of each aim segment)
+
+private final class SegmentLabelAnnotation: NSObject, MKAnnotation {
+    let coordinate: CLLocationCoordinate2D
+    let yardage: Int
+    init(coordinate: CLLocationCoordinate2D, yardage: Int) {
+        self.coordinate = coordinate
+        self.yardage    = yardage
+    }
+}
+
+private final class SegmentLabelAnnotationView: MKAnnotationView {
+    private let pill  = UIView()
+    private let label = UILabel()
+    private static let labelFont = UIFont.systemFont(ofSize: 14, weight: .bold)
+
+    override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
+        super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
+        frame = CGRect(x: 0, y: 0, width: 48, height: 26)
+        backgroundColor = .clear
+        isUserInteractionEnabled = false
+
+        pill.backgroundColor = UIColor(white: 0.04, alpha: 0.82)
+        pill.layer.cornerRadius = 13
+        pill.layer.borderColor  = UIColor.white.withAlphaComponent(0.22).cgColor
+        pill.layer.borderWidth  = 0.5
+        pill.frame = bounds
+        addSubview(pill)
+
+        label.textColor     = .white
         label.textAlignment = .center
-        label.textColor = .white
-        label.font = UIFont.systemFont(ofSize: 11, weight: .heavy)
-        label.backgroundColor = UIColor(white: 0.04, alpha: 0.72)
-        label.layer.cornerRadius = 11
-        label.layer.masksToBounds = true
-        addSubview(label)
+        label.font = Self.labelFont
+        label.frame = pill.bounds
+        pill.addSubview(label)
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
     override var annotation: MKAnnotation? {
         didSet {
-            guard let a = annotation as? AimPointAnnotation else { return }
-            label.text = "Aim \(a.targetYards) · \(a.remainingYards) left"
+            guard let a = annotation as? SegmentLabelAnnotation else { return }
+            label.text = "\(a.yardage)"
+            let tw = (label.text! as NSString).size(withAttributes: [
+                .font: Self.labelFont
+            ]).width + 18
+            let w = max(38, tw)
+            frame = CGRect(x: 0, y: 0, width: w, height: 26)
+            pill.frame = bounds
+            label.frame = bounds
         }
     }
 }
@@ -400,10 +476,21 @@ private struct SatelliteMapBackground: UIViewRepresentable {
     var bunkerPolygons:  [[CLLocationCoordinate2D]] = []
     var waterPolygons:   [[CLLocationCoordinate2D]] = []
     var pathCoordinates: [CLLocationCoordinate2D] = []
-    var aimPoint: SuggestedAimPoint? = nil
+    /// Strategic aim-point coordinates. Empty = no aim overlay (par 3, short holes).
+    var aimPoints: [CLLocationCoordinate2D] = []
+    /// Called when the user finishes dragging an aim point. (index, newCoord)
+    var onAimPointMoved: ((Int, CLLocationCoordinate2D) -> Void)? = nil
+    /// Called when the user manually pans the map.
+    var onUserPanned: (() -> Void)? = nil
 
     // Tracked shot polylines + markers (current hole only)
     var trackedShots:    [TrackedShot] = []
+
+    // UI inset hints so the camera frames the hole within the usable (non-overlapped) area.
+    var topUIInset:    CGFloat = 100   // pts: safe area + top pills height
+    var bottomUIInset: CGFloat = 100   // pts: bottom bar + home indicator height
+    /// Coarse GPS key (rounded to ~40 m) — when it changes, the camera reframes to show GPS→green.
+    var gpsKey:        String = ""
 
     // When non-nil, taps on the map are forwarded to this closure.
     var onMapTap:        ((CLLocationCoordinate2D) -> Void)? = nil
@@ -468,16 +555,23 @@ private struct SatelliteMapBackground: UIViewRepresentable {
         map.showsCompass        = false
         map.delegate            = context.coordinator
         context.coordinator.parent = self
-        // Limit zoom: min 50m (green detail) → max 2500m (~5× a long par-5, keeps view on-hole).
+        // Limit zoom: min 50m (green detail) → max 2500m (~6× a long par-5).
         map.cameraZoomRange = MKMapView.CameraZoomRange(
             minCenterCoordinateDistance: 50,
-            maxCenterCoordinateDistance: 1500
+            maxCenterCoordinateDistance: 2500
         )
         let tap = UITapGestureRecognizer(target: context.coordinator,
                                           action: #selector(Coordinator.handleTap(_:)))
         map.addGestureRecognizer(tap)
+        // Crop ~12% from each side horizontally and stretch to fill, making the fairway
+        // appear wider without changing the vertical zoom level.
+        map.transform = CGAffineTransform(scaleX: Self.kHorizStretch, y: 1.0)
         return map
     }
+
+    /// Horizontal stretch applied to the map view. Annotation views apply the
+    /// inverse so labels/circles render at their natural (non-squished) size.
+    static let kHorizStretch: CGFloat = 1.30
 
     func updateUIView(_ map: MKMapView, context: Context) {
         context.coordinator.parent = self
@@ -487,8 +581,8 @@ private struct SatelliteMapBackground: UIViewRepresentable {
         // overlay teardown/rebuild when nothing visual changed; this is the key to a smooth map.
         let g = greenCoord.map { "\($0.latitude),\($0.longitude)" } ?? "-"
         let t = teeCoord.map { "\($0.latitude),\($0.longitude)" } ?? "-"
-        let aimKey = aimPoint.map { "\($0.targetYards)-\($0.remainingYards)" } ?? "-"
-        let renderKey = "\(focusId)|\(g)|\(t)|\(trackedShots.count)|\(aimKey)|\(recenterToken)"
+        let aimKey = aimPoints.map { "\(Int($0.latitude * 10000)),\(Int($0.longitude * 10000))" }.joined(separator: "|")
+        let renderKey = "\(focusId)|\(g)|\(t)|\(trackedShots.count)|\(aimKey)|\(recenterToken)|\(gpsKey)"
         let flightPending = flightRequest != nil && flightRequest!.id != context.coordinator.lastFlightId
         if renderKey == context.coordinator.lastRenderKey && !flightPending {
             return
@@ -510,57 +604,117 @@ private struct SatelliteMapBackground: UIViewRepresentable {
         }
 
         let shouldRecenter = context.coordinator.shouldRecenter(for: focusId,
-                                                                recenterToken: recenterToken)
+                                                                recenterToken: recenterToken,
+                                                                gpsKey: gpsKey)
 
-        // Region / camera
-        // Preferred: 18Birdies-style "down the hole" view — frame the whole hole from the
-        // tee (bottom) to the green (top), rotated so you look straight down the fairway.
-        let lineStart = teeCoord ?? userCoord            // bottom of the hole
+        // Compute the UI-aware camera framing constants.
+        // We need flag visible below the top bar and tee/GPS visible above the bottom bar.
+        let screenH = Double(UIScreen.main.bounds.height)
+        let topF    = Double(topUIInset)    / max(screenH, 1)
+        let botF    = Double(bottomUIInset) / max(screenH, 1)
+        let usableF = max(0.40, 1.0 - topF - botF)   // fraction of screen that's un-occluded
+        // t-value along path [tee→green] that appears at screen center (pos=0.5).
+        // Derivation: pos(t) = topF + (1-t)·usableF → set pos=0.5 → t = (0.5-botF)/usableF
+        let centerT = (0.5 - botF) / max(usableF, 0.01)
+
+        // Dynamic lineStart: prefer GPS when user is meaningfully closer to green than the tee.
+        let lineStart: CLLocationCoordinate2D?
+        if let user = userCoord, let tee = teeCoord, let green = greenCoord {
+            let d_user = MKMapPoint(user).distance(to: MKMapPoint(green))
+            let d_tee  = MKMapPoint(tee).distance(to: MKMapPoint(green))
+            lineStart = d_user < d_tee * 0.80 ? user : tee  // use GPS once inside 80% of hole
+        } else {
+            lineStart = teeCoord ?? userCoord
+        }
+
         var holePathForOverlay: [CLLocationCoordinate2D] = []
         if let green = greenCoord, let start = lineStart, !coordsEqual(start, green) {
             holePathForOverlay = preferredHolePath(start: start, green: green)
             if shouldRecenter {
                 let routeStart = holePathForOverlay.first ?? start
-                let routeEnd = holePathForOverlay.last ?? green
-                let mid = Self.midpoint(routeStart, routeEnd)
-                let holeMeters = MKMapPoint(start).distance(to: MKMapPoint(green))
-                let heading = Self.bearing(from: routeStart, to: routeEnd)   // green points "up"
-                // Bias the center slightly toward the green so the forward hole fills more
-                // of the (taller) portrait view, with the tee near the bottom edge.
-                let biasedCenter = Self.interpolate(routeStart, routeEnd, t: 0.55)
-                let camDistance = max(holeMeters * 2.2 + 200, 420)
+                let routeEnd   = holePathForOverlay.last  ?? green
+                let heading    = Self.bearing(from: routeStart, to: routeEnd)
+
+                let kPad     = 20.0
+                let h_rad    = heading * .pi / 180.0
+                let cosLat   = cos(start.latitude * .pi / 180.0)
+                let kMPerDeg = 111_320.0
+                var minX = Double.infinity, maxX = -Double.infinity
+                var minY = Double.infinity, maxY = -Double.infinity
+                for coord in holePathForOverlay {
+                    let dn = (coord.latitude  - start.latitude)  * kMPerDeg
+                    let de = (coord.longitude - start.longitude) * kMPerDeg * cosLat
+                    let sy =  dn * cos(h_rad) + de * sin(h_rad)
+                    let sx = -dn * sin(h_rad) + de * cos(h_rad)
+                    minX = min(minX, sx); maxX = max(maxX, sx)
+                    minY = min(minY, sy); maxY = max(maxY, sy)
+                }
+                let vertExtent  = (maxY - minY) + 2 * kPad
+                let horizExtent = max((maxX - minX) + 2 * kPad, kPad * 2)
+                let midX        = (minX + maxX) / 2.0
+
+                let centerOnPath = Self.interpolate(routeStart, routeEnd, t: centerT)
+                let cosLatC = cos(centerOnPath.latitude * .pi / 180.0)
+                let biasedCenter = CLLocationCoordinate2D(
+                    latitude:  centerOnPath.latitude  - midX * sin(h_rad) / kMPerDeg,
+                    longitude: centerOnPath.longitude + midX * cos(h_rad) / (kMPerDeg * max(cosLatC, 1e-6))
+                )
+
+                // Build a virtual MKMapRect whose N-S dimension = vertExtent (along-hole) and
+                // E-W dimension = horizExtent (across-hole). setVisibleMapRect with the UI
+                // edge insets then gives MapKit's own altitude — no assumed ratio needed.
+                // Two setProgrammaticRegionChange calls are needed because setVisibleMapRect
+                // (animated:false) fires regionDidChangeAnimated synchronously, consuming the flag.
+                let ptsPerMeter = MKMapPointsPerMeterAtLatitude(biasedCenter.latitude)
+                let centerPt    = MKMapPoint(biasedCenter)
+                let fittingRect = MKMapRect(
+                    x: centerPt.x - (horizExtent / 2) * ptsPerMeter,
+                    y: centerPt.y - (vertExtent  / 2) * ptsPerMeter,
+                    width:  horizExtent * ptsPerMeter,
+                    height: vertExtent  * ptsPerMeter
+                )
+                let edgePad = UIEdgeInsets(top: topUIInset, left: 8,
+                                           bottom: bottomUIInset, right: 8)
+                context.coordinator.setProgrammaticRegionChange(true)
+                map.setVisibleMapRect(fittingRect, edgePadding: edgePad, animated: false)
+                let fittedAlt = max(map.camera.altitude * 0.90, 150.0)
+
                 let cam = MKMapCamera(lookingAtCenter: biasedCenter,
-                                      fromDistance: camDistance,
+                                      fromDistance: fittedAlt,
                                       pitch: 0,
                                       heading: heading)
-                _ = mid
                 context.coordinator.setProgrammaticRegionChange(true)
                 map.setCamera(cam, animated: context.coordinator.hasInitializedRegion)
-                context.coordinator.completeRecenter(focusId: focusId, recenterToken: recenterToken)
+                context.coordinator.completeRecenter(focusId: focusId, recenterToken: recenterToken, gpsKey: gpsKey)
             }
         } else if let green = greenCoord {
             if shouldRecenter {
+                let kPad = 20.0
+                let ptsPerMeter = MKMapPointsPerMeterAtLatitude(green.latitude)
+                let greenPt = MKMapPoint(green)
+                let padPts = kPad * ptsPerMeter
+                let rect = MKMapRect(x: greenPt.x - padPts, y: greenPt.y - padPts,
+                                     width: padPts * 2, height: padPts * 2)
+                let edgePad = UIEdgeInsets(top: topUIInset, left: 8, bottom: bottomUIInset, right: 8)
                 context.coordinator.setProgrammaticRegionChange(true)
-                map.setRegion(
-                    MKCoordinateRegion(center: green,
-                                       latitudinalMeters: 580,
-                                       longitudinalMeters: 580),
-                    animated: context.coordinator.hasInitializedRegion
-                )
-                context.coordinator.completeRecenter(focusId: focusId, recenterToken: recenterToken)
+                map.setVisibleMapRect(rect, edgePadding: edgePad, animated: false)
+                let alt = max(map.camera.altitude, 50.0)
+                let cam = MKMapCamera(lookingAtCenter: green, fromDistance: alt, pitch: 0, heading: 0)
+                context.coordinator.setProgrammaticRegionChange(true)
+                map.setCamera(cam, animated: context.coordinator.hasInitializedRegion)
+                context.coordinator.completeRecenter(focusId: focusId, recenterToken: recenterToken, gpsKey: gpsKey)
             }
         } else {
-            // Always center on the course/hole — never follow the user's GPS alone
             let center = courseCoord ?? CLLocationCoordinate2D(latitude: 37.785834, longitude: -122.406417)
             if shouldRecenter {
                 context.coordinator.setProgrammaticRegionChange(true)
                 map.setRegion(
                     MKCoordinateRegion(center: center,
-                                       latitudinalMeters: 650,
-                                       longitudinalMeters: 650),
+                                       latitudinalMeters: 650 / usableF,
+                                       longitudinalMeters: 650 / usableF),
                     animated: context.coordinator.hasInitializedRegion
                 )
-                context.coordinator.completeRecenter(focusId: focusId, recenterToken: recenterToken)
+                context.coordinator.completeRecenter(focusId: focusId, recenterToken: recenterToken, gpsKey: gpsKey)
             }
         }
 
@@ -597,21 +751,43 @@ private struct SatelliteMapBackground: UIViewRepresentable {
             map.addOverlay(TaggedPolygon.make(kind: "green", coordinates: g), level: .aboveRoads)
         }
 
-        if holePathForOverlay.count >= 2 {
+        // Aim segments (when aim points are active) replace the single HolePathPolyline.
+        // For par 3 / straight short holes, aimPoints is empty and we fall back to path line.
+        if !aimPoints.isEmpty, let lineStart = teeCoord ?? userCoord, let green = greenCoord {
+            // Draw segments: lineStart → aim[0] → aim[1] → … → green
+            let waypoints = [lineStart] + aimPoints + [green]
+            // Store in coordinator so drag handler can rebuild lines in real-time.
+            context.coordinator.currentAimWaypoints = waypoints
+            for i in 0..<waypoints.count - 1 {
+                var pts = [waypoints[i], waypoints[i + 1]]
+                map.addOverlay(AimSegmentCasingPolyline(coordinates: &pts, count: 2), level: .aboveLabels)
+                map.addOverlay(AimSegmentPolyline(coordinates: &pts, count: 2), level: .aboveLabels)
+                // Distance label at segment midpoint
+                let mid = Self.midpoint(waypoints[i], waypoints[i + 1])
+                let yards = Int((MKMapPoint(waypoints[i]).distance(to: MKMapPoint(waypoints[i + 1])) * 1.09361).rounded())
+                map.addAnnotation(SegmentLabelAnnotation(coordinate: mid, yardage: yards))
+            }
+            // Tee dot
+            if let tee = teeCoord {
+                map.addAnnotation(TeeAnnotation(coordinate: tee))
+            }
+            // Draggable aim-point rings
+            for (i, ap) in aimPoints.enumerated() {
+                map.addAnnotation(AimPointAnnotation(coordinate: ap, index: i))
+            }
+        } else if holePathForOverlay.count >= 2 {
+            // Straight line (par 3 or no aim points)
             var pts = holePathForOverlay
             map.addOverlay(HolePathCasingPolyline(coordinates: &pts, count: pts.count), level: .aboveLabels)
             map.addOverlay(HolePathPolyline(coordinates: &pts, count: pts.count), level: .aboveLabels)
+            if let tee = teeCoord {
+                map.addAnnotation(TeeAnnotation(coordinate: tee))
+            }
         }
 
         // Yellow flag at green center
         if let green = greenCoord {
             map.addAnnotation(GreenPinAnnotation(coordinate: green))
-        }
-
-        if let aim = aimPoint {
-            map.addAnnotation(AimPointAnnotation(coordinate: aim.coordinate,
-                                                 targetYards: aim.targetYards,
-                                                 remainingYards: aim.remainingYards))
         }
 
         // Tracked shot polylines + markers
@@ -640,7 +816,11 @@ private struct SatelliteMapBackground: UIViewRepresentable {
         var lastRenderKey = ""
         private var lastFocusId = ""
         private var lastRecenterToken = -1
+        private var lastGpsKey = ""
         private var isProgrammaticRegionChange = false
+        // Full waypoints [lineStart, aim[0], …, green] — kept in sync so the drag handler can
+        // rebuild segment overlays in real-time without a SwiftUI round-trip.
+        var currentAimWaypoints: [CLLocationCoordinate2D] = []
 
         // Flight animation state
         var lastFlightId: UUID?
@@ -727,14 +907,16 @@ private struct SatelliteMapBackground: UIViewRepresentable {
             }
         }
 
-        func shouldRecenter(for focusId: String, recenterToken: Int) -> Bool {
-            !hasInitializedRegion || focusId != lastFocusId || recenterToken != lastRecenterToken
+        func shouldRecenter(for focusId: String, recenterToken: Int, gpsKey: String) -> Bool {
+            !hasInitializedRegion || focusId != lastFocusId
+                || recenterToken != lastRecenterToken || gpsKey != lastGpsKey
         }
 
-        func completeRecenter(focusId: String, recenterToken: Int) {
+        func completeRecenter(focusId: String, recenterToken: Int, gpsKey: String) {
             hasInitializedRegion = true
             lastFocusId = focusId
             lastRecenterToken = recenterToken
+            lastGpsKey = gpsKey
         }
 
         func setProgrammaticRegionChange(_ value: Bool) {
@@ -744,6 +926,71 @@ private struct SatelliteMapBackground: UIViewRepresentable {
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
             if isProgrammaticRegionChange {
                 isProgrammaticRegionChange = false
+            } else {
+                // User manually panned — notify SwiftUI to show the recenter button.
+                parent?.onUserPanned?()
+            }
+        }
+
+        func mapView(_ mapView: MKMapView, annotationView view: MKAnnotationView,
+                     didChange newState: MKAnnotationView.DragState,
+                     fromOldState oldState: MKAnnotationView.DragState) {
+            guard let aim = view.annotation as? AimPointAnnotation else { return }
+
+            switch newState {
+            case .starting:
+                // MapKit only updates annotation.coordinate at drag-end, not each frame.
+                // Hook into the annotation view's `center` instead — it tracks the finger live.
+                if let aimView = view as? AimPointAnnotationView {
+                    let idx = aim.index
+                    aimView.onCenterChanged = { [weak self, weak mapView] screenCenter in
+                        guard let self, let map = mapView else { return }
+                        let coord = map.convert(screenCenter, toCoordinateFrom: map)
+                        self.rebuildAimSegments(on: map, movingIndex: idx, to: coord)
+                    }
+                }
+
+            case .canceling, .none:
+                (view as? AimPointAnnotationView)?.onCenterChanged = nil
+
+            case .ending:
+                (view as? AimPointAnnotationView)?.onCenterChanged = nil
+                // Final position — update stored waypoints and notify SwiftUI.
+                let wi = aim.index + 1
+                if wi > 0, wi < currentAimWaypoints.count - 1 {
+                    currentAimWaypoints[wi] = aim.coordinate
+                }
+                parent?.onAimPointMoved?(aim.index, aim.coordinate)
+
+            default:
+                break
+            }
+        }
+
+        // Swaps only the aim-segment overlays/labels so lines follow the dragged point live.
+        // Annotation views (aim rings, tee dot, flag) are untouched to avoid any flicker.
+        private func rebuildAimSegments(on mapView: MKMapView,
+                                        movingIndex: Int,
+                                        to newCoord: CLLocationCoordinate2D) {
+            var waypoints = currentAimWaypoints
+            let wi = movingIndex + 1
+            guard wi > 0, wi < waypoints.count - 1 else { return }
+            waypoints[wi] = newCoord
+
+            let oldOverlays = mapView.overlays.filter {
+                $0 is AimSegmentPolyline || $0 is AimSegmentCasingPolyline
+            }
+            mapView.removeOverlays(oldOverlays)
+            let oldLabels = mapView.annotations.filter { $0 is SegmentLabelAnnotation }
+            mapView.removeAnnotations(oldLabels)
+
+            for i in 0..<waypoints.count - 1 {
+                var pts = [waypoints[i], waypoints[i + 1]]
+                mapView.addOverlay(AimSegmentCasingPolyline(coordinates: &pts, count: 2), level: .aboveLabels)
+                mapView.addOverlay(AimSegmentPolyline(coordinates: &pts, count: 2), level: .aboveLabels)
+                let mid   = SatelliteMapBackground.midpoint(waypoints[i], waypoints[i + 1])
+                let yards = Int((MKMapPoint(waypoints[i]).distance(to: MKMapPoint(waypoints[i + 1])) * 1.09361).rounded())
+                mapView.addAnnotation(SegmentLabelAnnotation(coordinate: mid, yardage: yards))
             }
         }
 
@@ -786,8 +1033,23 @@ private struct SatelliteMapBackground: UIViewRepresentable {
                 r.lineWidth   = 3.5
                 return r
             }
+            if overlay is AimSegmentCasingPolyline, let line = overlay as? MKPolyline {
+                let r         = MKPolylineRenderer(polyline: line)
+                r.strokeColor = UIColor.black.withAlphaComponent(0.28)
+                r.lineWidth   = 6.0
+                r.lineCap     = .round
+                r.lineJoin    = .round
+                return r
+            }
+            if overlay is AimSegmentPolyline, let line = overlay as? MKPolyline {
+                let r         = MKPolylineRenderer(polyline: line)
+                r.strokeColor = UIColor.white.withAlphaComponent(0.90)
+                r.lineWidth   = 2.8
+                r.lineCap     = .round
+                r.lineJoin    = .round
+                return r
+            }
             if overlay is HolePathCasingPolyline, let line = overlay as? MKPolyline {
-                // Soft dark casing = the line's shadow/glow, giving the thin stroke depth.
                 let r             = MKPolylineRenderer(polyline: line)
                 r.strokeColor     = UIColor.black.withAlphaComponent(0.32)
                 r.lineWidth       = 5.0
@@ -849,6 +1111,8 @@ private struct SatelliteMapBackground: UIViewRepresentable {
                 return v
             }
 
+            let invStretch = CGAffineTransform(scaleX: 1.0 / SatelliteMapBackground.kHorizStretch, y: 1.0)
+
             if let bubble = annotation as? DistanceBubbleAnnotation {
                 let id  = "distBubble"
                 let v   = mapView.dequeueReusableAnnotationView(withIdentifier: id)
@@ -856,6 +1120,7 @@ private struct SatelliteMapBackground: UIViewRepresentable {
                             ?? DistanceBubbleAnnotationView(annotation: bubble, reuseIdentifier: id)
                 v.annotation      = bubble
                 v.displayPriority = .required
+                v.transform       = invStretch
                 v.setNeedsLayout()
                 v.layoutIfNeeded()
                 return v
@@ -866,8 +1131,9 @@ private struct SatelliteMapBackground: UIViewRepresentable {
                 let v = mapView.dequeueReusableAnnotationView(withIdentifier: id)
                     as? GreenDistanceStackAnnotationView
                     ?? GreenDistanceStackAnnotationView(annotation: stack, reuseIdentifier: id)
-                v.annotation = stack
+                v.annotation  = stack
                 v.displayPriority = .required
+                v.transform   = invStretch
                 return v
             }
 
@@ -876,8 +1142,31 @@ private struct SatelliteMapBackground: UIViewRepresentable {
                 let v = mapView.dequeueReusableAnnotationView(withIdentifier: id)
                     as? AimPointAnnotationView
                     ?? AimPointAnnotationView(annotation: aim, reuseIdentifier: id)
-                v.annotation = aim
+                v.annotation  = aim
                 v.displayPriority = .required
+                v.transform   = invStretch
+                return v
+            }
+
+            if annotation is TeeAnnotation {
+                let id = "teeMarker"
+                let v = mapView.dequeueReusableAnnotationView(withIdentifier: id)
+                    as? TeeAnnotationView
+                    ?? TeeAnnotationView(annotation: annotation, reuseIdentifier: id)
+                v.annotation  = annotation
+                v.displayPriority = .required
+                v.transform   = invStretch
+                return v
+            }
+
+            if annotation is SegmentLabelAnnotation {
+                let id = "segLabel"
+                let v = mapView.dequeueReusableAnnotationView(withIdentifier: id)
+                    as? SegmentLabelAnnotationView
+                    ?? SegmentLabelAnnotationView(annotation: annotation, reuseIdentifier: id)
+                v.annotation  = annotation
+                v.displayPriority = .required
+                v.transform   = invStretch
                 return v
             }
 
@@ -902,10 +1191,13 @@ struct CourseModeGPSHoleView: View {
     @State private var infoMessage: String?
     @State private var roundStartTime  = Date()
     @State private var recenterToken   = 0
+    @State private var showRecenter    = false    // true after user pans away
     @State private var trackShotMode   = false                // when true, taps place a shot
     @State private var pendingShotEnd: CLLocationCoordinate2D?
     @State private var pendingShotLie: ShotLie = .unknown
     @State private var pendingLaunchMonitorShot: SavedShot?
+    // Aim-point drag overrides: key = aim point index, value = dragged position
+    @State private var userAimPointOverrides: [Int: CLLocationCoordinate2D] = [:]
     // HUD flight animation state
     @State private var flightRequest: FlightRequest?
     @State private var pendingFlight: FlightRequest?     // held until camera cover dismisses
@@ -998,25 +1290,70 @@ struct CourseModeGPSHoleView: View {
         return []
     }
 
-    private var suggestedAimPoint: SuggestedAimPoint? {
+    /// Returns default aim-point coordinates along the hole path.
+    /// Empty for par 3 and short/straight par 4s — those just show a direct line.
+    private var suggestedAimPoints: [CLLocationCoordinate2D] {
         guard currentHolePathCoordinates.count >= 2,
-              let hole = vm.currentHole else { return nil }
+              let hole = vm.currentHole else { return [] }
+        // Par 3: always a straight line, no aim circle needed.
+        guard hole.par >= 4 else { return [] }
         let totalMeters = Self.pathLengthMeters(currentHolePathCoordinates)
-        guard totalMeters > 25 else { return nil }
+        guard totalMeters > 25 else { return [] }
         let totalYards = Double(scorecardYardage ?? Int((totalMeters * 1.09361).rounded()))
-        let targetYards: Double
-        if hole.par <= 3 || totalYards <= 285 {
-            targetYards = totalYards
-        } else if hole.par == 4 {
-            targetYards = min(255, max(185, totalYards - 120))
-        } else {
-            targetYards = min(265, max(210, totalYards * 0.58))
+        // Short par 4 with no dogleg: skip aim point, just draw the line.
+        if hole.par == 4 && totalYards < 320 && !Self.isSignificantDogleg(currentHolePathCoordinates) {
+            return []
         }
-        let targetMeters = min(targetYards / 1.09361, totalMeters)
-        let coord = Self.coordinate(onPath: currentHolePathCoordinates, atMeters: targetMeters)
-        return SuggestedAimPoint(coordinate: coord,
-                                 targetYards: Int(targetYards.rounded()),
-                                 remainingYards: max(0, Int((totalYards - targetYards).rounded())))
+        if hole.par >= 5 {
+            // Two aim points for par 5: first carry (~255 yds), second layup (~halfway remaining).
+            let t1 = min(255.0, max(200.0, totalYards * 0.40)) / 1.09361
+            let t2 = t1 + min(250.0, max(150.0, (totalMeters - t1) * 0.55))
+            return [
+                Self.coordinate(onPath: currentHolePathCoordinates, atMeters: min(t1, totalMeters - 50)),
+                Self.coordinate(onPath: currentHolePathCoordinates, atMeters: min(t2, totalMeters - 20))
+            ]
+        } else {
+            // Par 4: one aim point.
+            let t1 = min(255.0, max(185.0, totalYards - 120.0)) / 1.09361
+            return [Self.coordinate(onPath: currentHolePathCoordinates, atMeters: min(t1, totalMeters - 20))]
+        }
+    }
+
+    /// Merges default aim points with any user-dragged overrides.
+    /// For par 5s: if aim point 0 is within 225 yards of the green, collapses to a
+    /// single-segment line so the intermediate waypoint disappears automatically.
+    private var activeAimPoints: [CLLocationCoordinate2D] {
+        let pts = suggestedAimPoints.enumerated().map { i, def in
+            userAimPointOverrides[i] ?? def
+        }
+        if pts.count >= 2,
+           let green = currentMapHole?.greenCenterCoordinate?.clCoordinate {
+            let yardsToGreen = Self.metersBetween(pts[0], green) * 1.09361
+            if yardsToGreen <= 225 {
+                return [pts[0]]
+            }
+        }
+        return pts
+    }
+
+    /// True if the hole path bends more than 30 m from a straight tee-to-green line.
+    private static func isSignificantDogleg(_ path: [CLLocationCoordinate2D]) -> Bool {
+        guard path.count >= 3, let tee = path.first, let green = path.last else { return false }
+        let teePt   = MKMapPoint(tee)
+        let greenPt = MKMapPoint(green)
+        let lineLen = teePt.distance(to: greenPt)
+        guard lineLen > 1 else { return false }
+        for coord in path.dropFirst().dropLast() {
+            let p = MKMapPoint(coord)
+            // Perpendicular distance from p to the tee-green line segment.
+            let t = max(0, min(1, ((p.x - teePt.x) * (greenPt.x - teePt.x) +
+                                    (p.y - teePt.y) * (greenPt.y - teePt.y)) / (lineLen * lineLen)))
+            let projX = teePt.x + t * (greenPt.x - teePt.x)
+            let projY = teePt.y + t * (greenPt.y - teePt.y)
+            let perp = MKMapPoint(x: projX, y: projY).distance(to: p)
+            if perp > 30 { return true }  // 30 m offset = dogleg
+        }
+        return false
     }
 
     private var holeHandicap: Int {
@@ -1041,6 +1378,21 @@ struct CourseModeGPSHoleView: View {
         UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
             .first?.windows.first?.safeAreaInsets.top ?? 44
+    }
+
+    private var bottomSafeArea: CGFloat {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first?.windows.first?.safeAreaInsets.bottom ?? 34
+    }
+
+    /// GPS rounded to ~40 m resolution. Changes here trigger a camera reframe (GPS→green zoom-in).
+    private var coarseGpsKey: String {
+        guard gpsOn, userIsNearCurrentHole,
+              let loc = vm.location.currentLocation else { return "" }
+        let lat = (loc.latitude  / 0.0004).rounded() * 0.0004
+        let lon = (loc.longitude / 0.0004).rounded() * 0.0004
+        return "\(lat),\(lon)"
     }
 
     private var timeElapsed: String {
@@ -1123,8 +1475,17 @@ struct CourseModeGPSHoleView: View {
                 bunkerPolygons: currentMapHole?.bunkerPolygons.map(\.clCoordinates) ?? [],
                 waterPolygons:  currentMapHole?.waterPolygons.map(\.clCoordinates)  ?? [],
                 pathCoordinates: currentHolePathCoordinates,
-                aimPoint: suggestedAimPoint,
+                aimPoints:      activeAimPoints,
+                onAimPointMoved: { idx, coord in
+                    userAimPointOverrides[idx] = coord
+                },
+                onUserPanned: {
+                    withAnimation(.spring(response: 0.3)) { showRecenter = true }
+                },
                 trackedShots:   vm.currentHoleTrackedShots,
+                topUIInset:    topSafeArea + 82, // safe area + topBar(44) + gap(2) + infoStrip(30) + margin(6)
+                bottomUIInset: bottomSafeArea + 76, // bottom bar content + home indicator
+                gpsKey:        coarseGpsKey,
                 onMapTap:       trackShotMode ? { coord in handleShotTap(coord) } : nil,
                 focusId:        mapFocusId,
                 recenterToken:  recenterToken,
@@ -1204,13 +1565,13 @@ struct CourseModeGPSHoleView: View {
             // ── Layout layers ──────────────────────────────────────────────
             VStack(spacing: 0) {
 
-                // Top bar
+                // Top bar — sit as close to the notch/island as possible
                 topBar
-                    .padding(.top, topSafeArea - 2)
+                    .padding(.top, 4)
 
                 // Hole info strip
                 holeInfoStrip
-                    .padding(.top, 1)
+                    .padding(.top, 2)
                     .padding(.horizontal, 16)
 
                 Spacer()
@@ -1247,6 +1608,7 @@ struct CourseModeGPSHoleView: View {
                 }
             }
             .ignoresSafeArea(edges: .bottom)
+
         }
         // Bottom bar
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -1356,6 +1718,8 @@ struct CourseModeGPSHoleView: View {
         }
         .onChange(of: vm.currentHoleIndex) { _ in
             recenterToken += 1
+            userAimPointOverrides = [:]
+            showRecenter = false
             setTrackShotMode(false)
         }
         .onChange(of: gpsOn) { _ in
@@ -1556,13 +1920,20 @@ struct CourseModeGPSHoleView: View {
 
             Spacer()
 
-            Button { recenterToken += 1 } label: {
+            // Recenter button — only visible after the user pans away
+            Button {
+                recenterToken += 1
+                withAnimation(.spring(response: 0.3)) { showRecenter = false }
+            } label: {
                 Image(systemName: "location.fill")
                     .font(.system(size: 15, weight: .bold))
                     .foregroundColor(HUDStyle.pin)
                     .hudGlassCircle(44)
             }
             .buttonStyle(HUDPressStyle())
+            .opacity(showRecenter ? 1 : 0)
+            .scaleEffect(showRecenter ? 1 : 0.7)
+            .allowsHitTesting(showRecenter)
         }
         .padding(.horizontal, 16)
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: vm.currentHoleIndex)
@@ -1591,34 +1962,30 @@ struct CourseModeGPSHoleView: View {
         Group {
             if let hole = vm.currentHole {
                 HStack(spacing: 0) {
-                    metricCell(title: "PAR", value: "\(hole.par)")
-                    Rectangle().fill(.white.opacity(0.12)).frame(width: 1, height: 22)
-                    metricCell(title: "YARDS", value: scorecardYardage.map(String.init) ?? "—")
-                    Rectangle().fill(.white.opacity(0.12)).frame(width: 1, height: 22)
-                    metricCell(title: "HCP", value: "\(holeHandicap)")
+                    infoText("Par \(hole.par)")
+                    stripDivider
+                    infoText(scorecardYardage.map { "\($0) yds" } ?? "— yds")
+                    stripDivider
+                    infoText("HCP \(holeHandicap)")
                 }
-                .padding(.horizontal, 5)
-                .padding(.vertical, 5)
-                .hudGlass(16)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .hudGlass(14)
                 .fixedSize()
-                .padding(.top, 1)
             }
         }
         .frame(maxWidth: .infinity)
     }
 
-    private func metricCell(title: String, value: String) -> some View {
-        VStack(spacing: 1) {
-            Text(title)
-                .font(.system(size: 7.5, weight: .black, design: .rounded))
-                .tracking(1.0)
-                .foregroundColor(.white.opacity(0.5))
-            Text(value)
-                .font(.system(size: 14, weight: .heavy, design: .rounded))
-                .foregroundColor(.white)
-        }
-        .frame(minWidth: 46)
-        .padding(.horizontal, 5)
+    private func infoText(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 12, weight: .bold, design: .rounded))
+            .foregroundColor(.white)
+            .padding(.horizontal, 8)
+    }
+
+    private var stripDivider: some View {
+        Rectangle().fill(.white.opacity(0.18)).frame(width: 1, height: 13)
     }
 
     // MARK: - Left Sidebar
@@ -1705,6 +2072,13 @@ struct CourseModeGPSHoleView: View {
                 }
                 railButton("camera.fill", isActive: false) { showCamera = true }
                 railButton("list.number", isActive: false) { showScorecard = true }
+                #if DEBUG
+                railButton("ant.fill", isActive: false) {
+                    if let tee = currentMapHole?.teeCoordinate?.clCoordinate {
+                        vm.location.currentLocation = tee
+                    }
+                }
+                #endif
             }
             .padding(.vertical, 14)
             .frame(width: 56)
@@ -1758,82 +2132,95 @@ struct CourseModeGPSHoleView: View {
     // MARK: - Bottom Bar
 
     private var bottomBar: some View {
-        HStack(spacing: 12) {
-            // Player + score
-            HStack(spacing: 10) {
-                ZStack {
-                    Circle().fill(TCTheme.goldGradient).frame(width: 42, height: 42)
-                    Circle().strokeBorder(.white.opacity(0.35), lineWidth: 1).frame(width: 42, height: 42)
-                    Text(userInitials)
-                        .font(.system(size: 15, weight: .heavy, design: .rounded))
-                        .foregroundColor(TCTheme.deepGreen)
-                }
-
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(displayPlayerName)
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-                        .lineLimit(1)
-                    HStack(spacing: 5) {
-                        Text(scoreToParWord)
-                            .font(.system(size: 13, weight: .heavy, design: .rounded))
-                            .foregroundColor(scoreToParColor)
-                        Text("· Hole \(vm.currentHoleIndex + 1)")
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
-                            .foregroundColor(.white.opacity(0.65))
-                    }
-                }
-                .frame(maxWidth: 128, alignment: .leading)
+        HStack(spacing: 14) {
+            // Avatar
+            ZStack {
+                Circle().fill(TCTheme.goldGradient).frame(width: 38, height: 38)
+                Circle().strokeBorder(.white.opacity(0.35), lineWidth: 1).frame(width: 38, height: 38)
+                Text(userInitials)
+                    .font(.system(size: 13, weight: .heavy, design: .rounded))
+                    .foregroundColor(TCTheme.deepGreen)
             }
 
-            Spacer(minLength: 4)
+            // Player + score info
+            VStack(alignment: .leading, spacing: 2) {
+                Text(displayPlayerName)
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    Text(scoreToParString)
+                        .font(.system(size: 12, weight: .heavy, design: .rounded))
+                        .foregroundColor(scoreToParColor)
+                    Text("· \(vm.activeRound?.scoreSummary.totalScore ?? 0) strokes")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundColor(.white.opacity(0.65))
+                }
+            }
 
-            // Track + HUD camera — compact icon buttons
+            Spacer(minLength: 0)
+
+            // Track shot mode
             Button { setTrackShotMode(!trackShotMode) } label: {
                 Image(systemName: trackShotMode ? "scope" : "figure.golf")
-                    .font(.system(size: 16, weight: .bold))
+                    .font(.system(size: 15, weight: .bold))
                     .foregroundColor(trackShotMode ? TCTheme.deepGreen : .white)
-                    .frame(width: 44, height: 44)
+                    .frame(width: 42, height: 42)
                     .background(trackShotMode ? AnyShapeStyle(TCTheme.sage) : AnyShapeStyle(.white.opacity(0.12)))
                     .clipShape(Circle())
                     .overlay(Circle().strokeBorder(.white.opacity(0.18), lineWidth: 1))
             }
             .buttonStyle(HUDPressStyle())
 
+            // Camera
             Button { showCamera = true } label: {
                 Image(systemName: "camera.fill")
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.system(size: 14, weight: .bold))
                     .foregroundColor(.white)
-                    .frame(width: 44, height: 44)
+                    .frame(width: 42, height: 42)
                     .background(.white.opacity(0.12))
                     .clipShape(Circle())
                     .overlay(Circle().strokeBorder(.white.opacity(0.18), lineWidth: 1))
             }
             .buttonStyle(HUDPressStyle())
 
-            // Primary: Add Score — gold
+            // Add Score — stacked gold button
             Button { showScoreEntry = true } label: {
-                HStack(spacing: 6) {
+                VStack(spacing: 2) {
                     Image(systemName: "square.and.pencil")
-                        .font(.system(size: 14, weight: .bold))
-                    Text("Score")
-                        .font(.system(size: 15, weight: .heavy, design: .rounded))
+                        .font(.system(size: 13, weight: .bold))
+                    Text("Add Score")
+                        .font(.system(size: 10, weight: .heavy, design: .rounded))
                 }
                 .foregroundColor(TCTheme.deepGreen)
-                .padding(.horizontal, 16)
-                .frame(height: 44)
+                .frame(width: 70, height: 48)
                 .background(TCTheme.goldGradient)
-                .clipShape(Capsule())
-                .shadow(color: TCTheme.gold.opacity(0.4), radius: 8, y: 3)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .shadow(color: TCTheme.gold.opacity(0.4), radius: 6, y: 2)
             }
             .buttonStyle(HUDPressStyle())
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .hudGlass(26, strokeOpacity: 0.12, tintOpacity: 0.42)
-        .padding(.horizontal, 8)
-        .padding(.top, 8)
-        .padding(.bottom, 8)
+        .padding(.horizontal, 16)
+        .padding(.top, 16)
+        .padding(.bottom, 12)
+        .frame(maxWidth: .infinity)
+        .background(
+            ZStack {
+                Rectangle().fill(.ultraThinMaterial)
+                Rectangle().fill(HUDStyle.tint.opacity(0.42))
+            }
+            .environment(\.colorScheme, .dark)
+            .ignoresSafeArea(edges: .bottom)
+        )
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(LinearGradient(
+                    colors: [.white.opacity(0.18), .white.opacity(0.06)],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                ))
+                .frame(height: 1)
+        }
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: trackShotMode)
     }
 
@@ -2019,14 +2406,24 @@ struct CourseModeGPSHoleView: View {
     // MARK: - Helpers
 
     private func buildContext() -> ShotContext {
-        ShotContext(
-            sourceMode:    .course,
-            courseRoundId: vm.activeRound?.id,
-            holeNumber:    vm.currentHole?.holeNumber,
-            holePar:       vm.currentHole?.par,
-            holeYardage:   scorecardYardage,
-            courseName:    vm.activeRound?.courseName,
-            holeHandicap:  holeHandicap
+        // Player origin: last shot end → GPS → tee (mirrors startCoordForNewShot logic).
+        let playerCoord: CLLocationCoordinate2D? =
+            vm.currentHoleTrackedShots.last?.endCoordinate.clCoordinate
+            ?? vm.location.currentLocation
+            ?? currentMapHole?.teeCoordinate?.clCoordinate
+
+        return ShotContext(
+            sourceMode:            .course,
+            courseRoundId:         vm.activeRound?.id,
+            holeNumber:            vm.currentHole?.holeNumber,
+            holePar:               vm.currentHole?.par,
+            holeYardage:           scorecardYardage,
+            courseName:            vm.activeRound?.courseName,
+            holeHandicap:          holeHandicap,
+            playerCoordinate:      playerCoord,
+            greenCenterCoordinate: currentMapHole?.greenCenterCoordinate?.clCoordinate,
+            teeCoordinate:         currentMapHole?.teeCoordinate?.clCoordinate,
+            holePathCoordinates:   currentHolePathCoordinates
         )
     }
 
@@ -2048,21 +2445,6 @@ struct CourseModeGPSHoleView: View {
             category = .iron
         }
         return ShotClub(clubId: shot?.clubId, name: name, category: category)
-    }
-
-    private func ordinal(_ n: Int) -> String {
-        let suffix: String
-        switch n {
-        case 11, 12, 13: suffix = "th"
-        default:
-            switch n % 10 {
-            case 1:  suffix = "st"
-            case 2:  suffix = "nd"
-            case 3:  suffix = "rd"
-            default: suffix = "th"
-            }
-        }
-        return "\(n)\(suffix)"
     }
 
     private func ordinalSuffix(_ n: Int) -> String {

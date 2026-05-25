@@ -145,23 +145,19 @@ final class CourseRoundViewModel: ObservableObject {
             teeBoxName: teeBox.name,
             holes: holes
         )
-        do {
-            try await backend.saveRound(round)
-            activeRound = round
-            selectedCourse = course.holes.isEmpty
-                ? GolfCourse(id: course.id, name: course.name, city: course.city,
-                             state: course.state, country: course.country,
-                             latitude: course.latitude, longitude: course.longitude,
-                             holes: courseHoles, teeBoxes: course.teeBoxes,
-                             source: course.source, cachedAt: course.cachedAt)
-                : course
-            selectedTeeBox = teeBox
-            currentHoleIndex = 0
-            location.requestPermission()
-            location.startUpdating()
-        } catch {
-            errorMessage = error.localizedDescription
-        }
+        activeRound = round
+        selectedCourse = course.holes.isEmpty
+            ? GolfCourse(id: course.id, name: course.name, city: course.city,
+                         state: course.state, country: course.country,
+                         latitude: course.latitude, longitude: course.longitude,
+                         holes: courseHoles, teeBoxes: course.teeBoxes,
+                         source: course.source, cachedAt: course.cachedAt)
+            : course
+        selectedTeeBox = teeBox
+        currentHoleIndex = 0
+        location.requestPermission()
+        location.startUpdating()
+        await saveRoundOfflineSafe(round)
     }
 
     private static func defaultPar(for hole: Int) -> Int {

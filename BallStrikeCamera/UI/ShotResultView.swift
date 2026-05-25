@@ -95,13 +95,7 @@ struct ShotResultView: View {
     // MARK: - Body
 
     var body: some View {
-        // Course mode shows the shot on the actual course map (back in CourseModeGPSHoleView),
-        // so here we show a clean numbers summary instead of the abstract flight parabola.
-        if context?.sourceMode == .course {
-            courseResultBody
-        } else {
-            rangeResultBody
-        }
+        rangeResultBody
     }
 
     private var rangeResultBody: some View {
@@ -139,10 +133,15 @@ struct ShotResultView: View {
 
                         Rectangle().fill(Color.white.opacity(0.09)).frame(width: 1)
 
-                        // Right: top-down map or course context panel
-                        if context?.sourceMode == .course {
-                            courseContextPanel
-                                .frame(width: geo.size.width * 0.30)
+                        // Right: satellite landing map (course) or abstract top-down grid (range)
+                        if context?.sourceMode == .course, let ctx = context {
+                            CourseLandingMapView(
+                                context: ctx,
+                                metrics: m,
+                                flightProgress: fp,
+                                rolloutProgress: rp
+                            )
+                            .frame(width: geo.size.width * 0.44)
                         } else {
                             Canvas { ctx, size in
                                 drawTopDown(ctx: ctx, size: size, fp: fp, rp: rp,
@@ -417,8 +416,9 @@ struct ShotResultView: View {
     // MARK: - Top Bar
 
     private var topBar: some View {
-        HStack(spacing: 12) {
-            Button("Done") { onDone() }
+        let doneLabel = context?.sourceMode == .course ? "Discard" : "Done"
+        return HStack(spacing: 12) {
+            Button(doneLabel) { onDone() }
                 .font(.system(size: 14, weight: .semibold)).foregroundColor(.blue)
             Spacer()
             Text("Shot Result").font(.system(size: 15, weight: .semibold)).foregroundColor(.white)
@@ -441,9 +441,12 @@ struct ShotResultView: View {
     // MARK: - Tap Prompt (Part I: displayed inside left animation)
 
     private var tapPromptOverlay: some View {
-        Group {
+        let finishedLabel = context?.sourceMode == .course
+            ? "Tap to save & view flight"
+            : "Tap to view frame replay"
+        return Group {
             if animationFinished {
-                Text("Tap to view frame replay")
+                Text(finishedLabel)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(.white.opacity(0.85))
                     .padding(.horizontal, 16).padding(.vertical, 8)
