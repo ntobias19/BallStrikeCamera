@@ -29,11 +29,12 @@ export async function getCurrentUser() {
 }
 
 export async function getUserEntitlement(userId: string) {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("user_entitlements")
     .select("*")
     .eq("user_id", userId)
     .maybeSingle();
+  if (error) throw new Error(`Unable to load entitlement from Supabase: ${error.message}`);
   return data;
 }
 
@@ -101,6 +102,12 @@ export interface AccountDashboard {
   recentActivity: RecentActivity[];
 }
 
+type SupabaseQueryResult<T = unknown> = {
+  data: T | null;
+  error: { message: string } | null;
+  count?: number | null;
+};
+
 export async function getAccountDashboard(userId: string): Promise<AccountDashboard> {
   const [
     profileResult,
@@ -120,6 +127,17 @@ export async function getAccountDashboard(userId: string): Promise<AccountDashbo
     supabase.from("range_sessions").select("*", { count: "exact" }).eq("user_id", userId).order("started_at", { ascending: false }).limit(12),
     supabase.from("sim_sessions").select("*", { count: "exact" }).eq("user_id", userId).order("started_at", { ascending: false }).limit(12),
     supabase.from("course_rounds").select("*", { count: "exact" }).eq("user_id", userId).order("started_at", { ascending: false }).limit(12),
+  ]);
+
+  ensureDashboardQueriesSucceeded([
+    ["profiles", profileResult],
+    ["clubs", clubsResult],
+    ["user_devices", devicesResult],
+    ["usage_counters", usageResult],
+    ["shots", shotsResult],
+    ["range_sessions", rangeResult],
+    ["sim_sessions", simResult],
+    ["course_rounds", roundsResult],
   ]);
 
   const shots = (shotsResult.data ?? []) as RecordRow[];
@@ -155,6 +173,13 @@ export async function getAccountDashboard(userId: string): Promise<AccountDashbo
     },
     recentActivity,
   };
+}
+
+function ensureDashboardQueriesSucceeded(results: Array<[string, SupabaseQueryResult]>) {
+  const failed = results.find(([, result]) => result.error);
+  if (!failed) return;
+  const [table, result] = failed;
+  throw new Error(`Unable to load ${table} from Supabase: ${result.error?.message ?? "Unknown Supabase error"}`);
 }
 
 function activityFromShot(row: RecordRow): RecentActivity {
