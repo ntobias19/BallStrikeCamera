@@ -48,10 +48,20 @@ final class CourseDataAggregator {
         // Course catalog (Supabase Storage): primary source for our 27k uploaded courses.
         if let catalog = await CourseCatalog.geometry(for: course),
            catalog.hasTrustedGeometry {
-            var merged = catalog
-            merged.id = course.id
-            OSMGolfService.shared.cacheMergedCourse(merged)
-            return merged
+            var withId = catalog
+            withId.id = course.id
+
+            // If the GPS source only recorded one tee, supplement with the scorecard
+            // so the tee picker shows all named tees with correct per-hole yardages.
+            if withId.teeBoxes.count <= 1,
+               let scorecard = await fetchScorecard(for: course),
+               !scorecard.teeBoxes.isEmpty {
+                withId = merge(base: course, osm: withId, scorecard: scorecard)
+                withId.id = course.id   // merge may reset id; keep original
+            }
+
+            OSMGolfService.shared.cacheMergedCourse(withId)
+            return withId
         }
 
         // Catalog missed — fall back to stale cache (partial data beats nothing).
