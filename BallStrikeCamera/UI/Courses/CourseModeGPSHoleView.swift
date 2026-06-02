@@ -256,12 +256,13 @@ private final class AimPointAnnotationView: MKAnnotationView {
 
     override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
         super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
-        frame = CGRect(x: 0, y: 0, width: 44, height: 44)
+        // 64pt frame — larger invisible hit area makes the ring much easier to grab
+        frame = CGRect(x: 0, y: 0, width: 64, height: 64)
         centerOffset = .zero
         backgroundColor = .clear
         isDraggable = true
 
-        ring.frame = bounds
+        ring.frame = CGRect(x: 10, y: 10, width: 44, height: 44)
         ring.backgroundColor = UIColor.white.withAlphaComponent(0.15)
         ring.layer.cornerRadius = 22
         ring.layer.borderColor = UIColor.white.withAlphaComponent(0.92).cgColor
@@ -272,7 +273,7 @@ private final class AimPointAnnotationView: MKAnnotationView {
         ring.layer.shadowOffset = .zero
         addSubview(ring)
 
-        dot.frame = CGRect(x: 19, y: 19, width: 6, height: 6)
+        dot.frame = CGRect(x: 29, y: 29, width: 6, height: 6)
         dot.backgroundColor = .white
         dot.layer.cornerRadius = 3
         addSubview(dot)
@@ -1039,7 +1040,7 @@ private struct SatelliteMapBackground: UIViewRepresentable {
                                         to newCoord: CLLocationCoordinate2D) {
             var waypoints = currentAimWaypoints
             let wi = movingIndex + 1
-            guard wi > 0, wi < waypoints.count - 1 else { return }
+            guard wi > 0, wi < waypoints.count else { return }
             waypoints[wi] = newCoord
 
             let oldOverlays = mapView.overlays.filter {
