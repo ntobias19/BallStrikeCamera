@@ -619,10 +619,10 @@ private struct SatelliteMapBackground: UIViewRepresentable {
         map.showsCompass        = false
         map.delegate            = context.coordinator
         context.coordinator.parent = self
-        // Limit zoom: min 50m (green detail) → max 2500m (~6× a long par-5).
+        // Limit zoom: min 50m (green detail) → max 4000m (accommodates long par-5s).
         map.cameraZoomRange = MKMapView.CameraZoomRange(
             minCenterCoordinateDistance: 50,
-            maxCenterCoordinateDistance: 2500
+            maxCenterCoordinateDistance: 4000
         )
         let tap = UITapGestureRecognizer(target: context.coordinator,
                                           action: #selector(Coordinator.handleTap(_:)))
@@ -742,7 +742,9 @@ private struct SatelliteMapBackground: UIViewRepresentable {
                                            bottom: bottomUIInset, right: 8)
                 context.coordinator.setProgrammaticRegionChange(true)
                 map.setVisibleMapRect(fittingRect, edgePadding: edgePad, animated: false)
-                let fittedAlt = max(map.camera.altitude * 0.90, 150.0)
+                // Par 5s use the full auto-fit altitude; other holes zoom in 8% to tighten.
+                let altMultiplier = aimPoints.count >= 2 ? 1.0 : 0.92
+                let fittedAlt = max(map.camera.altitude * altMultiplier, 150.0)
 
                 let cam = MKMapCamera(lookingAtCenter: biasedCenter,
                                       fromDistance: fittedAlt,
