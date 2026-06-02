@@ -712,9 +712,10 @@ private struct SatelliteMapBackground: UIViewRepresentable {
                     minY = min(minY, sy); maxY = max(maxY, sy)
                 }
                 // Extra bottom padding so the tee isn't hidden behind the HUD.
-                // Par 5s (2 aim points) get a touch more vertical space to show the full hole.
-                let vertScale   = 1.0
-                let vertExtent  = ((maxY - minY) + kPad + max(Double(bottomUIInset) * 0.5, kPad)) * vertScale
+                // Cap vertical extent so long par 5s don't force an excessive zoom-out.
+                // ~420m ≈ 460 yards — keeps tee visible without showing the last stretch to green.
+                let rawVert    = (maxY - minY) + kPad + max(Double(bottomUIInset) * 0.5, kPad)
+                let vertExtent = aimPoints.count >= 2 ? min(rawVert, 420.0) : rawVert
                 let horizExtent = max((maxX - minX) + 2 * kPad, kPad * 2)
                 let midX        = (minX + maxX) / 2.0
 
