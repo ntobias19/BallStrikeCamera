@@ -44,9 +44,10 @@ courses_*.csv
 Config/service_role.key
 *.key
 
-# Data pipeline scripts (not app code)
-worker.py
-deploy.py
-normalizer.py
-birdies_client.py
+# Data pipeline — track the scripts, ignore large outputs and secrets
+DataPipeline/__pycache__/
+DataPipeline/*.csv
+DataPipeline/*.json
+DataPipeline/*.jsonl
+DataPipeline/*.key
 __pycache__/
