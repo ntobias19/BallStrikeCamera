@@ -237,7 +237,19 @@ final class CourseDataAggregator {
         }
 
         // Authoritative tee boxes (named, with rating/slope) from GolfCourseAPI.
-        if !sc.teeBoxes.isEmpty { result.teeBoxes = sc.teeBoxes }
+        // Deduplicate by name (male+female can produce same name) and sort longest first.
+        if !sc.teeBoxes.isEmpty {
+            var seen: [String: TeeBox] = [:]
+            for tee in sc.teeBoxes {
+                let key = tee.name.lowercased()
+                if let existing = seen[key] {
+                    if tee.totalYards > existing.totalYards { seen[key] = tee }
+                } else {
+                    seen[key] = tee
+                }
+            }
+            result.teeBoxes = seen.values.sorted { $0.totalYards > $1.totalYards }
+        }
 
         // Align by hole number: scorecard is the source of truth for par/handicap/yardage;
         // OSM supplies geometry for that hole number when present.

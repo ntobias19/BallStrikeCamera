@@ -191,20 +191,32 @@ final class GolfCourseAPIProvider: CourseProvider {
 
     private func buildTeeBoxes(raw: RawCourse, courseId: String) -> [TeeBox] {
         let rawTees = allRawTees(raw)
-        if !rawTees.isEmpty {
-            return rawTees.enumerated().map { idx, t in
-                TeeBox(
-                    id: t.id ?? "\(courseId)-tee-\(idx)",
-                    name: t.tee_name ?? t.name ?? "Tee \(idx+1)",
-                    color: inferredTeeColor(explicit: t.tee_color,
-                                            name: t.tee_name ?? t.name),
-                    totalYards: t.total_yards ?? t.total_distance ?? 0,
-                    rating: t.course_rating,
-                    slope: t.slope_rating
-                )
+        guard !rawTees.isEmpty else {
+            return [TeeBox(id: "\(courseId)-default", name: "Standard", color: "White", totalYards: 0)]
+        }
+        let all = rawTees.enumerated().map { idx, t in
+            TeeBox(
+                id: t.id ?? "\(courseId)-tee-\(idx)",
+                name: t.tee_name ?? t.name ?? "Tee \(idx+1)",
+                color: inferredTeeColor(explicit: t.tee_color,
+                                        name: t.tee_name ?? t.name),
+                totalYards: t.total_yards ?? t.total_distance ?? 0,
+                rating: t.course_rating,
+                slope: t.slope_rating
+            )
+        }
+        // Deduplicate by name (male + female arrays can produce same name twice).
+        // Keep the longer one (back/male tees), then sort longest → shortest.
+        var seen: [String: TeeBox] = [:]
+        for tee in all {
+            let key = tee.name.lowercased()
+            if let existing = seen[key] {
+                if tee.totalYards > existing.totalYards { seen[key] = tee }
+            } else {
+                seen[key] = tee
             }
         }
-        return [TeeBox(id: "\(courseId)-default", name: "Standard", color: "White", totalYards: 0)]
+        return seen.values.sorted { $0.totalYards > $1.totalYards }
     }
 
     private func inferredTeeColor(explicit: String?, name: String?) -> String {
