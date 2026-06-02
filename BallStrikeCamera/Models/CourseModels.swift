@@ -36,10 +36,25 @@ struct GolfCourse: Codable, Identifiable {
 
     /// True only when every playable hole has a tee coordinate. Requires geometry to be loaded;
     /// returns false for search stubs (holes: []).
-    var hasFullTeeCoords: Bool {
+    var hasFullTeeCoords: Bool { hasFullHoleData }
+
+    /// Gold "GPS Map" threshold: every playable hole has a tee, a green, and (for par 4/5) a fairway waypoint.
+    var hasFullHoleData: Bool {
         let playable = holes.filter { $0.number > 0 }
         guard !playable.isEmpty else { return false }
-        return playable.allSatisfy { $0.teeCoordinate != nil }
+        return playable.allSatisfy {
+            guard $0.teeCoordinate != nil, $0.greenCenterCoordinate != nil else { return false }
+            if $0.par == 3 { return true }
+            return !($0.pathCoordinates ?? []).isEmpty
+        }
+    }
+
+    /// Sage "Partial Map" threshold: at least some holes have a green center but full data is incomplete.
+    var hasPartialHoleData: Bool {
+        guard !hasFullHoleData else { return false }
+        let playable = holes.filter { $0.number > 0 }
+        guard !playable.isEmpty else { return false }
+        return playable.contains { $0.greenCenterCoordinate != nil }
     }
 }
 
