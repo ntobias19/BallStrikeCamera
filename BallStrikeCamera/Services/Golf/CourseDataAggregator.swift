@@ -25,63 +25,26 @@ final class CourseDataAggregator {
     // MARK: - Public API
 
     /// Enrich a discovered (MapKit) course stub with merged scorecard + geometry.
-    /// Best-effort: never throws. Returns the richest course it can assemble.
+    /// Loads course geometry from Supabase. Falls back to disk cache if offline.
     func enrich(_ course: GolfCourse, backend: AppBackend? = nil) async -> GolfCourse {
-        // Skip disk cache entirely — stale cache caused repeated tee/geometry bugs.
-        // enrich() is called at most twice per session (tee setup + round start) so
-        // the ~500ms parallel network fetch is imperceptible on a golf course.
-        // Disk cache is still written so offline fallbacks work at the end of this function.
-        let cached = OSMGolfService.shared.loadCached(courseId: course.id)
-
-        // Fetch catalog geometry and scorecard in parallel.
-        async let catalogFetch = CourseCatalog.geometry(for: course)
-        async let scorecardFetch = fetchScorecard(for: course)
-        let (catalog, scorecard) = await (catalogFetch, scorecardFetch)
-
-        if let catalog, catalog.hasTrustedGeometry {
-            var withId = catalog
-            withId.id = course.id
-            if let sc = scorecard, !sc.teeBoxes.isEmpty {
-                withId = merge(base: course, osm: withId, scorecard: sc)
-                withId.id = course.id
-            }
-            OSMGolfService.shared.cacheMergedCourse(withId)
-            return withId
+        // Primary source: Supabase catalog (geometry storage bucket).
+        // All tee, green, and path data lives here — no third-party API calls needed.
+        if let catalog = await CourseCatalog.geometry(for: course),
+           catalog.hasTrustedGeometry {
+            var result = catalog
+            result.id = course.id
+            OSMGolfService.shared.cacheMergedCourse(result)
+            return result
         }
 
-        // Network failed — fall back to anything cached (partial data beats nothing).
-        if let cached, cached.hasTrustedGeometry { return cached }
-
-        // GolfCourseAPI scorecard is the reliable source (par/yardage/handicap). Run it detached so
-        // a spurious SwiftUI `.task` cancellation can't drop it. Geometry is best-effort from OSM.
-        let cachedScorecard = [cached, sharedGeometry].compactMap { $0 }.first(where: isUsableCachedCourse)
-        let osmScorecard: GolfCourse?
-        if let cachedScorecard {
-            osmScorecard = cachedScorecard
-        } else {
-            osmScorecard = await Task.detached(priority: .userInitiated) { [self] in
-                await fetchScorecard(for: course)
-            }.value
+        // Offline fallback: use whatever is on disk if the network is unavailable.
+        if let cached = OSMGolfService.shared.loadCached(courseId: course.id),
+           cached.hasTrustedGeometry {
+            return cached
         }
 
-        // Live OSM (Overpass) geometry for courses not yet in our shared DB.
-        let geometry: GolfCourse
-        if let sharedGeometry, sharedGeometry.hasTrustedGeometry {
-            geometry = sharedGeometry
-        } else {
-            geometry = await OSMGolfService.shared.enrichBestEffort(course)
-        }
-
-        let merged = merge(base: course, osm: geometry, scorecard: osmScorecard)
-        OSMGolfService.shared.cacheMergedCourse(merged)
-        // Persist good geometry to our shared DB; queue weak coverage for pre-bake backfill.
-        if merged.hasTrustedGeometry {
-            try? await sharedGeometryBackend(preferred: backend)?.saveCourseGeometry(merged)
-        } else if isUsableCachedCourse(merged) {
-            try? await sharedGeometryBackend(preferred: backend)?
-                .requestCourseGeometryBackfill(merged, reason: "missing_geometry")
-        }
-        return merged
+        // Nothing available — return the original stub so the round can still start.
+        return course
     }
 
     /// Resolve the user-selected tee (chosen from generic MapKit tees) to the authoritative
