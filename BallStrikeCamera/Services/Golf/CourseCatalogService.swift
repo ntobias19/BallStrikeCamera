@@ -119,8 +119,22 @@ enum CourseCatalog {
             var course = try decoder.decode(GolfCourse.self, from: json)
             course.cachedAt = Date()
             return course.hasRealGeometry ? course : nil
+        } catch let e as DecodingError {
+            switch e {
+            case .keyNotFound(let key, let ctx):
+                print("[CourseCatalog] DECODE keyNotFound key=\(key.stringValue) path=\(ctx.codingPath.map(\.stringValue)) \(courseId)")
+            case .valueNotFound(let type, let ctx):
+                print("[CourseCatalog] DECODE valueNotFound type=\(type) path=\(ctx.codingPath.map(\.stringValue)) \(courseId)")
+            case .typeMismatch(let type, let ctx):
+                print("[CourseCatalog] DECODE typeMismatch type=\(type) path=\(ctx.codingPath.map(\.stringValue)) \(courseId)")
+            case .dataCorrupted(let ctx):
+                print("[CourseCatalog] DECODE dataCorrupted path=\(ctx.codingPath.map(\.stringValue)) desc=\(ctx.debugDescription) \(courseId)")
+            @unknown default:
+                print("[CourseCatalog] DECODE unknown error: \(e) \(courseId)")
+            }
+            return nil
         } catch {
-            print("[CourseCatalog] geometry fetch failed (\(courseId)): \(error.localizedDescription)")
+            print("[CourseCatalog] geometry fetch failed (\(courseId)): \(error) \(courseId)")
             return nil
         }
     }
