@@ -1175,6 +1175,9 @@ private struct SatelliteMapBackground: UIViewRepresentable {
                 return v
             }
 
+            // Read the live transform so annotation views auto-correct for the current stretch.
+            let invStretch = CGAffineTransform(scaleX: 1.0 / mapView.transform.a, y: 1.0)
+
             if let pin = annotation as? GreenPinAnnotation {
                 let id = "greenPin"
                 let v  = mapView.dequeueReusableAnnotationView(withIdentifier: id)
@@ -1201,9 +1204,6 @@ private struct SatelliteMapBackground: UIViewRepresentable {
                 v.displayPriority = .required
                 return v
             }
-
-            // Read the live transform so annotation views auto-correct for the current stretch.
-            let invStretch = CGAffineTransform(scaleX: 1.0 / mapView.transform.a, y: 1.0)
 
             if let bubble = annotation as? DistanceBubbleAnnotation {
                 let id  = "distBubble"
