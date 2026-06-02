@@ -36,3 +36,10 @@ Website/out/
 # large local datasets (never commit)
 courses_combined*.jsonl
 *.jsonl
+*.csv
+combined_courses*.csv
+courses_*.csv
+
+# Service role key — never commit
+Config/service_role.key
+*.key
