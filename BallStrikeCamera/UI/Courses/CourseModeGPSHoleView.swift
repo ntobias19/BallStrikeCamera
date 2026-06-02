@@ -722,7 +722,7 @@ private struct SatelliteMapBackground: UIViewRepresentable {
                 // Extra bottom padding so the tee isn't hidden behind the HUD.
                 // Par 5s: modest vertical cap + slightly wider corridor padding.
                 let rawVert    = (maxY - minY) + kPad + max(Double(bottomUIInset) * 0.5, kPad)
-                let vertExtent = aimPoints.count >= 2 ? min(rawVert, 450.0) : rawVert
+                let vertExtent = aimPoints.count >= 2 ? min(rawVert, 490.0) : rawVert
                 let horizExtent = max((maxX - minX) + 2 * kPad, kPad * 2)
                 let midX        = (minX + maxX) / 2.0
 
