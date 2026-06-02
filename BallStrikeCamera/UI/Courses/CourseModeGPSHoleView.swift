@@ -610,7 +610,7 @@ private struct SatelliteMapBackground: UIViewRepresentable {
 
     func makeUIView(context: Context) -> MKMapView {
         let map = MKMapView()
-        map.mapType             = .hybrid
+        map.mapType             = .satellite
         map.isScrollEnabled     = true
         map.isZoomEnabled       = true
         map.isRotateEnabled     = false
