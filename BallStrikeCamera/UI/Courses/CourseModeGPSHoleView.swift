@@ -132,18 +132,18 @@ private final class GreenDistanceStackAnnotationView: MKAnnotationView {
 
     override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
         super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
-        frame = CGRect(x: 0, y: 0, width: 86, height: 82)
-        centerOffset = CGPoint(x: 0, y: -52)
+        frame = CGRect(x: 0, y: 0, width: 68, height: 62)
+        centerOffset = CGPoint(x: 0, y: -42)
         backgroundColor = .clear
 
         card.axis = .vertical
         card.alignment = .leading
-        card.spacing = 2
+        card.spacing = 1
         card.isLayoutMarginsRelativeArrangement = true
-        card.layoutMargins = UIEdgeInsets(top: 8, left: 10, bottom: 8, right: 10)
+        card.layoutMargins = UIEdgeInsets(top: 6, left: 8, bottom: 6, right: 8)
         card.frame = bounds
         card.backgroundColor = UIColor(white: 0.03, alpha: 0.74)
-        card.layer.cornerRadius = 16
+        card.layer.cornerRadius = 12
         card.layer.borderColor = UIColor.white.withAlphaComponent(0.12).cgColor
         card.layer.borderWidth = 1
         card.layer.masksToBounds = true
@@ -155,9 +155,9 @@ private final class GreenDistanceStackAnnotationView: MKAnnotationView {
             $0.minimumScaleFactor = 0.75
             card.addArrangedSubview($0)
         }
-        frontLabel.font = UIFont.systemFont(ofSize: 16, weight: .heavy)
-        centerLabel.font = UIFont.systemFont(ofSize: 30, weight: .black)
-        backLabel.font = UIFont.systemFont(ofSize: 16, weight: .heavy)
+        frontLabel.font = UIFont.systemFont(ofSize: 12, weight: .heavy)
+        centerLabel.font = UIFont.systemFont(ofSize: 22, weight: .black)
+        backLabel.font = UIFont.systemFont(ofSize: 12, weight: .heavy)
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -180,7 +180,7 @@ private final class GreenDistanceStackAnnotationView: MKAnnotationView {
         let text = NSMutableAttributedString(
             string: "\(symbol) ",
             attributes: [
-                .font: UIFont.systemFont(ofSize: 14, weight: .heavy),
+                .font: UIFont.systemFont(ofSize: 10, weight: .heavy),
                 .foregroundColor: tint
             ]
         )
