@@ -249,42 +249,71 @@ private final class AimPointAnnotation: NSObject, MKAnnotation {
 }
 
 private final class AimPointAnnotationView: MKAnnotationView {
-    private let ring = UIView()
-    private let dot  = UIView()
-    /// Called every animation frame while the user drags this aim point.
-    var onCenterChanged: ((CGPoint) -> Void)?
+    /// Fires on every pan-gesture .changed with (aimIndex, newCoord).
+    var onDragChanged: ((Int, CLLocationCoordinate2D) -> Void)?
+    /// Fires on pan-gesture .ended/.cancelled with final coord.
+    var onDragEnded:   ((Int, CLLocationCoordinate2D) -> Void)?
+    /// Must be set by the factory so handlePan can convert screen → map coord.
+    weak var mapView: MKMapView?
 
     override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
         super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
-        frame = CGRect(x: 0, y: 0, width: 44, height: 44)
-        centerOffset = .zero
+        isDraggable    = false   // own pan gesture instead — gives continuous updates
+        canShowCallout = false
         backgroundColor = .clear
-        isDraggable = true
+        centerOffset    = .zero
 
-        ring.frame = bounds
+        let hitSize:  CGFloat = 64
+        let ringSize: CGFloat = 36
+        frame = CGRect(x: 0, y: 0, width: hitSize, height: hitSize)
+
+        let ring = UIView(frame: CGRect(
+            x: (hitSize - ringSize) / 2, y: (hitSize - ringSize) / 2,
+            width: ringSize, height: ringSize))
         ring.backgroundColor = UIColor.white.withAlphaComponent(0.15)
-        ring.layer.cornerRadius = 22
-        ring.layer.borderColor = UIColor.white.withAlphaComponent(0.92).cgColor
-        ring.layer.borderWidth = 2.5
+        ring.layer.cornerRadius = ringSize / 2
+        ring.layer.borderColor  = UIColor.white.withAlphaComponent(0.92).cgColor
+        ring.layer.borderWidth  = 2.5
         ring.layer.shadowColor  = UIColor.black.cgColor
         ring.layer.shadowRadius = 5
         ring.layer.shadowOpacity = 0.55
-        ring.layer.shadowOffset = .zero
+        ring.layer.shadowOffset  = .zero
+        ring.isUserInteractionEnabled = false
         addSubview(ring)
 
-        dot.frame = CGRect(x: 19, y: 19, width: 6, height: 6)
+        let dotSize: CGFloat = 6
+        let dot = UIView(frame: CGRect(
+            x: (hitSize - dotSize) / 2, y: (hitSize - dotSize) / 2,
+            width: dotSize, height: dotSize))
         dot.backgroundColor = .white
-        dot.layer.cornerRadius = 3
+        dot.layer.cornerRadius = dotSize / 2
+        dot.isUserInteractionEnabled = false
         addSubview(dot)
+
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
+        addGestureRecognizer(pan)
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
-    // MapKit updates `center` each frame during drag but only sets `coordinate`
-    // at drag-end, so observe center instead for real-time line rebuilds.
-    override var center: CGPoint {
-        didSet {
-            if dragState == .dragging { onCenterChanged?(center) }
+    // Expand the touch area beyond the visible bounds.
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        bounds.insetBy(dx: -12, dy: -12).contains(point)
+    }
+
+    @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
+        guard let map  = mapView,
+              let aim  = annotation as? AimPointAnnotation else { return }
+        let coord = map.convert(gesture.location(in: map), toCoordinateFrom: map)
+        // Update the annotation coordinate so MapKit repositions the view live.
+        aim.coordinate = coord
+        switch gesture.state {
+        case .changed:
+            onDragChanged?(aim.index, coord)
+        case .ended, .cancelled:
+            onDragEnded?(aim.index, coord)
+        default:
+            break
         }
     }
 }
@@ -997,39 +1026,13 @@ private struct SatelliteMapBackground: UIViewRepresentable {
             }
         }
 
+        // Aim-point drag is handled by UIPanGestureRecognizer in AimPointAnnotationView
+        // (isDraggable = false). MapKit's didChange dragState is no longer needed.
         func mapView(_ mapView: MKMapView, annotationView view: MKAnnotationView,
                      didChange newState: MKAnnotationView.DragState,
                      fromOldState oldState: MKAnnotationView.DragState) {
-            guard let aim = view.annotation as? AimPointAnnotation else { return }
-
-            switch newState {
-            case .starting:
-                // MapKit only updates annotation.coordinate at drag-end, not each frame.
-                // Hook into the annotation view's `center` instead — it tracks the finger live.
-                if let aimView = view as? AimPointAnnotationView {
-                    let idx = aim.index
-                    aimView.onCenterChanged = { [weak self, weak mapView] screenCenter in
-                        guard let self, let map = mapView else { return }
-                        let coord = map.convert(screenCenter, toCoordinateFrom: map)
-                        self.rebuildAimSegments(on: map, movingIndex: idx, to: coord)
-                    }
-                }
-
-            case .canceling, .none:
-                (view as? AimPointAnnotationView)?.onCenterChanged = nil
-
-            case .ending:
-                (view as? AimPointAnnotationView)?.onCenterChanged = nil
-                // Final position — update stored waypoints and notify SwiftUI.
-                let wi = aim.index + 1
-                if wi > 0, wi < currentAimWaypoints.count - 1 {
-                    currentAimWaypoints[wi] = aim.coordinate
-                }
-                parent?.onAimPointMoved?(aim.index, aim.coordinate)
-
-            default:
-                break
-            }
+            // no-op — aim points use their own pan gesture
+        _ = newState
         }
 
         // Swaps only the aim-segment overlays/labels so lines follow the dragged point live.
@@ -1207,9 +1210,18 @@ private struct SatelliteMapBackground: UIViewRepresentable {
                 let v = mapView.dequeueReusableAnnotationView(withIdentifier: id)
                     as? AimPointAnnotationView
                     ?? AimPointAnnotationView(annotation: aim, reuseIdentifier: id)
-                v.annotation  = aim
+                v.annotation     = aim
+                v.mapView        = mapView
                 v.displayPriority = .required
-                v.transform   = invStretch
+                v.transform      = invStretch
+                v.onDragChanged  = { [weak self, weak mapView] idx, coord in
+                    guard let self, let map = mapView else { return }
+                    self.rebuildAimSegments(on: map, movingIndex: idx, to: coord)
+                }
+                v.onDragEnded    = { [weak self] idx, coord in
+                    // Persist override in SwiftUI and update stored waypoints.
+                    self?.parent?.onAimPointMoved?(idx, coord)
+                }
                 return v
             }
 
