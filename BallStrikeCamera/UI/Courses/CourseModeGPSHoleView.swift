@@ -1176,15 +1176,18 @@ private struct SatelliteMapBackground: UIViewRepresentable {
             }
 
             if let pin = annotation as? GreenPinAnnotation {
-                let id  = "greenPin"
-                let v   = mapView.dequeueReusableAnnotationView(withIdentifier: id)
-                            as? MKMarkerAnnotationView
-                            ?? MKMarkerAnnotationView(annotation: pin, reuseIdentifier: id)
+                let id = "greenPin"
+                let v  = mapView.dequeueReusableAnnotationView(withIdentifier: id)
+                         ?? MKAnnotationView(annotation: pin, reuseIdentifier: id)
                 v.annotation     = pin
-                v.markerTintColor = UIColor(red: 1.0, green: 0.82, blue: 0.0, alpha: 1.0)
-                v.glyphImage      = UIImage(systemName: "flag.fill")
-                v.glyphTintColor  = .black
                 v.displayPriority = .required
+                v.centerOffset    = CGPoint(x: 0, y: -10)   // anchor bottom of flag to coordinate
+                let cfg = UIImage.SymbolConfiguration(pointSize: 14, weight: .bold)
+                let img = UIImage(systemName: "flag.fill", withConfiguration: cfg)?
+                    .withTintColor(UIColor(red: 1.0, green: 0.82, blue: 0.0, alpha: 1.0),
+                                   renderingMode: .alwaysOriginal)
+                v.image = img
+                v.transform = invStretch
                 return v
             }
 
