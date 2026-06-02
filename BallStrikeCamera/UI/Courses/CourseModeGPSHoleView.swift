@@ -633,12 +633,20 @@ private struct SatelliteMapBackground: UIViewRepresentable {
         return map
     }
 
-    /// Horizontal stretch applied to the map view. Annotation views apply the
-    /// inverse so labels/circles render at their natural (non-squished) size.
-    static let kHorizStretch: CGFloat = 1.30
+    /// Default horizontal stretch. Par 5s use a reduced stretch so the narrow
+    /// fairway corridor is expanded to fill the screen width proportionally.
+    static let kHorizStretch:    CGFloat = 1.30
+    static let kHorizStretchPar5: CGFloat = 1.20
 
     func updateUIView(_ map: MKMapView, context: Context) {
         context.coordinator.parent = self
+
+        // Par 5s use a reduced horizontal stretch so the narrow fairway corridor fills
+        // the screen proportionally rather than appearing as a skinny central strip.
+        let targetStretch = aimPoints.count >= 2 ? Self.kHorizStretchPar5 : Self.kHorizStretch
+        if abs(map.transform.a - targetStretch) > 0.01 {
+            map.transform = CGAffineTransform(scaleX: targetStretch, y: 1.0)
+        }
 
         // The drawn content (polygons, tee line, flag, aim, shots) depends only on the HOLE — not
         // the live GPS dot, which SwiftUI re-renders many times a second. Skip the expensive
@@ -712,11 +720,20 @@ private struct SatelliteMapBackground: UIViewRepresentable {
                     minY = min(minY, sy); maxY = max(maxY, sy)
                 }
                 // Extra bottom padding so the tee isn't hidden behind the HUD.
-                // Cap vertical extent so long par 5s don't force an excessive zoom-out.
-                // ~420m ≈ 460 yards — keeps tee visible without showing the last stretch to green.
-                let rawVert    = (maxY - minY) + kPad + max(Double(bottomUIInset) * 0.5, kPad)
-                let vertExtent = aimPoints.count >= 2 ? min(rawVert, 420.0) : rawVert
-                let horizExtent = max((maxX - minX) + 2 * kPad, kPad * 2)
+                let vertExtent  = (maxY - minY) + kPad + max(Double(bottomUIInset) * 0.5, kPad)
+                // For par 5s: expand horizExtent to match the screen's aspect ratio so the hole
+                // fills the full screen width instead of appearing as a skinny central strip.
+                let fairwayHoriz = max((maxX - minX) + 2 * kPad, kPad * 2)
+                let horizExtent: Double
+                if aimPoints.count >= 2 {
+                    let screenW = Double(UIScreen.main.bounds.width)
+                    let usableH = screenH * usableF
+                    let stretch  = Double(SatelliteMapBackground.kHorizStretchPar5)
+                    let aspectHoriz = vertExtent * (screenW / stretch) / usableH
+                    horizExtent = max(fairwayHoriz, aspectHoriz)
+                } else {
+                    horizExtent = fairwayHoriz
+                }
                 let midX        = (minX + maxX) / 2.0
 
                 let centerOnPath = Self.interpolate(routeStart, routeEnd, t: centerT)
@@ -1192,7 +1209,8 @@ private struct SatelliteMapBackground: UIViewRepresentable {
                 return v
             }
 
-            let invStretch = CGAffineTransform(scaleX: 1.0 / SatelliteMapBackground.kHorizStretch, y: 1.0)
+            // Read the live transform so annotation views auto-correct for the current stretch.
+            let invStretch = CGAffineTransform(scaleX: 1.0 / mapView.transform.a, y: 1.0)
 
             if let bubble = annotation as? DistanceBubbleAnnotation {
                 let id  = "distBubble"
