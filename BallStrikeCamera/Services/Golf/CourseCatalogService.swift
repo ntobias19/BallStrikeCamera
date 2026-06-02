@@ -154,7 +154,22 @@ enum CourseCatalog {
                 hole.waterPolygons           = h.waterPolygons ?? []
                 return hole
             }
-            var course = GolfCourse(id: catalogId, name: name ?? "", holes: golfHoles)
+
+            // Build TeeBox entries by aggregating per-hole yardages across all holes.
+            var totalsByTee: [String: Int] = [:]
+            for h in holes {
+                for (name, yards) in (h.teeYardsByTeeBox ?? [:]) where yards > 0 {
+                    totalsByTee[name, default: 0] += yards
+                }
+            }
+            let teeBoxes: [TeeBox] = totalsByTee
+                .sorted { $0.value > $1.value }   // longest tee first
+                .map { name, total in
+                    TeeBox(id: name, name: name, color: name.lowercased(), totalYards: total)
+                }
+
+            var course = GolfCourse(id: catalogId, name: self.name ?? "", holes: golfHoles,
+                                    teeBoxes: teeBoxes)
             course.source = .merged
             return course
         }

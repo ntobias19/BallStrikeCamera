@@ -669,7 +669,9 @@ private struct SatelliteMapBackground: UIViewRepresentable {
                 let kMPerDeg = 111_320.0
                 var minX = Double.infinity, maxX = -Double.infinity
                 var minY = Double.infinity, maxY = -Double.infinity
-                for coord in holePathForOverlay {
+                // Always include the tee in the bounding box even when lineStart is user GPS.
+                let boundsCoords = teeCoord.map { [$0] + holePathForOverlay } ?? holePathForOverlay
+                for coord in boundsCoords {
                     let dn = (coord.latitude  - start.latitude)  * kMPerDeg
                     let de = (coord.longitude - start.longitude) * kMPerDeg * cosLat
                     let sy =  dn * cos(h_rad) + de * sin(h_rad)
@@ -677,7 +679,8 @@ private struct SatelliteMapBackground: UIViewRepresentable {
                     minX = min(minX, sx); maxX = max(maxX, sx)
                     minY = min(minY, sy); maxY = max(maxY, sy)
                 }
-                let vertExtent  = (maxY - minY) + 2 * kPad
+                // Extra bottom padding so the tee isn't hidden behind the HUD.
+                let vertExtent  = (maxY - minY) + kPad + max(Double(bottomUIInset) * 0.5, kPad)
                 let horizExtent = max((maxX - minX) + 2 * kPad, kPad * 2)
                 let midX        = (minX + maxX) / 2.0
 
