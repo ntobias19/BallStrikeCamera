@@ -107,6 +107,59 @@ enum CourseCatalog {
 
     // MARK: - Geometry fetch from Storage
 
+    // MARK: - Geometry DTO (sparse — only fields present in storage files)
+
+    /// Thin Decodable that only declares the fields our geometry files actually contain.
+    /// Avoids decode failures from GolfCourse/GolfHole properties that have defaults
+    /// in Swift but are absent from the JSON (Swift synthesis calls `decode`, not
+    /// `decodeIfPresent`, for properties with default values).
+    private struct CatalogGeometry: Decodable {
+        let id: String
+        let name: String?
+        let holes: [CatalogHole]
+
+        struct CatalogHole: Decodable {
+            let number: Int
+            let par: Int
+            let handicap: Int?
+            let teeCoordinate: Coordinate?
+            let greenCenterCoordinate: Coordinate?
+            let greenFrontCoordinate: Coordinate?
+            let greenBackCoordinate: Coordinate?
+            let pathCoordinates: [Coordinate]?
+            let teeYardsByTeeBox: [String: Int]?
+            let teeCoordinateByTeeBox: [String: Coordinate]?
+            let hazards: [Hazard]?
+            let greenPolygon: PolygonRing?
+            let fairwayPolygon: PolygonRing?
+            let bunkerPolygons: [PolygonRing]?
+            let waterPolygons: [PolygonRing]?
+        }
+
+        func toGolfCourse(catalogId: String) -> GolfCourse {
+            let golfHoles: [GolfHole] = holes.map { h in
+                var hole = GolfHole(number: h.number, par: h.par)
+                hole.handicap                = h.handicap
+                hole.teeCoordinate           = h.teeCoordinate
+                hole.greenCenterCoordinate   = h.greenCenterCoordinate
+                hole.greenFrontCoordinate    = h.greenFrontCoordinate
+                hole.greenBackCoordinate     = h.greenBackCoordinate
+                hole.pathCoordinates         = h.pathCoordinates
+                hole.teeYardsByTeeBox        = h.teeYardsByTeeBox ?? [:]
+                hole.teeCoordinateByTeeBox   = h.teeCoordinateByTeeBox
+                hole.hazards                 = h.hazards ?? []
+                hole.greenPolygon            = h.greenPolygon
+                hole.fairwayPolygon          = h.fairwayPolygon
+                hole.bunkerPolygons          = h.bunkerPolygons ?? []
+                hole.waterPolygons           = h.waterPolygons ?? []
+                return hole
+            }
+            var course = GolfCourse(id: catalogId, name: name ?? "", holes: golfHoles)
+            course.source = .merged
+            return course
+        }
+    }
+
     private static func loadGeometry(courseId: String, config: SupabaseConfig) async -> GolfCourse? {
         let url = config.storageBaseURL
             .appendingPathComponent("object/public")
@@ -116,25 +169,12 @@ enum CourseCatalog {
             let (data, response) = try await URLSession.shared.data(from: url)
             guard (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
             let json = data.isGzip ? (data.gunzipped() ?? data) : data
-            var course = try decoder.decode(GolfCourse.self, from: json)
+            let dto  = try decoder.decode(CatalogGeometry.self, from: json)
+            var course = dto.toGolfCourse(catalogId: courseId)
             course.cachedAt = Date()
             return course.hasRealGeometry ? course : nil
-        } catch let e as DecodingError {
-            switch e {
-            case .keyNotFound(let key, let ctx):
-                print("[CourseCatalog] DECODE keyNotFound key=\(key.stringValue) path=\(ctx.codingPath.map(\.stringValue)) \(courseId)")
-            case .valueNotFound(let type, let ctx):
-                print("[CourseCatalog] DECODE valueNotFound type=\(type) path=\(ctx.codingPath.map(\.stringValue)) \(courseId)")
-            case .typeMismatch(let type, let ctx):
-                print("[CourseCatalog] DECODE typeMismatch type=\(type) path=\(ctx.codingPath.map(\.stringValue)) \(courseId)")
-            case .dataCorrupted(let ctx):
-                print("[CourseCatalog] DECODE dataCorrupted path=\(ctx.codingPath.map(\.stringValue)) desc=\(ctx.debugDescription) \(courseId)")
-            @unknown default:
-                print("[CourseCatalog] DECODE unknown error: \(e) \(courseId)")
-            }
-            return nil
         } catch {
-            print("[CourseCatalog] geometry fetch failed (\(courseId)): \(error) \(courseId)")
+            print("[CourseCatalog] geometry fetch failed (\(courseId)): \(error.localizedDescription)")
             return nil
         }
     }
