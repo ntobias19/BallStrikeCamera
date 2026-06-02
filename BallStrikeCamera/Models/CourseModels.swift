@@ -6,8 +6,8 @@ import CoreLocation
 struct GolfCourse: Codable, Identifiable {
     var id: String
     var name: String
-    var city: String
-    var state: String
+    var city: String           = ""
+    var state: String          = ""
     var country: String        = "US"
     var latitude: Double?
     var longitude: Double?

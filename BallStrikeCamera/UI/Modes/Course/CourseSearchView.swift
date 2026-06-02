@@ -255,9 +255,9 @@ struct CourseSearchView: View {
                             .font(.system(size: 12))
                             .foregroundColor(TCTheme.textMuted)
                         HStack(spacing: 6) {
-                            if course.hasFullHoleData {
+                            if course.hasFullHoleData || course.source == .merged {
                                 courseBadge("GPS Map", TCTheme.gold)
-                            } else if course.hasPartialHoleData || course.source == .merged || course.hasRealGeometry {
+                            } else if course.hasPartialHoleData || course.hasRealGeometry {
                                 courseBadge("Partial Map", TCTheme.sage)
                             } else {
                                 courseBadge("Map coming soon", TCTheme.textMuted)
