@@ -28,10 +28,12 @@ final class CourseDataAggregator {
     /// Best-effort: never throws. Returns the richest course it can assemble.
     func enrich(_ course: GolfCourse, backend: AppBackend? = nil) async -> GolfCourse {
         let cached = OSMGolfService.shared.loadCached(courseId: course.id)
-        // Only short-circuit on cache when it has complete hole data AND real named tee boxes.
-        // Bypassing stale cache (no tee boxes, or pre-fix geometry) forces a fresh catalog fetch.
-        let cachedHasRealTees = cached?.teeBoxes.contains(where: { $0.totalYards > 0 }) ?? false
-        if let cached, cached.hasTrustedGeometry, cached.hasFullHoleData, cachedHasRealTees {
+
+        // Cache fast-path: requires full hole data AND more than one named tee (meaning
+        // it was already scorecard-enriched). A cache with only one tee gets bypassed so
+        // the scorecard fetch can add all named tees (Blue/White/Black/Red etc.).
+        let cachedTeeCount = cached?.teeBoxes.filter({ $0.totalYards > 0 }).count ?? 0
+        if let cached, cached.hasTrustedGeometry, cached.hasFullHoleData, cachedTeeCount > 1 {
             return cached
         }
 
@@ -45,21 +47,20 @@ final class CourseDataAggregator {
             return sharedGeometry
         }
 
-        // Course catalog (Supabase Storage): primary source for our 27k uploaded courses.
-        if let catalog = await CourseCatalog.geometry(for: course),
-           catalog.hasTrustedGeometry {
+        // Fetch catalog geometry and scorecard in parallel — no extra latency.
+        async let catalogFetch = CourseCatalog.geometry(for: course)
+        async let scorecardFetch = fetchScorecard(for: course)
+        let (catalog, scorecard) = await (catalogFetch, scorecardFetch)
+
+        if let catalog, catalog.hasTrustedGeometry {
             var withId = catalog
             withId.id = course.id
-
-            // If the GPS source only recorded one tee, supplement with the scorecard
-            // so the tee picker shows all named tees with correct per-hole yardages.
-            if withId.teeBoxes.count <= 1,
-               let scorecard = await fetchScorecard(for: course),
-               !scorecard.teeBoxes.isEmpty {
-                withId = merge(base: course, osm: withId, scorecard: scorecard)
-                withId.id = course.id   // merge may reset id; keep original
+            // Always merge scorecard so all named tees (White/Blue/Black/Red etc.)
+            // and their per-hole yardages appear in the tee picker.
+            if let sc = scorecard, !sc.teeBoxes.isEmpty {
+                withId = merge(base: course, osm: withId, scorecard: sc)
+                withId.id = course.id
             }
-
             OSMGolfService.shared.cacheMergedCourse(withId)
             return withId
         }
