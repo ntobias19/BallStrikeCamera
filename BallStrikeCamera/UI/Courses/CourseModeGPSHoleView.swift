@@ -1298,6 +1298,9 @@ struct CourseModeGPSHoleView: View {
     @EnvironmentObject var session: AuthSessionStore
     @EnvironmentObject var camera: CameraController
     @StateObject private var vm: CourseRoundViewModel
+    #if targetEnvironment(simulator)
+    @StateObject private var courseSimulator = CourseSimulator.shared
+    #endif
 
     @State private var showCamera      = false
     @State private var showScoreEntry  = false
@@ -2393,8 +2396,6 @@ struct CourseModeGPSHoleView: View {
     }
 
     #if targetEnvironment(simulator)
-    @StateObject private var courseSimulator = CourseSimulator.shared
-
     private var simulatorButton: some View {
         railButton(courseSimulator.isRunning ? "stop.fill" : "figure.walk",
                    isActive: courseSimulator.isRunning) {
