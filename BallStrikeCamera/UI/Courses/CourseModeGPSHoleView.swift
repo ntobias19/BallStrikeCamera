@@ -610,11 +610,7 @@ private struct SatelliteMapBackground: UIViewRepresentable {
 
     func makeUIView(context: Context) -> MKMapView {
         let map = MKMapView()
-        #if targetEnvironment(simulator)
-        map.mapType = .hybrid    // satellite tiles load fine in sim; standard looks wrong
-        #else
         map.mapType = .satellite
-        #endif
         map.isScrollEnabled     = true
         map.isZoomEnabled       = true
         map.isRotateEnabled     = false
@@ -1298,9 +1294,6 @@ struct CourseModeGPSHoleView: View {
     @EnvironmentObject var session: AuthSessionStore
     @EnvironmentObject var camera: CameraController
     @StateObject private var vm: CourseRoundViewModel
-    #if targetEnvironment(simulator)
-    @StateObject private var courseSimulator = CourseSimulator.shared
-    #endif
 
     @State private var showCamera      = false
     @State private var showScoreEntry  = false
@@ -2384,9 +2377,6 @@ struct CourseModeGPSHoleView: View {
                 railButton("location.fill", isActive: gpsOn) { gpsOn.toggle() }
                 railButton("camera.fill", isActive: false) { openCamera() }
                 railButton("list.number", isActive: false) { showScorecard = true }
-                #if targetEnvironment(simulator)
-                simulatorButton
-                #endif
             }
             .padding(.vertical, 14)
             .frame(width: 56)
@@ -2394,38 +2384,6 @@ struct CourseModeGPSHoleView: View {
             Spacer(minLength: 0)
         }
     }
-
-    #if targetEnvironment(simulator)
-    private var simulatorButton: some View {
-        railButton(courseSimulator.isRunning ? "stop.fill" : "figure.walk",
-                   isActive: courseSimulator.isRunning) {
-            if courseSimulator.isRunning {
-                courseSimulator.stop()
-            } else {
-                startSimulation()
-            }
-        }
-    }
-
-    private func startSimulation() {
-        // Build waypoints from the current course geometry
-        guard let course = vm.selectedCourse else { return }
-        var pts: [CLLocationCoordinate2D] = []
-        for h in course.holes.sorted(by: { $0.number < $1.number }) {
-            if let tee = h.teeCoordinate {
-                pts.append(CLLocationCoordinate2D(latitude: tee.latitude, longitude: tee.longitude))
-            }
-            for p in (h.pathCoordinates ?? []) {
-                pts.append(CLLocationCoordinate2D(latitude: p.latitude, longitude: p.longitude))
-            }
-            if let g = h.greenCenterCoordinate {
-                pts.append(CLLocationCoordinate2D(latitude: g.latitude, longitude: g.longitude))
-                pts.append(CLLocationCoordinate2D(latitude: g.latitude, longitude: g.longitude)) // linger
-            }
-        }
-        courseSimulator.start(waypoints: pts, location: vm.location, interval: 1.2)
-    }
-    #endif
 
     private func toolButton(_ icon: String, _ label: String, action: (() -> Void)? = nil) -> some View {
         Button {
