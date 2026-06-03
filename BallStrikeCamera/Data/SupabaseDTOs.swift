@@ -278,6 +278,16 @@ struct SupabaseCommentRow: Codable {
     }
 }
 
+struct SupabaseCommentCountRow: Codable {
+    var id: String
+    var postId: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case postId = "post_id"
+    }
+}
+
 /// Minimal public profile returned by the `search_users` / `list_friends` RPCs.
 struct SupabaseUserSearchRow: Codable {
     var userId: String

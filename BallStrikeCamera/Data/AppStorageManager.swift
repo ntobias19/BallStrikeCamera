@@ -41,6 +41,9 @@ enum AppStorageManager {
     static var authDir: URL { globalRoot.appendingPathComponent("auth") }
     static var usersIndexFile: URL { authDir.appendingPathComponent("users.json") }
     static var currentSessionFile: URL { authDir.appendingPathComponent("session.json") }
+    static var socialDir: URL { globalRoot.appendingPathComponent("social") }
+    static var feedReactionsDir: URL { socialDir.appendingPathComponent("reactions") }
+    static var feedCommentsDir: URL { socialDir.appendingPathComponent("comments") }
 
     // MARK: - Helpers
 

@@ -15,8 +15,10 @@ struct TrueCarryPlayView: View {
     @State private var selectedTeeBox: TeeBox?
     @State private var unfinishedRound: CourseRound?
     @State private var resumeRound: CourseRound?
+    @State private var didApplyDefaultMode = false
     @StateObject private var prewarmer = NearbyCoursePrewarmer()
     @StateObject private var prewarmLocation = LocationService()
+    @AppStorage("tc_default_play_mode") private var defaultPlayMode = "Range"
 
     enum PlayMode { case range, sim, course }
 
@@ -128,6 +130,7 @@ struct TrueCarryPlayView: View {
             }
         }
         .task {
+            applyDefaultModeIfNeeded()
             await refreshUnfinishedRound()
             prewarmLocation.requestPermission()
             // Flush any deferred remote writes from prior offline rounds.
@@ -192,48 +195,48 @@ struct TrueCarryPlayView: View {
     private var pageTitleSection: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Play")
-                .font(.system(size: 42, weight: .semibold))
+                .font(.system(size: 38, weight: .semibold))
                 .foregroundColor(TCTheme.textPrimary)
-            Text("Choose a mode to start.")
+            Text("Choose how you want to play today.")
                 .font(.system(size: 14))
                 .foregroundColor(TCTheme.textMuted)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    // MARK: Mode Cards (horizontal HStack)
+    // MARK: Mode Cards
 
     private var modeCardsSection: some View {
-        HStack(spacing: 10) {
-            TCModeCard(
+        VStack(spacing: 14) {
+            PlayModeTile(
                 icon: "target",
                 title: "Range Mode",
-                subtitle: "Dial in your game. Track every shot.",
-                accent: TCTheme.cyan,
+                subtitle: "Track every shot.",
+                motif: .target,
                 isSelected: selectedMode == .range
-            ) {
-                selectedMode = .range
-            }
+            ) { selectMode(.range) }
 
-            TCModeCard(
+            PlayModeTile(
                 icon: "display",
                 title: "Sim Mode",
                 subtitle: "Play virtual courses indoors.",
-                accent: TCTheme.gold,
+                motif: .sim,
                 isSelected: selectedMode == .sim
-            ) {
-                selectedMode = .sim
-            }
+            ) { selectMode(.sim) }
 
-            TCModeCard(
+            PlayModeTile(
                 icon: "map.fill",
                 title: "Course Mode",
-                subtitle: "Play real courses. On the course.",
-                accent: TCTheme.sage,
+                subtitle: "Real courses with live GPS.",
+                motif: .course,
                 isSelected: selectedMode == .course
-            ) {
-                selectedMode = .course
-            }
+            ) { selectMode(.course) }
+        }
+    }
+
+    private func selectMode(_ mode: PlayMode) {
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
+            selectedMode = mode
         }
     }
 
@@ -259,4 +262,182 @@ struct TrueCarryPlayView: View {
         }
     }
 
+    private func applyDefaultModeIfNeeded() {
+        guard !didApplyDefaultMode else { return }
+        didApplyDefaultMode = true
+        switch defaultPlayMode {
+        case "Simulator": selectedMode = .sim
+        case "Course": selectedMode = .course
+        default: selectedMode = .range
+        }
+    }
+
+}
+
+// MARK: - Play Mode Tile (hero card with mode-specific motif)
+
+enum PlayMotif { case target, sim, course }
+
+private struct PlayModeTile: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+    let motif: PlayMotif
+    let isSelected: Bool
+    let action: () -> Void
+
+    private let radius: CGFloat = 16
+
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                // Faint mode-specific line-art motif, bleeding off the right edge.
+                motifView
+                    .frame(width: 150, height: 150)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .offset(x: 30)
+                    .opacity(isSelected ? 0.18 : 0.06)
+                    .allowsHitTesting(false)
+
+                HStack(spacing: 16) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 13, style: .continuous)
+                            .fill(isSelected ? TCTheme.gold.opacity(0.18) : TCTheme.panelRaised)
+                            .frame(width: 52, height: 52)
+                        Image(systemName: icon)
+                            .font(.system(size: 22, weight: .semibold))
+                            .foregroundColor(isSelected ? TCTheme.gold : TCTheme.textMuted)
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(title)
+                            .font(.system(size: 19, weight: .semibold))
+                            .foregroundColor(TCTheme.textPrimary)
+                        Text(subtitle)
+                            .font(.system(size: 13))
+                            .foregroundColor(TCTheme.textMuted)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.9)
+                    }
+                    Spacer(minLength: 8)
+
+                    selectionIndicator
+                }
+                .padding(.horizontal, 18)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 104)
+            .background(isSelected ? TCTheme.gold.opacity(0.07) : TCTheme.panel)
+            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .strokeBorder(isSelected ? TCTheme.borderGold : TCTheme.border, lineWidth: isSelected ? 1.5 : 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private var motifView: some View {
+        let tint = isSelected ? TCTheme.gold : TCTheme.textPrimary
+        switch motif {
+        case .target: TargetRingsMotif(tint: tint)
+        case .sim:    SimScreenMotif(tint: tint)
+        case .course: CourseMapMotif(tint: tint)
+        }
+    }
+
+    private var selectionIndicator: some View {
+        ZStack {
+            Circle()
+                .strokeBorder(TCTheme.border, lineWidth: 1.5)
+                .frame(width: 24, height: 24)
+                .opacity(isSelected ? 0 : 1)
+            Circle()
+                .fill(TCTheme.gold)
+                .frame(width: 24, height: 24)
+                .opacity(isSelected ? 1 : 0)
+            Image(systemName: "checkmark")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundColor(.white)
+                .opacity(isSelected ? 1 : 0)
+        }
+    }
+}
+
+// MARK: - Mode motifs (decorative line art)
+
+private struct TargetRingsMotif: View {
+    let tint: Color
+    var body: some View {
+        ZStack {
+            ForEach(0..<4, id: \.self) { i in
+                Circle()
+                    .stroke(tint, lineWidth: 1.5)
+                    .frame(width: CGFloat(36 + i * 30), height: CGFloat(36 + i * 30))
+            }
+            Circle().fill(tint).frame(width: 12, height: 12)
+        }
+    }
+}
+
+private struct SimScreenMotif: View {
+    let tint: Color
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .stroke(tint, lineWidth: 1.5)
+                .frame(width: 120, height: 84)
+            BallFlightArc()
+                .stroke(tint, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                .frame(width: 94, height: 56)
+            Circle().fill(tint).frame(width: 6, height: 6).offset(x: 47, y: -28)
+        }
+    }
+}
+
+private struct CourseMapMotif: View {
+    let tint: Color
+    var body: some View {
+        ZStack {
+            FairwayShape()
+                .stroke(tint, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+                .frame(width: 110, height: 132)
+            Image(systemName: "flag.fill")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(tint)
+                .offset(x: 20, y: -50)
+        }
+    }
+}
+
+private struct BallFlightArc: Shape {
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+        p.addQuadCurve(
+            to: CGPoint(x: rect.maxX, y: rect.maxY),
+            control: CGPoint(x: rect.midX, y: rect.minY - rect.height * 0.25)
+        )
+        return p
+    }
+}
+
+private struct FairwayShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: rect.midX - 16, y: rect.maxY))
+        p.addCurve(
+            to: CGPoint(x: rect.midX + 4, y: rect.minY),
+            control1: CGPoint(x: rect.midX - 42, y: rect.midY),
+            control2: CGPoint(x: rect.midX + 34, y: rect.midY * 0.8)
+        )
+        p.move(to: CGPoint(x: rect.midX + 20, y: rect.maxY))
+        p.addCurve(
+            to: CGPoint(x: rect.midX + 22, y: rect.minY),
+            control1: CGPoint(x: rect.midX + 4, y: rect.midY),
+            control2: CGPoint(x: rect.midX + 56, y: rect.midY * 0.8)
+        )
+        return p
+    }
 }

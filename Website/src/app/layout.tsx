@@ -53,23 +53,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${manrope.variable} ${instrumentSerif.variable} ${jetbrainsMono.variable}`} suppressHydrationWarning>
       <body>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              (() => {
-                try {
-                  const saved = localStorage.getItem("truecarry-theme");
-                  const theme = saved === "light" || saved === "dark"
-                    ? saved
-                    : (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
-                  document.documentElement.dataset.theme = theme;
-                } catch {
-                  document.documentElement.dataset.theme = "dark";
-                }
-              })();
-            `,
-          }}
-        />
         {children}
       </body>
     </html>

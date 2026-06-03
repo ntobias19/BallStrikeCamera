@@ -5,11 +5,11 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            AppRootView()
+            AppRootView(launchComplete: launchComplete)
 
             if !launchComplete {
                 TrueCarryLaunchView {
-                    withAnimation(.easeOut(duration: 0.5)) { launchComplete = true }
+                    withAnimation(.easeInOut(duration: 0.6)) { launchComplete = true }
                 }
                 .transition(.opacity)
                 .zIndex(10)

@@ -36,7 +36,13 @@ struct FeedView: View {
 
     @State private var showFriends = false
     @State private var showProfile = false
+    @State private var showComposer = false
     @State private var commentingPost: FeedPost?
+    @State private var showRangeCamera = false
+    @State private var showCourseSearch = false
+    @State private var showCourseMode = false
+    @State private var selectedCourse: GolfCourse?
+    @State private var selectedTeeBox: TeeBox?
 
     init(userId: UUID, authorName: String, backend: AppBackend) {
         self.userId = userId
@@ -67,21 +73,40 @@ struct FeedView: View {
                         TCProfileAvatarButton(initials: userInitials,
                                               devMode: session.entitlementVM.isDeveloperMode) { showProfile = true }
                     }
-                    weeklySnapshot
+                    activityHero
+                    sectionGap
+                    quickStartPanel
+                    sectionGap
+                    homeSummarySection
+                    sectionGap
+                    leaderboardSection
+                    sectionGap
+                    challengesSection
                     sectionGap
                     if vm.posts.isEmpty && !vm.isLoading {
                         emptyState
                     } else {
+                        feedSectionHeader
                         ForEach(Array(vm.posts.enumerated()), id: \.element.id) { _, post in
                             FeedPostRow(
                                 post: post,
                                 authorName: authorName,
                                 gimmeCount: vm.gimmeCount(for: post),
                                 hasGimmed: vm.hasGimmed(post),
+                                commentCount: vm.commentCount(for: post),
+                                canDelete: post.userId == userId,
                                 onGimme: { Task { await vm.toggleGimme(post) } },
-                                onComment: { commentingPost = post }
+                                onComment: { commentingPost = post },
+                                onDelete: { Task { await vm.deletePost(id: post.id) } }
                             )
+                            .task { await vm.loadMoreIfNeeded(currentPost: post) }
                             sectionGap
+                        }
+                        if vm.isLoadingMore {
+                            ProgressView()
+                                .tint(TCTheme.gold)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 18)
                         }
                         caughtUpNote
                     }
@@ -100,7 +125,50 @@ struct FeedView: View {
             NavigationStack { TrueCarryProfileView() }
                 .tcAppearance()
         }
-        .sheet(item: $commentingPost) { post in
+        .fullScreenCover(isPresented: $showRangeCamera) {
+            RangeCameraScreen(userId: userId, backend: backend)
+                .ignoresSafeArea()
+                .statusBarHidden(true)
+        }
+        .sheet(isPresented: $showCourseSearch, onDismiss: {
+            if selectedCourse != nil && selectedTeeBox != nil {
+                showCourseMode = true
+            }
+        }) {
+            NavigationStack {
+                CourseSearchView(userId: userId) { course, tee in
+                    selectedCourse = course
+                    selectedTeeBox = tee
+                    showCourseSearch = false
+                }
+            }
+            .tcAppearance()
+        }
+        .fullScreenCover(isPresented: $showCourseMode) {
+            if let course = selectedCourse, let tee = selectedTeeBox {
+                CourseModeGPSHoleView(
+                    userId: userId,
+                    backend: backend,
+                    initialCourse: course,
+                    initialTeeBox: tee
+                )
+            }
+        }
+        .sheet(isPresented: $showComposer, onDismiss: { Task { await vm.load() } }) {
+            NavigationStack {
+                FeedComposeSheet(authorName: authorName) { title, body, type, highlight in
+                    await vm.createPost(
+                        title: title,
+                        body: body,
+                        type: type,
+                        highlight: highlight,
+                        authorName: authorName
+                    )
+                }
+            }
+            .tcAppearance()
+        }
+        .sheet(item: $commentingPost, onDismiss: { Task { await vm.load() } }) { post in
             NavigationStack {
                 CommentsSheet(post: post, userId: userId, authorName: authorName, backend: backend)
             }
@@ -114,12 +182,80 @@ struct FeedView: View {
             .frame(height: 8)
     }
 
-    // MARK: Weekly snapshot
+    private var activityHero: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .center, spacing: 16) {
+                SpinningGolfBallView(size: 82, period: 7)
+                    .frame(width: 86, height: 86)
+                    .accessibilityHidden(true)
 
-    private var weeklySnapshot: some View {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Today on True Carry")
+                        .font(.system(size: 28, weight: .semibold))
+                        .foregroundColor(TCTheme.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("Track rounds, compare with friends, and keep your golf story moving.")
+                        .font(.system(size: 13))
+                        .foregroundColor(TCTheme.textMuted)
+                        .lineSpacing(2)
+                }
+            }
+
+            HStack(spacing: 10) {
+                HeroActionButton(title: "Start Round", icon: "flag.fill", accent: TCTheme.gold) {
+                    selectedCourse = nil
+                    selectedTeeBox = nil
+                    showCourseSearch = true
+                }
+                HeroActionButton(title: "Start Range", icon: "scope", accent: TCTheme.sage) {
+                    showRangeCamera = true
+                }
+            }
+
+            Button { showComposer = true } label: {
+                HStack(spacing: 12) {
+                    AvatarCircle(name: authorName, size: 34)
+                    Text("Post a round, range note, or win")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(TCTheme.textMuted)
+                    Spacer()
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(TCTheme.gold)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(TCTheme.panel)
+                .clipShape(RoundedRectangle(cornerRadius: TCTheme.rowRadius, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: TCTheme.rowRadius, style: .continuous)
+                        .strokeBorder(TCTheme.border, lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, TCTheme.hPad)
+        .padding(.vertical, 18)
+        .background(TCTheme.background)
+    }
+
+    private var quickStartPanel: some View {
+        HStack(spacing: 10) {
+            QuickStartTile(icon: "chart.xyaxis.line", title: "Insights", subtitle: "Review form trends")
+            QuickStartTile(icon: "clock.arrow.circlepath", title: "History", subtitle: "Open saved play")
+            QuickStartTile(icon: "person.2.fill", title: "Friends", subtitle: "Compare this week") {
+                showFriends = true
+            }
+        }
+        .padding(.horizontal, TCTheme.hPad)
+        .padding(.vertical, 16)
+        .background(TCTheme.background)
+    }
+
+    private var homeSummarySection: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Text("Your Weekly Snapshot")
+                Text("Your Week")
                     .font(.system(size: 16, weight: .bold))
                     .foregroundColor(TCTheme.textPrimary)
                 Spacer()
@@ -131,28 +267,114 @@ struct FeedView: View {
                 .buttonStyle(.plain)
             }
             HStack(spacing: 0) {
-                // TODO: Replace weeklyActivityCount with completed rounds year-to-date
-                // once round aggregation is finalized (currently counts all feed posts).
-                snapshotMetric(title: "Rounds YTD", value: "\(vm.weeklyActivityCount)")
-                snapshotMetric(title: "Gimmes", value: "\(vm.weeklyGimmesReceived)")
-                snapshotMetric(title: "Friends", value: "\(vm.friendsCount)")
+                snapshotMetric(title: "Rounds", value: "\(vm.homeSummary.weeklyRounds)")
+                snapshotMetric(title: "Shots", value: "\(vm.homeSummary.weeklyShots)")
+                snapshotMetric(title: "Best Carry", value: vm.homeSummary.bestCarryYards > 0 ? "\(vm.homeSummary.bestCarryYards)" : "--", unit: vm.homeSummary.bestCarryYards > 0 ? "yd" : "")
+            }
+            HStack(spacing: 0) {
+                snapshotMetric(title: "Streak", value: "\(vm.homeSummary.activeStreakDays)", unit: "days")
+                snapshotMetric(title: "Gimmes", value: "\(vm.homeSummary.gimmesReceived)")
+                snapshotMetric(title: "Friends", value: "\(vm.homeSummary.friendsCount)")
             }
         }
         .padding(.horizontal, TCTheme.hPad)
         .padding(.vertical, 18)
     }
 
-    private func snapshotMetric(title: String, value: String) -> some View {
-        VStack(alignment: .center, spacing: 6) {
-            Text(value)
-                .font(.system(size: 28, weight: .bold))
+    private var leaderboardSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionTitle("Friends Leaderboard", actionTitle: "Friends") { showFriends = true }
+            if vm.leaderboardEntries.isEmpty {
+                compactEmptyRow("Add friends or finish activities to light up the board.")
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(Array(vm.leaderboardEntries.prefix(5).enumerated()), id: \.element.id) { index, entry in
+                        LeaderboardPreviewRow(rank: index + 1, entry: entry)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, TCTheme.hPad)
+        .padding(.vertical, 18)
+        .background(TCTheme.background)
+    }
+
+    private var challengesSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionTitle("Weekly Challenges", actionTitle: "Post") { showComposer = true }
+            VStack(spacing: 8) {
+                ForEach(vm.challengePreviews) { challenge in
+                    ChallengePreviewRow(challenge: challenge)
+                }
+            }
+        }
+        .padding(.horizontal, TCTheme.hPad)
+        .padding(.vertical, 18)
+        .background(TCTheme.background)
+    }
+
+    private var feedSectionHeader: some View {
+        HStack {
+            Text("Activity Feed")
+                .font(.system(size: 16, weight: .bold))
                 .foregroundColor(TCTheme.textPrimary)
+            Spacer()
+            Text("\(vm.posts.count)")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(TCTheme.textMuted)
+        }
+        .padding(.horizontal, TCTheme.hPad)
+        .padding(.vertical, 14)
+        .background(TCTheme.background)
+    }
+
+    private func snapshotMetric(title: String, value: String, unit: String = "") -> some View {
+        VStack(alignment: .center, spacing: 6) {
+            HStack(alignment: .lastTextBaseline, spacing: 2) {
+                Text(value)
+                    .font(.system(size: 25, weight: .bold))
+                    .foregroundColor(TCTheme.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                if !unit.isEmpty {
+                    Text(unit)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(TCTheme.textMuted)
+                }
+            }
             Text(title)
                 .font(.system(size: 12))
                 .foregroundColor(TCTheme.textMuted)
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
+    }
+
+    private func sectionTitle(_ title: String, actionTitle: String, action: @escaping () -> Void) -> some View {
+        HStack {
+            Text(title)
+                .font(.system(size: 16, weight: .bold))
+                .foregroundColor(TCTheme.textPrimary)
+            Spacer()
+            Button(actionTitle, action: action)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(TCTheme.gold)
+                .buttonStyle(.plain)
+        }
+    }
+
+    private func compactEmptyRow(_ message: String) -> some View {
+        Text(message)
+            .font(.system(size: 13))
+            .foregroundColor(TCTheme.textMuted)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(TCTheme.panel)
+            .clipShape(RoundedRectangle(cornerRadius: TCTheme.rowRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: TCTheme.rowRadius, style: .continuous)
+                    .strokeBorder(TCTheme.border, lineWidth: 1)
+            )
     }
 
     // MARK: Empty / footer
@@ -182,6 +404,274 @@ struct FeedView: View {
     }
 }
 
+// MARK: - Home Components
+
+private struct HeroActionButton: View {
+    let title: String
+    let icon: String
+    let accent: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label(title, systemImage: icon)
+                .font(.system(size: 14, weight: .bold))
+                .foregroundColor(TCTheme.onPrimary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(TCTheme.primaryFill)
+                .clipShape(RoundedRectangle(cornerRadius: TCTheme.cardRadius, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: TCTheme.cardRadius, style: .continuous)
+                        .strokeBorder(accent.opacity(0.35), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct QuickStartTile: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+    var action: (() -> Void)? = nil
+
+    var body: some View {
+        Button(action: { action?() }) {
+            VStack(alignment: .leading, spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(TCTheme.gold)
+                Text(title)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(TCTheme.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                Text(subtitle)
+                    .font(.system(size: 10.5))
+                    .foregroundColor(TCTheme.textMuted)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, minHeight: 94, alignment: .topLeading)
+            .padding(12)
+            .background(TCTheme.panel)
+            .clipShape(RoundedRectangle(cornerRadius: TCTheme.rowRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: TCTheme.rowRadius, style: .continuous)
+                    .strokeBorder(TCTheme.border, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(action == nil)
+    }
+}
+
+private struct LeaderboardPreviewRow: View {
+    let rank: Int
+    let entry: FeedLeaderboardEntry
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text("\(rank)")
+                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                .foregroundColor(TCTheme.gold)
+                .frame(width: 24, height: 24)
+                .background(TCTheme.gold.opacity(0.13))
+                .clipShape(Circle())
+            AvatarCircle(name: entry.displayName, size: 34)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.displayName)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(TCTheme.textPrimary)
+                Text(entry.metric.title)
+                    .font(.system(size: 11))
+                    .foregroundColor(TCTheme.textMuted)
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 2) {
+                HStack(alignment: .lastTextBaseline, spacing: 2) {
+                    Text("\(entry.value)")
+                        .font(.system(size: 16, weight: .bold, design: .monospaced))
+                        .foregroundColor(TCTheme.textPrimary)
+                    if !entry.metric.unit.isEmpty {
+                        Text(entry.metric.unit)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(TCTheme.textMuted)
+                    }
+                }
+                Text(entry.subtitle)
+                    .font(.system(size: 10))
+                    .foregroundColor(TCTheme.textMuted)
+                    .lineLimit(1)
+            }
+        }
+        .padding(12)
+        .background(TCTheme.panel)
+        .clipShape(RoundedRectangle(cornerRadius: TCTheme.rowRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: TCTheme.rowRadius, style: .continuous)
+                .strokeBorder(TCTheme.border, lineWidth: 1)
+        )
+    }
+}
+
+private struct ChallengePreviewRow: View {
+    let challenge: FeedChallengePreview
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: challenge.icon)
+                .font(.system(size: 15, weight: .bold))
+                .foregroundColor(TCTheme.gold)
+                .frame(width: 34, height: 34)
+                .background(TCTheme.gold.opacity(0.13))
+                .clipShape(Circle())
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text(challenge.title)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(TCTheme.textPrimary)
+                    Spacer()
+                    Text("\(Int((challenge.progress * 100).rounded()))%")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(TCTheme.textMuted)
+                }
+                ProgressView(value: min(max(challenge.progress, 0), 1))
+                    .tint(TCTheme.gold)
+                Text(challenge.subtitle)
+                    .font(.system(size: 11))
+                    .foregroundColor(TCTheme.textMuted)
+            }
+        }
+        .padding(12)
+        .background(TCTheme.panel)
+        .clipShape(RoundedRectangle(cornerRadius: TCTheme.rowRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: TCTheme.rowRadius, style: .continuous)
+                .strokeBorder(TCTheme.border, lineWidth: 1)
+        )
+    }
+}
+
+private struct FeedActivitySummary: View {
+    let metadata: FeedActivityMetadata
+    let fallbackStats: [FeedStat]
+    let subtitle: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(TCTheme.gold)
+                    .frame(width: 42, height: 42)
+                    .background(TCTheme.gold.opacity(0.14))
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(label)
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(TCTheme.textMuted)
+                    Text(detail)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(TCTheme.textPrimary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                HStack(alignment: .lastTextBaseline, spacing: 2) {
+                    Text(metadata.primaryValue)
+                        .font(.system(size: 28, weight: .bold, design: .monospaced))
+                        .foregroundColor(TCTheme.textPrimary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.65)
+                    if !metadata.primaryUnit.isEmpty {
+                        Text(metadata.primaryUnit)
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(TCTheme.textMuted)
+                    }
+                }
+            }
+
+            FeedStatColumns(stats: stats)
+        }
+    }
+
+    private var icon: String {
+        switch metadata.kind {
+        case .round: return "flag.fill"
+        case .range: return "scope"
+        case .sim: return "display"
+        case .manual: return "sparkles"
+        }
+    }
+
+    private var label: String {
+        switch metadata.kind {
+        case .round: return "ROUND"
+        case .range: return "RANGE SESSION"
+        case .sim: return "SIM SESSION"
+        case .manual: return "UPDATE"
+        }
+    }
+
+    private var detail: String {
+        metadata.courseName ?? metadata.clubName ?? metadata.providerName ?? (subtitle.isEmpty ? "True Carry activity" : subtitle)
+    }
+
+    private var stats: [FeedStat] {
+        switch metadata.kind {
+        case .round:
+            return [
+                FeedStat(label: "To Par", value: metadata.scoreToPar.map(scoreToParText) ?? "--"),
+                FeedStat(label: "Fairways", value: metadata.fairwaysHit.map { "\($0)" } ?? "--"),
+                FeedStat(label: "GIR", value: metadata.greensInRegulation.map { "\($0)" } ?? "--"),
+                FeedStat(label: "Putts", value: metadata.putts.map { "\($0)" } ?? "--")
+            ]
+        case .range:
+            return [
+                FeedStat(label: "Shots", value: metadata.shotCount.map { "\($0)" } ?? "--"),
+                FeedStat(label: "Avg Carry", value: metadata.averageCarryYards.map { "\($0) yd" } ?? "--"),
+                FeedStat(label: "Best", value: metadata.bestCarryYards.map { "\($0) yd" } ?? "--")
+            ]
+        case .sim:
+            return [
+                FeedStat(label: "Shots", value: metadata.shotCount.map { "\($0)" } ?? "--"),
+                FeedStat(label: "Source", value: metadata.providerName ?? "Simulator")
+            ]
+        case .manual:
+            return fallbackStats.isEmpty ? [FeedStat(label: "Highlight", value: metadata.primaryValue)] : fallbackStats
+        }
+    }
+
+    private func scoreToParText(_ value: Int) -> String {
+        value == 0 ? "E" : value > 0 ? "+\(value)" : "\(value)"
+    }
+}
+
+private struct FeedStatColumns: View {
+    let stats: [FeedStat]
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 0) {
+            ForEach(stats.prefix(4)) { stat in
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(stat.label)
+                        .font(.system(size: 12))
+                        .foregroundColor(TCTheme.textMuted)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
+                    Text(stat.value)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(TCTheme.textPrimary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.65)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+}
+
 // MARK: - Feed Post Card (Strava-style, full-bleed)
 
 private struct FeedPostRow: View {
@@ -189,8 +679,11 @@ private struct FeedPostRow: View {
     let authorName: String
     let gimmeCount: Int
     let hasGimmed: Bool
+    let commentCount: Int
+    let canDelete: Bool
     let onGimme: () -> Void
     let onComment: () -> Void
+    let onDelete: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -209,6 +702,22 @@ private struct FeedPostRow: View {
                     .foregroundColor(TCTheme.textMuted)
                 }
                 Spacer()
+                Menu {
+                    ShareLink(item: shareText) {
+                        Label("Share", systemImage: "square.and.arrow.up")
+                    }
+                    if canDelete {
+                        Button(role: .destructive, action: onDelete) {
+                            Label("Delete Post", systemImage: "trash")
+                        }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(TCTheme.textMuted)
+                        .frame(width: 32, height: 32)
+                }
+                .buttonStyle(.plain)
             }
 
             // Title
@@ -217,21 +726,10 @@ private struct FeedPostRow: View {
                 .foregroundColor(TCTheme.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            // Stat columns
-            if !post.stats.isEmpty {
-                HStack(alignment: .top, spacing: 0) {
-                    ForEach(post.stats) { stat in
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(stat.label)
-                                .font(.system(size: 13))
-                                .foregroundColor(TCTheme.textMuted)
-                            Text(stat.value)
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundColor(TCTheme.textPrimary)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
+            if let metadata = post.activityMetadata {
+                FeedActivitySummary(metadata: metadata, fallbackStats: post.stats, subtitle: post.subtitle)
+            } else if !post.stats.isEmpty {
+                FeedStatColumns(stats: post.stats)
             } else if !post.subtitle.isEmpty {
                 Text(post.subtitle)
                     .font(.system(size: 14))
@@ -265,15 +763,23 @@ private struct FeedPostRow: View {
                 }
                 Spacer()
                 Button(action: onComment) {
-                    Image(systemName: "bubble.right")
-                        .font(.system(size: 19))
-                        .foregroundColor(TCTheme.textSecondary)
+                    HStack(spacing: 6) {
+                        Image(systemName: "bubble.right")
+                            .font(.system(size: 19))
+                        if commentCount > 0 {
+                            Text("\(commentCount)")
+                                .font(.system(size: 14, weight: .semibold))
+                        }
+                    }
+                    .foregroundColor(TCTheme.textSecondary)
                 }
                 .buttonStyle(.plain)
                 Spacer()
-                Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 19))
-                    .foregroundColor(TCTheme.textSecondary)
+                ShareLink(item: shareText) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 19))
+                        .foregroundColor(TCTheme.textSecondary)
+                }
             }
             .padding(.horizontal, 8)
         }
@@ -299,6 +805,106 @@ private struct FeedPostRow: View {
         case .session:     return "target"
         case .shot:        return "figure.golf"
         case .achievement: return "trophy.fill"
+        }
+    }
+
+    private var shareText: String {
+        var parts = ["\(post.authorName) on True Carry", post.title]
+        if !post.subtitle.isEmpty { parts.append(post.subtitle) }
+        if !post.metricHighlight.isEmpty { parts.append("Highlight: \(post.metricHighlight)") }
+        return parts.joined(separator: "\n")
+    }
+}
+
+// MARK: - Compose Sheet
+
+private struct FeedComposeSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let authorName: String
+    let onPost: (String, String, FeedPostType, String) async -> Void
+
+    @State private var title = ""
+    @State private var bodyText = ""
+    @State private var highlight = ""
+    @State private var type: FeedPostType = .achievement
+    @State private var isPosting = false
+
+    private var canPost: Bool {
+        !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        !bodyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        !highlight.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        ZStack {
+            TCTheme.background.ignoresSafeArea()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    HStack(spacing: 12) {
+                        AvatarCircle(name: authorName, size: 44)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(authorName)
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(TCTheme.textPrimary)
+                            Text("Sharing to your True Carry feed")
+                                .font(.system(size: 12))
+                                .foregroundColor(TCTheme.textMuted)
+                        }
+                    }
+
+                    Picker("Post type", selection: $type) {
+                        Text("Update").tag(FeedPostType.achievement)
+                        Text("Round").tag(FeedPostType.round)
+                        Text("Range").tag(FeedPostType.session)
+                        Text("Shot").tag(FeedPostType.shot)
+                    }
+                    .pickerStyle(.segmented)
+
+                    feedField(title: "Title", placeholder: "e.g. Best range session this month", text: $title)
+                    feedField(title: "Details", placeholder: "What happened out there?", text: $bodyText, axis: .vertical)
+                    feedField(title: "Highlight", placeholder: "e.g. 287 yd drive, +4, 42 putts avoided", text: $highlight)
+
+                    TCPrimaryGoldButton(title: isPosting ? "Posting..." : "Post to Feed", icon: "paperplane.fill") {
+                        guard canPost, !isPosting else { return }
+                        isPosting = true
+                        Task {
+                            await onPost(title, bodyText, type, highlight)
+                            dismiss()
+                        }
+                    }
+                    .disabled(!canPost || isPosting)
+                    .opacity(canPost ? 1 : 0.55)
+                }
+                .padding(TCTheme.hPad)
+            }
+        }
+        .navigationTitle("New Post")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button("Cancel") { dismiss() }.foregroundColor(TCTheme.textMuted)
+            }
+        }
+    }
+
+    private func feedField(title: String, placeholder: String, text: Binding<String>, axis: Axis = .horizontal) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(title.uppercased())
+                .font(.system(size: 11, weight: .bold))
+                .tracking(0.8)
+                .foregroundColor(TCTheme.textMuted)
+            TextField(placeholder, text: text, axis: axis)
+                .lineLimit(axis == .vertical ? 4...8 : 1...1)
+                .textFieldStyle(.plain)
+                .foregroundColor(TCTheme.textPrimary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background(TCTheme.panel)
+                .clipShape(RoundedRectangle(cornerRadius: TCTheme.rowRadius, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: TCTheme.rowRadius, style: .continuous)
+                        .strokeBorder(TCTheme.border, lineWidth: 1)
+                )
         }
     }
 }

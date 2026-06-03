@@ -4,12 +4,12 @@ import SwiftUI
 
 enum TCTheme {
     // MARK: Backgrounds — Brand Guidelines v1 (dark = Carry Forest, light = Paper/Bone)
-    static var background: Color { Color.dyn(light: Color(red: 0.955, green: 0.935, blue: 0.875), dark: Color(red: 0.118, green: 0.165, blue: 0.133)) } // Paper / Carry Forest #1E2A22
+    static var background: Color { Color.dyn(light: Color(red: 0.985, green: 0.976, blue: 0.950), dark: Color(red: 0.118, green: 0.165, blue: 0.133)) } // warm white / Carry Forest #1E2A22
     static var backgroundMid: Color { background }
     static var backgroundBot: Color { background }
-    static var panel: Color { Color.dyn(light: Color(red: 0.996, green: 0.984, blue: 0.945), dark: Color(red: 0.141, green: 0.192, blue: 0.153)) } // warm paper / raised forest #243127
-    static var panelRaised: Color { Color.dyn(light: Color(red: 0.925, green: 0.894, blue: 0.824), dark: Color(red: 0.165, green: 0.227, blue: 0.180)) } // Range Bone / Fairway Moss #2A3A2E
-    static var panelDeep: Color { Color.dyn(light: Color(red: 0.878, green: 0.835, blue: 0.737), dark: Color(red: 0.086, green: 0.125, blue: 0.102)) } // warm divider / forest-deep #16201A
+    static var panel: Color { Color.dyn(light: Color(red: 1.000, green: 0.996, blue: 0.982), dark: Color(red: 0.141, green: 0.192, blue: 0.153)) } // creamy white / raised forest #243127
+    static var panelRaised: Color { Color.dyn(light: Color(red: 0.975, green: 0.958, blue: 0.918), dark: Color(red: 0.165, green: 0.227, blue: 0.180)) } // soft ivory / Fairway Moss #2A3A2E
+    static var panelDeep: Color { Color.dyn(light: Color(red: 0.938, green: 0.910, blue: 0.842), dark: Color(red: 0.086, green: 0.125, blue: 0.102)) } // warm divider / forest-deep #16201A
     static var glassPanel: Color { panel }
 
     // MARK: Text — Range Bone on forest / Night Ink on paper
@@ -69,7 +69,7 @@ enum TCTheme {
         LinearGradient(colors: [panelRaised, panel], startPoint: .top, endPoint: .bottom)
     }
     static var dockBackground: Color {
-        Color.dyn(light: Color(red: 0.957, green: 0.937, blue: 0.886), dark: Color(red: 0.086, green: 0.125, blue: 0.102)).opacity(0.97)
+        Color.dyn(light: Color(red: 0.990, green: 0.980, blue: 0.955), dark: Color(red: 0.086, green: 0.125, blue: 0.102)).opacity(0.97)
     }
     static var courseGradient: LinearGradient {
         LinearGradient(colors: [panelRaised, panel], startPoint: .topLeading, endPoint: .bottomTrailing)

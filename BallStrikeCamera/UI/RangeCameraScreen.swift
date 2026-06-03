@@ -4,6 +4,7 @@ struct RangeCameraScreen: View {
     @EnvironmentObject private var camera: CameraController
     @Environment(\.dismiss) private var dismiss
     @StateObject private var rangeVM: RangeSessionViewModel
+    @AppStorage("tc_save_original_frames") private var defaultSaveOriginalFrames = false
 
     @State private var selectedClub = "7 Iron"
     @State private var selectedClubId: UUID?

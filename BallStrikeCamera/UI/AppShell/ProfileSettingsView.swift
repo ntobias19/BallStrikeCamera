@@ -1,11 +1,44 @@
 import SwiftUI
+import UserNotifications
 
 struct ProfileSettingsView: View {
     @EnvironmentObject var session: AuthSessionStore
+    @Environment(\.openURL) private var openURL
+
     @State private var showClubs = false
+    @State private var showEditProfile = false
+    @State private var showResetPreferences = false
+
+    @AppStorage("tc_notifications_enabled") private var notificationsOn = true
+    @AppStorage("tc_camera_frame_rate") private var frameRate = "240 fps"
+    @AppStorage("tc_camera_exposure") private var exposureMode = "Auto"
+    @AppStorage("tc_camera_side") private var cameraSide = "Down-the-line"
+    @AppStorage("tc_save_original_frames") private var saveOriginalFrames = false
+    @AppStorage("tc_default_play_mode") private var defaultPlayMode = "Range"
+    @AppStorage("tc_dev_mode") private var devMode = false   // same key as EntitlementViewModel
 
     private var profile: UserProfile? { session.userProfile }
     private var user: AppUser?        { session.currentUser }
+
+    private var appVersion: String {
+        let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+        let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
+        return "\(v) (\(b))"
+    }
+
+    private var exportSummary: String {
+        let p = profile
+        return """
+        True Carry — Player Data Export
+        Name: \(p?.displayName ?? user?.name ?? "Guest")
+        Handedness: \(p?.handedness.rawValue ?? "—")
+        Distance units: \(p?.distanceUnit.rawValue ?? "—")
+        Speed units: \(p?.speedUnit.rawValue ?? "—")
+        Home course: \(p?.homeCourseName.isEmpty == false ? p!.homeCourseName : "Not set")
+        Plan: \(user?.subscriptionStatus.rawValue.capitalized ?? "Free")
+        Exported: \(Date().formatted())
+        """
+    }
 
     var body: some View {
         ZStack {
@@ -31,143 +64,174 @@ struct ProfileSettingsView: View {
         .toolbarBackground(.clear, for: .navigationBar)
         .sheet(isPresented: $showClubs) {
             if let uid = user?.id {
-                NavigationStack {
-                    ClubsInBagView(userId: uid, backend: session.backend)
-                }
-                .tcAppearance()
+                NavigationStack { ClubsInBagView(userId: uid, backend: session.backend) }
+                    .tcAppearance()
             }
+        }
+        .sheet(isPresented: $showEditProfile) {
+            NavigationStack { EditProfileSheet() }
+                .tcAppearance()
+        }
+        .alert("Reset Preferences?", isPresented: $showResetPreferences) {
+            Button("Reset", role: .destructive) { resetPreferences() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This restores notification, feed, camera, and appearance defaults. Your profile, clubs, shots, and rounds stay intact.")
+        }
+        .onChange(of: notificationsOn) { enabled in
+            if enabled { requestNotificationPermission() }
         }
     }
 
-    // MARK: Profile Card
+    // MARK: Profile Card (tap to edit)
 
     private var profileCard: some View {
-        HStack(spacing: 18) {
-            ZStack {
-                Circle()
-                    .fill(BSTheme.rangeGradient)
-                    .frame(width: 72, height: 72)
-                Text(String((profile?.displayName ?? user?.name ?? "?").prefix(1)))
-                    .font(.system(size: 30, weight: .black))
-                    .foregroundColor(.white)
-            }
-            .shadow(color: BSTheme.electricCyan.opacity(0.30), radius: 12, x: 0, y: 0)
-
-            VStack(alignment: .leading, spacing: 5) {
-                Text(profile?.displayName ?? user?.name ?? "Guest")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundColor(BSTheme.textPrimary)
-                HStack(spacing: 8) {
-                    StatusPill(text: profile?.handedness.rawValue ?? "Right-handed",
-                               color: BSTheme.electricCyan)
-                    StatusPill(text: user?.subscriptionStatus.rawValue.capitalized ?? "Free",
-                               color: BSTheme.textMuted)
+        Button { showEditProfile = true } label: {
+            HStack(spacing: 18) {
+                ZStack {
+                    Circle().fill(BSTheme.rangeGradient).frame(width: 72, height: 72)
+                    Text(String((profile?.displayName ?? user?.name ?? "?").prefix(1)))
+                        .font(.system(size: 30, weight: .black))
+                        .foregroundColor(.white)
                 }
-                Text(profile?.homeCourseName.isEmpty == false
-                     ? "Home: \(profile!.homeCourseName)"
-                     : "Home Course: Not set")
-                    .font(.system(size: 12))
+                .shadow(color: BSTheme.electricCyan.opacity(0.30), radius: 12)
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(profile?.displayName ?? user?.name ?? "Guest")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundColor(BSTheme.textPrimary)
+                    HStack(spacing: 8) {
+                        StatusPill(text: profile?.handedness.rawValue ?? "Right-handed", color: BSTheme.electricCyan)
+                        StatusPill(text: user?.subscriptionStatus.rawValue.capitalized ?? "Free", color: BSTheme.textMuted)
+                    }
+                    Text(profile?.homeCourseName.isEmpty == false
+                         ? "Home: \(profile!.homeCourseName)" : "Home Course: Not set")
+                        .font(.system(size: 12))
+                        .foregroundColor(BSTheme.textMuted)
+                    if let email = user?.email, !email.isEmpty {
+                        Text(email)
+                            .font(.system(size: 12))
+                            .foregroundColor(BSTheme.textMuted)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(BSTheme.textMuted)
             }
-            Spacer()
+            .premiumCard(padding: 16)
         }
-        .premiumCard(padding: 16)
+        .buttonStyle(.plain)
     }
 
-    // MARK: Subscription Card
+    // MARK: Subscription
 
     private var subscriptionCard: some View {
-        HStack(spacing: 14) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(BSTheme.gold.opacity(0.16))
-                    .frame(width: 44, height: 44)
-                Image(systemName: "star.fill")
-                    .font(.system(size: 18))
-                    .foregroundColor(BSTheme.gold)
+        Button { openURL(AppConfig.pricingURL) } label: {
+            HStack(spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(BSTheme.gold.opacity(0.16)).frame(width: 44, height: 44)
+                    Image(systemName: "star.fill").font(.system(size: 18)).foregroundColor(BSTheme.gold)
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("True Carry Pro").font(.system(size: 15, weight: .semibold)).foregroundColor(BSTheme.textPrimary)
+                    Text("Unlock analytics, feed, and unlimited sessions.")
+                        .font(.system(size: 12)).foregroundColor(BSTheme.textMuted)
+                }
+                Spacer()
+                Text("Upgrade")
+                    .font(.system(size: 13, weight: .bold)).foregroundColor(.white)
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .background(BSTheme.gold)
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             }
-            VStack(alignment: .leading, spacing: 3) {
-                Text("BallStrike Pro")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(BSTheme.textPrimary)
-                Text("Unlock analytics, feed, and unlimited sessions.")
-                    .font(.system(size: 12))
-                    .foregroundColor(BSTheme.textMuted)
-            }
-            Spacer()
-            Text("Upgrade")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundColor(.white)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(BSTheme.gold)
-                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+            .premiumCard(padding: 14)
+            .overlay(RoundedRectangle(cornerRadius: BSTheme.cardRadius, style: .continuous)
+                .strokeBorder(BSTheme.gold.opacity(0.30), lineWidth: 1))
         }
-        .premiumCard(padding: 14)
-        .overlay(
-            RoundedRectangle(cornerRadius: BSTheme.cardRadius, style: .continuous)
-                .strokeBorder(BSTheme.gold.opacity(0.30), lineWidth: 1)
-        )
+        .buttonStyle(.plain)
     }
 
-    // MARK: Account Section
+    // MARK: Account
 
     private var accountSection: some View {
         BSSettingsSection("Account") {
-            BSSettingsRow(icon: "person.fill",         title: "Edit Profile",   accent: BSTheme.electricCyan)
+            Button { showEditProfile = true } label: {
+                BSSettingsRow(icon: "person.fill", title: "Edit Profile", accent: BSTheme.electricCyan)
+            }.buttonStyle(.plain)
             BSDivider()
-            BSSettingsRow(icon: "bell.fill",           title: "Notifications",  value: "On",   accent: BSTheme.simBlue)
+            ToggleSettingsRow(icon: "bell.fill", title: "Notifications",
+                              accent: BSTheme.simBlue, isOn: $notificationsOn)
             BSDivider()
-            BSSettingsRow(icon: "square.and.arrow.up", title: "Export Data",    accent: BSTheme.fairwayGreen)
+            ShareLink(item: exportSummary) {
+                BSSettingsRow(icon: "square.and.arrow.up", title: "Export Data", accent: BSTheme.fairwayGreen)
+            }.buttonStyle(.plain)
             BSDivider()
-            BSSettingsRow(icon: "lock.fill",           title: "Privacy",        accent: BSTheme.textMuted)
+            LinkSettingsRow(icon: "lock.fill", title: "Privacy",
+                            url: AppConfig.websiteURL.appendingPathComponent("privacy"), accent: BSTheme.textMuted)
         }
     }
-
-    // MARK: Clubs in Bag
 
     private var clubsSection: some View {
         BSSettingsSection("Clubs in Bag") {
             Button { showClubs = true } label: {
-                BSSettingsRow(icon: "figure.golf", title: "Manage Clubs",
-                              value: "View bag", accent: BSTheme.fairwayGreen)
-            }
-            .buttonStyle(.plain)
+                BSSettingsRow(icon: "figure.golf", title: "Manage Clubs", value: "View bag", accent: BSTheme.fairwayGreen)
+            }.buttonStyle(.plain)
         }
     }
 
-    // MARK: Preferences
+    // MARK: Preferences (all live, persisted to the profile)
 
     private var preferencesSection: some View {
         BSSettingsSection("Preferences") {
             HandednessRow()
             BSDivider()
-            BSSettingsRow(icon: "ruler.fill",             title: "Distance Units",
-                          value: profile?.distanceUnit.rawValue ?? "Yards",   accent: BSTheme.electricCyan)
+            MenuSettingsRow(icon: "ruler.fill", title: "Distance Units", accent: BSTheme.electricCyan,
+                            value: profile?.distanceUnit.rawValue ?? "Yards",
+                            options: DistanceUnit.allCases.map { $0.rawValue }) { picked in
+                guard var p = profile, let u = DistanceUnit(rawValue: picked) else { return }
+                p.distanceUnit = u; Task { await session.saveProfile(p) }
+            }
             BSDivider()
-            BSSettingsRow(icon: "gauge.with.needle.fill", title: "Speed Units",
-                          value: profile?.speedUnit.rawValue ?? "mph",         accent: BSTheme.electricCyan)
+            MenuSettingsRow(icon: "gauge.with.needle.fill", title: "Speed Units", accent: BSTheme.electricCyan,
+                            value: profile?.speedUnit.rawValue ?? "mph",
+                            options: SpeedUnit.allCases.map { $0.rawValue }) { picked in
+                guard var p = profile, let u = SpeedUnit(rawValue: picked) else { return }
+                p.speedUnit = u; Task { await session.saveProfile(p) }
+            }
             BSDivider()
-            BSSettingsRow(icon: "flag.fill",              title: "Home Course",
-                          value: profile?.homeCourseName.isEmpty == false
-                              ? profile!.homeCourseName : "Not set",           accent: BSTheme.gold)
+            Button { showEditProfile = true } label: {
+                BSSettingsRow(icon: "flag.fill", title: "Home Course",
+                              value: profile?.homeCourseName.isEmpty == false ? profile!.homeCourseName : "Not set",
+                              accent: BSTheme.gold)
+            }.buttonStyle(.plain)
             BSDivider()
             FeedShareRow()
+            BSDivider()
+            MenuSettingsRow(icon: "play.fill", title: "Default Play Mode", accent: BSTheme.gold,
+                            value: defaultPlayMode,
+                            options: ["Range", "Simulator", "Course"]) { defaultPlayMode = $0 }
         }
     }
 
-    // MARK: Camera
+    // MARK: Camera (persisted via AppStorage)
 
     private var cameraSection: some View {
         BSSettingsSection("Camera") {
-            BSSettingsRow(icon: "camera.fill",            title: "Frame Rate",      value: "240 fps",  accent: BSTheme.simBlue)
+            MenuSettingsRow(icon: "camera.fill", title: "Frame Rate", accent: BSTheme.simBlue,
+                            value: frameRate, options: ["120 fps", "240 fps"]) { frameRate = $0 }
             BSDivider()
-            BSSettingsRow(icon: "camera.aperture",        title: "Exposure Mode",   value: "Auto",     accent: BSTheme.simBlue)
+            MenuSettingsRow(icon: "camera.aperture", title: "Exposure Mode", accent: BSTheme.simBlue,
+                            value: exposureMode, options: ["Auto", "Locked", "Low Light"]) { exposureMode = $0 }
             BSDivider()
-            BSSettingsRow(icon: "arrow.left.arrow.right", title: "Camera Side",
-                          value: profile?.handedness.rawValue ?? "Right-handed",   accent: BSTheme.simBlue)
+            MenuSettingsRow(icon: "arrow.left.arrow.right", title: "Camera Side", accent: BSTheme.simBlue,
+                            value: cameraSide,
+                            options: ["Down-the-line", "Face-on", "Auto from handedness"]) { cameraSide = $0 }
             BSDivider()
-            BSSettingsRow(icon: "square.stack.3d.up.fill",title: "Storage Used",    value: "128 MB",   accent: BSTheme.textMuted)
+            ToggleSettingsRow(icon: "film.stack.fill", title: "Save Original Frames",
+                              accent: BSTheme.simBlue, isOn: $saveOriginalFrames)
         }
     }
 
@@ -177,37 +241,179 @@ struct ProfileSettingsView: View {
         BSSettingsSection("App") {
             AppearanceRow()
             BSDivider()
-            BSSettingsRow(icon: "info.circle.fill",         title: "Version",         value: "1.0.0", accent: BSTheme.textMuted)
+            BSSettingsRow(icon: "info.circle.fill", title: "Version", value: appVersion, accent: BSTheme.textMuted)
             BSDivider()
-            BSSettingsRow(icon: "questionmark.circle.fill", title: "Help & Support",                   accent: BSTheme.electricCyan)
+            LinkSettingsRow(icon: "questionmark.circle.fill", title: "Help & Support",
+                            url: URL(string: "mailto:support@truecarry.app")!, accent: BSTheme.electricCyan)
             BSDivider()
-            BSSettingsRow(icon: "doc.text.fill",            title: "Privacy Policy",                   accent: BSTheme.textMuted)
+            LinkSettingsRow(icon: "doc.text.fill", title: "Privacy Policy",
+                            url: AppConfig.websiteURL.appendingPathComponent("privacy"), accent: BSTheme.textMuted)
             BSDivider()
-            BSSettingsRow(icon: "doc.text.fill",            title: "Terms of Service",                 accent: BSTheme.textMuted)
+            LinkSettingsRow(icon: "doc.text.fill", title: "Terms of Service",
+                            url: AppConfig.websiteURL.appendingPathComponent("terms"), accent: BSTheme.textMuted)
             BSDivider()
-            BSSettingsRow(icon: "ant.fill",                 title: "Developer / Debug",                accent: BSTheme.dangerRed)
+            ToggleSettingsRow(icon: "ant.fill", title: "Developer Mode", accent: BSTheme.dangerRed,
+                              isOn: $devMode)
+            BSDivider()
+            Button { showResetPreferences = true } label: {
+                BSSettingsRow(icon: "arrow.counterclockwise", title: "Reset Preferences", accent: BSTheme.dangerRed)
+            }.buttonStyle(.plain)
         }
     }
 
-    // MARK: Sign Out
-
     private var signOutButton: some View {
-        Button {
-            Task { await session.signOut() }
-        } label: {
+        Button { Task { await session.signOut() } } label: {
             Text("Sign Out")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundColor(BSTheme.dangerRed)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
+                .font(.system(size: 15, weight: .semibold)).foregroundColor(BSTheme.dangerRed)
+                .frame(maxWidth: .infinity).padding(.vertical, 14)
                 .background(BSTheme.dangerRed.opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(BSTheme.dangerRed.opacity(0.35), lineWidth: 1)
-                )
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(BSTheme.dangerRed.opacity(0.35), lineWidth: 1))
         }
         .buttonStyle(.plain)
+    }
+
+    private func requestNotificationPermission() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, _ in
+            if !granted {
+                DispatchQueue.main.async { notificationsOn = false }
+            }
+        }
+    }
+
+    private func resetPreferences() {
+        notificationsOn = true
+        frameRate = "240 fps"
+        exposureMode = "Auto"
+        cameraSide = "Down-the-line"
+        saveOriginalFrames = false
+        defaultPlayMode = "Range"
+        FeedSharing.autoShareEnabled = true
+        UserDefaults.standard.set(AppAppearance.dark.rawValue, forKey: AppearanceStore.key)
+        AppearanceStore.applyToWindows(.dark)
+    }
+}
+
+// MARK: - Edit Profile sheet
+
+private struct EditProfileSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var session: AuthSessionStore
+    @State private var name = ""
+    @State private var homeCourse = ""
+    @State private var saving = false
+
+    var body: some View {
+        ZStack {
+            BallStrikeBackgroundView()
+            ScrollView {
+                VStack(spacing: 18) {
+                    field(title: "Display Name", text: $name, placeholder: "Your name")
+                    field(title: "Home Course", text: $homeCourse, placeholder: "e.g. Pebble Beach")
+                    Button {
+                        saving = true
+                        var p = session.userProfile ?? UserProfile(userId: session.currentUser?.id ?? UUID(), displayName: name)
+                        p.displayName = name.trimmingCharacters(in: .whitespaces)
+                        p.homeCourseName = homeCourse.trimmingCharacters(in: .whitespaces)
+                        Task { await session.saveProfile(p); dismiss() }
+                    } label: {
+                        Text(saving ? "Saving…" : "Save")
+                            .font(.system(size: 16, weight: .bold)).foregroundColor(.white)
+                            .frame(maxWidth: .infinity).padding(.vertical, 15)
+                            .background(BSTheme.gold)
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || saving)
+                    .opacity(name.trimmingCharacters(in: .whitespaces).isEmpty ? 0.5 : 1)
+                }
+                .padding(BSTheme.hPad)
+            }
+        }
+        .navigationTitle("Edit Profile")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .topBarLeading) { Button("Cancel") { dismiss() }.foregroundColor(BSTheme.textMuted) } }
+        .onAppear {
+            name = session.userProfile?.displayName ?? session.currentUser?.name ?? ""
+            homeCourse = session.userProfile?.homeCourseName ?? ""
+        }
+    }
+
+    private func field(title: String, text: Binding<String>, placeholder: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title.uppercased()).font(.system(size: 11, weight: .bold)).tracking(1).foregroundColor(BSTheme.textMuted)
+            TextField(placeholder, text: text)
+                .font(.system(size: 16)).foregroundColor(BSTheme.textPrimary)
+                .padding(14)
+                .background(BSTheme.panelRaised)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+    }
+}
+
+// MARK: - Reusable interactive rows
+
+private struct ToggleSettingsRow: View {
+    let icon: String; let title: String; let accent: Color
+    @Binding var isOn: Bool
+    var body: some View {
+        HStack(spacing: 14) {
+            iconBadge(icon, accent)
+            Text(title).font(.system(size: 15)).foregroundColor(BSTheme.textPrimary)
+            Spacer()
+            Toggle("", isOn: $isOn).labelsHidden().tint(accent)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 10)
+    }
+}
+
+private struct MenuSettingsRow: View {
+    let icon: String; let title: String; let accent: Color
+    let value: String; let options: [String]
+    let onPick: (String) -> Void
+    var body: some View {
+        Menu {
+            ForEach(options, id: \.self) { opt in
+                Button { onPick(opt) } label: {
+                    if opt == value { Label(opt, systemImage: "checkmark") } else { Text(opt) }
+                }
+            }
+        } label: {
+            HStack(spacing: 14) {
+                iconBadge(icon, accent)
+                Text(title).font(.system(size: 15)).foregroundColor(BSTheme.textPrimary)
+                Spacer()
+                Text(value).font(.system(size: 14)).foregroundColor(BSTheme.textMuted)
+                Image(systemName: "chevron.up.chevron.down").font(.system(size: 11)).foregroundColor(BSTheme.textMuted)
+            }
+            .padding(.horizontal, 14).padding(.vertical, 12)
+        }
+    }
+}
+
+private struct LinkSettingsRow: View {
+    let icon: String; let title: String; let url: URL; let accent: Color
+    @Environment(\.openURL) private var openURL
+    var body: some View {
+        Button { openURL(url) } label: {
+            HStack(spacing: 14) {
+                iconBadge(icon, accent)
+                Text(title).font(.system(size: 15)).foregroundColor(BSTheme.textPrimary)
+                Spacer()
+                Image(systemName: "arrow.up.right").font(.system(size: 12)).foregroundColor(BSTheme.textMuted)
+            }
+            .padding(.horizontal, 14).padding(.vertical, 12)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+@ViewBuilder
+private func iconBadge(_ icon: String, _ accent: Color) -> some View {
+    ZStack {
+        RoundedRectangle(cornerRadius: 8, style: .continuous).fill(accent.opacity(0.15)).frame(width: 32, height: 32)
+        Image(systemName: icon).font(.system(size: 13)).foregroundColor(accent)
     }
 }
 
@@ -217,28 +423,15 @@ private struct AppearanceRow: View {
     @AppStorage(AppearanceStore.key) private var raw = AppAppearance.dark.rawValue
     var body: some View {
         HStack(spacing: 14) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(BSTheme.gold.opacity(0.15))
-                    .frame(width: 32, height: 32)
-                Image(systemName: "paintbrush.fill")
-                    .font(.system(size: 13))
-                    .foregroundColor(BSTheme.gold)
-            }
-            Text("Appearance")
-                .font(.system(size: 15))
-                .foregroundColor(BSTheme.textPrimary)
+            iconBadge("paintbrush.fill", BSTheme.gold)
+            Text("Appearance").font(.system(size: 15)).foregroundColor(BSTheme.textPrimary)
             Spacer()
             Picker("", selection: $raw) {
-                ForEach(AppAppearance.allCases) { mode in
-                    Text(mode.label).tag(mode.rawValue)
-                }
+                ForEach(AppAppearance.allCases) { mode in Text(mode.label).tag(mode.rawValue) }
             }
-            .pickerStyle(.segmented)
-            .frame(width: 180)
+            .pickerStyle(.segmented).frame(width: 180)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 14).padding(.vertical, 10)
     }
 }
 
@@ -248,29 +441,16 @@ private struct FeedShareRow: View {
     @AppStorage("tc_feed_autoshare_enabled") private var autoShare = true
     var body: some View {
         HStack(spacing: 14) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(BSTheme.fairwayGreen.opacity(0.15))
-                    .frame(width: 32, height: 32)
-                Image(systemName: "newspaper.fill")
-                    .font(.system(size: 13))
-                    .foregroundColor(BSTheme.fairwayGreen)
-            }
+            iconBadge("newspaper.fill", BSTheme.fairwayGreen)
             VStack(alignment: .leading, spacing: 1) {
-                Text("Share activities to feed")
-                    .font(.system(size: 15))
-                    .foregroundColor(BSTheme.textPrimary)
+                Text("Share activities to feed").font(.system(size: 15)).foregroundColor(BSTheme.textPrimary)
                 Text("Auto-post completed rounds & sessions to friends")
-                    .font(.system(size: 11))
-                    .foregroundColor(BSTheme.textMuted)
+                    .font(.system(size: 11)).foregroundColor(BSTheme.textMuted)
             }
             Spacer()
-            Toggle("", isOn: $autoShare)
-                .labelsHidden()
-                .tint(BSTheme.fairwayGreen)
+            Toggle("", isOn: $autoShare).labelsHidden().tint(BSTheme.fairwayGreen)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 14).padding(.vertical, 10)
     }
 }
 
@@ -280,30 +460,17 @@ private struct HandednessRow: View {
     @EnvironmentObject var session: AuthSessionStore
     var body: some View {
         HStack(spacing: 14) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(BSTheme.electricCyan.opacity(0.15))
-                    .frame(width: 32, height: 32)
-                Image(systemName: "hand.raised.fill")
-                    .font(.system(size: 14))
-                    .foregroundColor(BSTheme.electricCyan)
-            }
-            Text("Handedness")
-                .font(.system(size: 15))
-                .foregroundColor(BSTheme.textPrimary)
+            iconBadge("hand.raised.fill", BSTheme.electricCyan)
+            Text("Handedness").font(.system(size: 15)).foregroundColor(BSTheme.textPrimary)
             Spacer()
             Picker("", selection: Binding(
                 get: { session.userProfile?.handedness ?? .right },
                 set: { newVal in Task { await session.updateHandedness(newVal) } }
             )) {
-                ForEach(Handedness.allCases, id: \.self) { h in
-                    Text(h.rawValue).tag(h)
-                }
+                ForEach(Handedness.allCases, id: \.self) { h in Text(h.rawValue).tag(h) }
             }
-            .pickerStyle(.segmented)
-            .frame(width: 170)
+            .pickerStyle(.segmented).frame(width: 170)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 14).padding(.vertical, 10)
     }
 }

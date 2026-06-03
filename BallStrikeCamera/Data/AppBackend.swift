@@ -55,6 +55,10 @@ protocol AppBackend {
     func saveFeedPost(_ post: FeedPost) async throws
     func deleteFeedPost(postId: UUID, userId: UUID) async throws
     func loadFeed(userId: UUID) async throws -> [FeedPost]
+    func loadHomeSummary(userId: UUID) async throws -> FeedHomeSummary
+    func loadFeedPage(userId: UUID, cursor: Date?, limit: Int) async throws -> FeedPage
+    func loadEngagement(postIds: [UUID], userId: UUID) async throws -> FeedEngagementSummary
+    func loadFriendLeaderboard(userId: UUID, period: FeedLeaderboardPeriod) async throws -> [FeedLeaderboardEntry]
 
     // Gimmes (feed reactions) — the golf-flavored "kudos"
     func loadGimmes() async throws -> [FeedReaction]
@@ -116,6 +120,184 @@ extension AppBackend {
     }
     func requestCourseGeometryBackfill(_ course: GolfCourse, reason: String = "missing_geometry") async throws {
         // no-op for local; the Supabase backend queues server-side geometry work.
+    }
+
+    // MARK: Feed summary defaults
+
+    func loadHomeSummary(userId: UUID) async throws -> FeedHomeSummary {
+        let now = Date()
+        let calendar = Calendar.current
+        let weekAgo = calendar.date(byAdding: .day, value: -7, to: now) ?? now.addingTimeInterval(-7 * 24 * 3600)
+
+        let rounds = (try? await loadCourseRounds(userId: userId)) ?? []
+        let rangeSessions = (try? await loadRangeSessions(userId: userId)) ?? []
+        let simSessions = (try? await loadSimSessions(userId: userId)) ?? []
+        let shots = (try? await loadShots(userId: userId)) ?? []
+        let posts = (try? await loadFeed(userId: userId)) ?? []
+        let friends = (try? await loadFriends()) ?? []
+        let reactions = (try? await loadGimmes()) ?? []
+
+        let weeklyRounds = rounds.filter { ($0.endedAt ?? $0.startedAt) >= weekAgo && $0.endedAt != nil }.count
+        let weeklyShots = shots.filter { $0.timestamp >= weekAgo }.count
+        let bestShotCarry = shots
+            .filter { $0.timestamp >= weekAgo }
+            .map { Int($0.metrics.carryYards.rounded()) }
+            .max() ?? 0
+        let bestSessionCarry = rangeSessions
+            .filter { ($0.endedAt ?? $0.startedAt) >= weekAgo }
+            .map { Int($0.summary.bestCarry.rounded()) }
+            .max() ?? 0
+        let myWeekPostIds = Set(posts.filter { $0.userId == userId && $0.timestamp >= weekAgo }.map(\.id))
+        let gimmesReceived = reactions.filter { myWeekPostIds.contains($0.postId) }.count
+
+        return FeedHomeSummary(
+            weeklyRounds: weeklyRounds,
+            weeklyShots: weeklyShots,
+            bestCarryYards: max(bestShotCarry, bestSessionCarry),
+            activeStreakDays: activeStreakDays(
+                rounds: rounds,
+                rangeSessions: rangeSessions,
+                simSessions: simSessions,
+                shots: shots,
+                posts: posts.filter { $0.userId == userId }
+            ),
+            friendsCount: friends.count,
+            gimmesReceived: gimmesReceived
+        )
+    }
+
+    func loadFeedPage(userId: UUID, cursor: Date?, limit: Int) async throws -> FeedPage {
+        let feed = try await loadFeed(userId: userId)
+        let sorted = feed.sorted { $0.timestamp > $1.timestamp }
+        let pageSource = cursor.map { cursorDate in
+            sorted.filter { $0.timestamp < cursorDate }
+        } ?? sorted
+        let cappedLimit = max(1, limit)
+        let pagePosts = Array(pageSource.prefix(cappedLimit))
+        let hasMore = pageSource.count > cappedLimit
+        return FeedPage(posts: pagePosts, nextCursor: hasMore ? pagePosts.last?.timestamp : nil, hasMore: hasMore)
+    }
+
+    func loadEngagement(postIds: [UUID], userId: UUID) async throws -> FeedEngagementSummary {
+        let wanted = Set(postIds)
+        guard !wanted.isEmpty else { return FeedEngagementSummary() }
+
+        let reactions = ((try? await loadGimmes()) ?? []).filter { wanted.contains($0.postId) }
+        var summary = FeedEngagementSummary()
+        for reaction in reactions {
+            summary.gimmeCounts[reaction.postId, default: 0] += 1
+            if reaction.userId == userId {
+                summary.gimmedByMe.insert(reaction.postId)
+            }
+        }
+        for id in postIds {
+            let comments = (try? await loadComments(postId: id)) ?? []
+            summary.commentCounts[id] = comments.count
+        }
+        return summary
+    }
+
+    func loadFriendLeaderboard(userId: UUID, period: FeedLeaderboardPeriod) async throws -> [FeedLeaderboardEntry] {
+        let days = period == .week ? -7 : -30
+        let start = Calendar.current.date(byAdding: .day, value: days, to: Date()) ?? Date().addingTimeInterval(Double(days) * 24 * 3600)
+        let posts = ((try? await loadFeed(userId: userId)) ?? []).filter { $0.timestamp >= start }
+        var longestDrive: [UUID: FeedLeaderboardEntry] = [:]
+        var bestScore: [UUID: FeedLeaderboardEntry] = [:]
+        var practiceShots: [UUID: FeedLeaderboardEntry] = [:]
+
+        for post in posts {
+            let author = post.authorName
+            if let drive = post.activityMetadata?.bestCarryYards ?? bestYardage(in: post) {
+                let entry = FeedLeaderboardEntry(
+                    userId: post.userId,
+                    displayName: author,
+                    metric: .longestDrive,
+                    value: drive,
+                    subtitle: post.title
+                )
+                if drive > (longestDrive[post.userId]?.value ?? 0) {
+                    longestDrive[post.userId] = entry
+                }
+            }
+
+            if let score = post.activityMetadata?.totalScore, post.type == .round {
+                let entry = FeedLeaderboardEntry(
+                    userId: post.userId,
+                    displayName: author,
+                    metric: .bestScore,
+                    value: score,
+                    subtitle: post.title
+                )
+                if score < (bestScore[post.userId]?.value ?? Int.max) {
+                    bestScore[post.userId] = entry
+                }
+            }
+
+            if let shots = post.activityMetadata?.shotCount ?? shotCount(in: post), shots > 0 {
+                let existing = practiceShots[post.userId]
+                practiceShots[post.userId] = FeedLeaderboardEntry(
+                    userId: post.userId,
+                    displayName: author,
+                    metric: .practiceShots,
+                    value: (existing?.value ?? 0) + shots,
+                    subtitle: period == .week ? "This week" : "This month"
+                )
+            }
+        }
+
+        let driveEntries = longestDrive.values.sorted { $0.value > $1.value }.prefix(3)
+        let scoreEntries = bestScore.values.sorted { $0.value < $1.value }.prefix(3)
+        let practiceEntries = practiceShots.values.sorted { $0.value > $1.value }.prefix(3)
+        return Array(driveEntries + scoreEntries + practiceEntries)
+    }
+
+    private func activeStreakDays(
+        rounds: [CourseRound],
+        rangeSessions: [PracticeSession],
+        simSessions: [SimSession],
+        shots: [SavedShot],
+        posts: [FeedPost]
+    ) -> Int {
+        let calendar = Calendar.current
+        var activeDays = Set<Date>()
+        rounds.forEach { activeDays.insert(calendar.startOfDay(for: $0.endedAt ?? $0.startedAt)) }
+        rangeSessions.forEach { activeDays.insert(calendar.startOfDay(for: $0.endedAt ?? $0.startedAt)) }
+        simSessions.forEach { activeDays.insert(calendar.startOfDay(for: $0.endedAt ?? $0.startedAt)) }
+        shots.forEach { activeDays.insert(calendar.startOfDay(for: $0.timestamp)) }
+        posts.forEach { activeDays.insert(calendar.startOfDay(for: $0.timestamp)) }
+
+        var streak = 0
+        var day = calendar.startOfDay(for: Date())
+        while activeDays.contains(day) {
+            streak += 1
+            guard let previous = calendar.date(byAdding: .day, value: -1, to: day) else { break }
+            day = previous
+        }
+        return streak
+    }
+
+    private func bestYardage(in post: FeedPost) -> Int? {
+        let values = ([post.metricHighlight] + post.stats.map(\.value))
+            .compactMap { firstInteger(in: $0) }
+        return values.max()
+    }
+
+    private func shotCount(in post: FeedPost) -> Int? {
+        if let stat = post.stats.first(where: { $0.label.localizedCaseInsensitiveContains("shot") }) {
+            return firstInteger(in: stat.value)
+        }
+        if post.subtitle.localizedCaseInsensitiveContains("shot") {
+            return firstInteger(in: post.subtitle)
+        }
+        return nil
+    }
+
+    private func firstInteger(in text: String) -> Int? {
+        let pattern = #"[-+]?\d+"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+              let range = Range(match.range, in: text) else { return nil }
+        return Int(text[range])
     }
 
     // MARK: Social defaults (local/guest mode has no social graph)

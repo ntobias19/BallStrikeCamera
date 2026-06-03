@@ -26,7 +26,14 @@ struct TrueCarryLaunchView: View {
     @State private var wordRise = false
     @State private var detailsIn = false
     @State private var sweepGo = false
-    @State private var finishing = false
+    /// Handoff phase: decorations fade out while the logo grows and lifts to land
+    /// on the login page's crest, so the crossfade reads as one continuous mark.
+    @State private var handoff = false
+    @State private var screenH: CGFloat = 0
+
+    /// Move/scale the logo only when not reducing motion; otherwise the handoff
+    /// is a pure crossfade with the mark held in place.
+    private var liftActive: Bool { handoff && !reduceMotion }
 
     var body: some View {
         ZStack {
@@ -35,9 +42,10 @@ struct TrueCarryLaunchView: View {
                            center: .center, startRadius: 40, endRadius: 520)
                 .ignoresSafeArea()
 
-            // Settled contour field (fades in behind the mark)
+            // Settled contour field (fades in behind the mark, out at handoff)
             contourField
-                .opacity(contourIn ? 1 : 0)
+                .opacity(handoff ? 0 : (contourIn ? 1 : 0))
+                .animation(.easeInOut(duration: 0.55), value: handoff)
 
             // Sonar ripple rings
             if !reduceMotion {
@@ -52,10 +60,14 @@ struct TrueCarryLaunchView: View {
                 .frame(width: 7, height: 7)
                 .shadow(color: gold.opacity(0.9), radius: 8)
                 .scaleEffect(pinIn ? 1 : 0)
-                .opacity(pinIn ? 1 : 0)
+                .opacity(handoff ? 0 : (pinIn ? 1 : 0))
+                .animation(.easeInOut(duration: 0.4), value: handoff)
 
             // Launch mark + wordmark + details
             VStack(spacing: 26) {
+                // The logo survives the handoff: it grows toward the login crest's
+                // 196pt size and lifts up to its on-screen slot, then the crossfade
+                // dissolves it into the login page's framed crest (same asset).
                 Image("tc_logo")
                     .resizable()
                     .scaledToFit()
@@ -66,12 +78,15 @@ struct TrueCarryLaunchView: View {
                             .strokeBorder(gold.opacity(0.30), lineWidth: 1)
                     )
                     .shadow(color: .black.opacity(0.45), radius: 30, x: 0, y: 18)
-                    .scaleEffect(markIn ? 1 : 0.92)
+                    .scaleEffect(markIn ? (liftActive ? 1.48 : 1) : 0.92)
                     .opacity(markIn ? 1 : 0)
                     .blur(radius: markIn ? 0 : 6)
+                    .offset(y: liftActive ? -screenH * 0.16 : 0)
+                    .animation(.timingCurve(0.4, 0.0, 0.2, 1, duration: 0.7), value: handoff)
 
                 wordmark
-                    .opacity(wordRise ? 1 : 0)
+                    .opacity(handoff ? 0 : (wordRise ? 1 : 0))
+                    .animation(.easeInOut(duration: 0.45), value: handoff)
 
                 VStack(spacing: 18) {
                     (Text("BEAR EVERY ") + Text("YARD.").foregroundColor(gold))
@@ -83,14 +98,18 @@ struct TrueCarryLaunchView: View {
                     LaunchLoaderBar(animate: detailsIn && !reduceMotion, color: gold, track: bone)
                         .frame(width: 86, height: 1)
                 }
-                .opacity(detailsIn ? 1 : 0)
+                .opacity(handoff ? 0 : (detailsIn ? 1 : 0))
+                .animation(.easeInOut(duration: 0.4), value: handoff)
             }
-            .offset(y: finishing ? -28 : 0)
-            .opacity(finishing ? 0 : 1)
 
             // Light sweep at handoff
             sweep
         }
+        .background(
+            GeometryReader { g in
+                Color.clear.onAppear { screenH = g.size.height }
+            }
+        )
         .contentShape(Rectangle())
         .onTapGesture { skip() }
         .onAppear { run() }
@@ -147,7 +166,8 @@ struct TrueCarryLaunchView: View {
     private func run() {
         if reduceMotion {
             withAnimation(.easeOut(duration: 0.4)) { pinIn = true; contourIn = true; markIn = true; wordRise = true; detailsIn = true }
-            after(1.4) { finish() }
+            after(1.2) { handoff = true }   // decorations fade; mark holds for the crossfade
+            after(1.7) { finish() }
             return
         }
 
@@ -157,17 +177,15 @@ struct TrueCarryLaunchView: View {
         after(1.8) { withAnimation(.timingCurve(0.2, 0.7, 0.2, 1, duration: 1.0)) { markIn = true } }
         after(2.5) { withAnimation { wordRise = true } }   // each word carries its own delay
         after(3.1) { withAnimation(.easeOut(duration: 0.6)) { detailsIn = true } }
-        after(4.3) {
-            withAnimation(.easeInOut(duration: 0.9)) { sweepGo = true }
-            withAnimation(.easeInOut(duration: 0.8).delay(0.2)) { finishing = true }
-        }
-        after(5.2) { finish() }
+        after(4.2) { withAnimation(.easeInOut(duration: 0.8)) { sweepGo = true } }
+        after(4.6) { handoff = true }   // logo grows + lifts toward the crest; decorations melt away
+        after(5.3) { finish() }         // ContentView crossfades splash → login as the page staggers in
     }
 
     private func skip() {
-        guard !finishing else { return }
-        withAnimation(.easeInOut(duration: 0.45)) { finishing = true }
-        after(0.45) { finish() }
+        guard !handoff else { return }
+        handoff = true
+        after(0.55) { finish() }
     }
 
     @State private var finished = false

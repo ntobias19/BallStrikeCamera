@@ -4,13 +4,21 @@ import Foundation
 final class FeedViewModel: ObservableObject {
 
     @Published var posts: [FeedPost] = []
+    @Published var homeSummary = FeedHomeSummary.empty
+    @Published var leaderboardEntries: [FeedLeaderboardEntry] = []
+    @Published var challengePreviews: [FeedChallengePreview] = []
     @Published var gimmeCounts: [UUID: Int] = [:]
     @Published var gimmedByMe: Set<UUID> = []
+    @Published var commentCounts: [UUID: Int] = [:]
     @Published var friendsCount = 0
     @Published var isLoading = false
+    @Published var isLoadingMore = false
+    @Published var hasMoreFeed = false
     @Published var errorMessage: String?
 
     private let backend: AppBackend
+    private var nextCursor: Date?
+    private let pageSize = 20
     let userId: UUID
 
     init(userId: UUID, backend: AppBackend) {
@@ -22,10 +30,36 @@ final class FeedViewModel: ObservableObject {
         isLoading = true
         defer { isLoading = false }
         do {
-            posts = try await backend.loadFeed(userId: userId)
-            let reactions = (try? await backend.loadGimmes()) ?? []
-            recomputeGimmes(reactions)
-            friendsCount = ((try? await backend.loadFriends()) ?? []).count
+            homeSummary = try await backend.loadHomeSummary(userId: userId)
+            friendsCount = homeSummary.friendsCount
+            let page = try await backend.loadFeedPage(userId: userId, cursor: nil, limit: pageSize)
+            posts = page.posts
+            nextCursor = page.nextCursor
+            hasMoreFeed = page.hasMore
+            applyEngagement(try await backend.loadEngagement(postIds: page.posts.map(\.id), userId: userId))
+            leaderboardEntries = try await backend.loadFriendLeaderboard(userId: userId, period: .week)
+            challengePreviews = makeChallengePreviews(summary: homeSummary, posts: posts)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func loadMoreIfNeeded(currentPost post: FeedPost?) async {
+        guard let post, post.id == posts.last?.id else { return }
+        await loadMore()
+    }
+
+    func loadMore() async {
+        guard hasMoreFeed, !isLoadingMore else { return }
+        isLoadingMore = true
+        defer { isLoadingMore = false }
+        do {
+            let page = try await backend.loadFeedPage(userId: userId, cursor: nextCursor, limit: pageSize)
+            posts.append(contentsOf: page.posts)
+            nextCursor = page.nextCursor
+            hasMoreFeed = page.hasMore
+            applyEngagement(try await backend.loadEngagement(postIds: page.posts.map(\.id), userId: userId))
+            challengePreviews = makeChallengePreviews(summary: homeSummary, posts: posts)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -38,11 +72,11 @@ final class FeedViewModel: ObservableObject {
         return posts.filter { $0.userId == userId && $0.timestamp >= weekAgo }
     }
 
-    var weeklyActivityCount: Int { myWeekPosts.count }
+    var weeklyActivityCount: Int { homeSummary.weeklyRounds }
 
     /// Gimmes received this week across the user's own posts.
     var weeklyGimmesReceived: Int {
-        myWeekPosts.reduce(0) { $0 + (gimmeCounts[$1.id] ?? 0) }
+        homeSummary.gimmesReceived
     }
 
     /// Optimistic toggle — update the UI immediately, then persist.
@@ -61,25 +95,102 @@ final class FeedViewModel: ObservableObject {
 
     func gimmeCount(for post: FeedPost) -> Int { gimmeCounts[post.id] ?? 0 }
     func hasGimmed(_ post: FeedPost) -> Bool { gimmedByMe.contains(post.id) }
+    func commentCount(for post: FeedPost) -> Int { commentCounts[post.id] ?? post.commentsCount }
+
+    func createPost(title: String, body: String, type: FeedPostType, highlight: String, authorName: String) async {
+        let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanHighlight = highlight.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanTitle.isEmpty || !cleanBody.isEmpty || !cleanHighlight.isEmpty else { return }
+
+        let displayTitle: String
+        if cleanTitle.isEmpty {
+            switch type {
+            case .round: displayTitle = "Course Round"
+            case .session: displayTitle = "Practice Session"
+            case .shot: displayTitle = "Shot Update"
+            case .achievement: displayTitle = "True Carry Update"
+            }
+        } else {
+            displayTitle = cleanTitle
+        }
+
+        let stats = cleanHighlight.isEmpty ? [] : [FeedStat(label: "Highlight", value: cleanHighlight)]
+        let post = FeedPost(
+            userId: userId,
+            authorName: authorName,
+            type: type,
+            title: displayTitle,
+            subtitle: cleanBody,
+            metricHighlight: cleanHighlight,
+            stats: stats,
+            timestamp: Date(),
+            activityMetadata: FeedActivityMetadata(
+                kind: type == .round ? .round : type == .session ? .range : .manual,
+                shotCount: type == .session ? firstInteger(in: cleanHighlight) : nil,
+                bestCarryYards: type == .shot ? firstInteger(in: cleanHighlight) : nil
+            )
+        )
+
+        posts.insert(post, at: 0)
+        commentCounts[post.id] = 0
+        do {
+            try await backend.saveFeedPost(post)
+        } catch {
+            posts.removeAll { $0.id == post.id }
+            commentCounts.removeValue(forKey: post.id)
+            errorMessage = error.localizedDescription
+        }
+    }
 
     func deletePost(id: UUID) async {
         do {
             try await backend.deleteFeedPost(postId: id, userId: userId)
             posts.removeAll { $0.id == id }
+            gimmeCounts.removeValue(forKey: id)
+            gimmedByMe.remove(id)
+            commentCounts.removeValue(forKey: id)
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
-    private func recomputeGimmes(_ reactions: [FeedReaction]) {
-        var counts: [UUID: Int] = [:]
-        var mine = Set<UUID>()
-        for r in reactions {
-            counts[r.postId, default: 0] += 1
-            if r.userId == userId { mine.insert(r.postId) }
-        }
-        gimmeCounts = counts
-        gimmedByMe = mine
+    private func applyEngagement(_ summary: FeedEngagementSummary) {
+        gimmeCounts.merge(summary.gimmeCounts) { _, new in new }
+        gimmedByMe.formUnion(summary.gimmedByMe)
+        commentCounts.merge(summary.commentCounts) { _, new in new }
+    }
+
+    private func makeChallengePreviews(summary: FeedHomeSummary, posts: [FeedPost]) -> [FeedChallengePreview] {
+        let bestGIR = posts.compactMap { $0.activityMetadata?.greensInRegulation }.max() ?? 0
+        return [
+            FeedChallengePreview(
+                title: "Weekly Long Drive",
+                subtitle: summary.bestCarryYards > 0 ? "\(summary.bestCarryYards) / 280 yd" : "Log a shot to start",
+                progress: min(Double(summary.bestCarryYards) / 280.0, 1),
+                icon: "bolt.fill"
+            ),
+            FeedChallengePreview(
+                title: "GIR Streak",
+                subtitle: bestGIR > 0 ? "\(bestGIR) greens in a round" : "Finish a scored round",
+                progress: min(Double(bestGIR) / 18.0, 1),
+                icon: "flag.checkered"
+            ),
+            FeedChallengePreview(
+                title: "Range Volume",
+                subtitle: "\(summary.weeklyShots) / 100 shots",
+                progress: min(Double(summary.weeklyShots) / 100.0, 1),
+                icon: "scope"
+            )
+        ]
+    }
+
+    private func firstInteger(in text: String) -> Int? {
+        let pattern = #"[-+]?\d+"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+              let range = Range(match.range, in: text) else { return nil }
+        return Int(text[range])
     }
 }
 
@@ -115,7 +226,12 @@ final class CommentsViewModel: ObservableObject {
         let comment = FeedComment(postId: post.id, userId: userId, authorName: authorName, body: body)
         draft = ""
         comments.append(comment) // optimistic
-        try? await backend.addComment(comment)
+        do {
+            try await backend.addComment(comment)
+        } catch {
+            comments.removeAll { $0.id == comment.id }
+            draft = body
+        }
     }
 }
 

@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import ThemeToggle from "@/components/ThemeToggle";
 
 export default function ResetPasswordPage() {
   const router = useRouter();
@@ -87,7 +86,6 @@ export default function ResetPasswordPage() {
         </Link>
         <nav className="auth-nav-links" aria-label="Reset password navigation">
           <Link href="/login">Sign in</Link>
-          <ThemeToggle />
         </nav>
       </header>
 

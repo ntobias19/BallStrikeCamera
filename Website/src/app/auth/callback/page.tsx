@@ -4,7 +4,6 @@ import { useEffect, useState, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import ThemeToggle from "@/components/ThemeToggle";
 
 function safeRedirectPath(value: string | null) {
   if (!value || !value.startsWith("/") || value.startsWith("//")) return "/account";
@@ -86,7 +85,6 @@ export default function AuthCallbackPage() {
         </Link>
         <nav className="auth-nav-links" aria-label="Auth callback navigation">
           <Link href="/login">Sign in</Link>
-          <ThemeToggle />
         </nav>
       </header>
       <Suspense>

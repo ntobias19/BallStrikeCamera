@@ -2,6 +2,9 @@ import SwiftUI
 
 struct AppRootView: View {
     @EnvironmentObject var session: AuthSessionStore
+    /// Forwarded from the cold-start launch sequence so the login page plays its
+    /// entrance exactly as the splash hands off (defaults true for standalone use).
+    var launchComplete: Bool = true
 
     var body: some View {
         Group {
@@ -10,7 +13,7 @@ struct AppRootView: View {
             } else if session.isLoggedIn {
                 MainTabView()
             } else {
-                LoginView()
+                LoginView(startEntrance: launchComplete)
             }
         }
         .tcAppearance()

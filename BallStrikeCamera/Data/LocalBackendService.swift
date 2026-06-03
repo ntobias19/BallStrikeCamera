@@ -187,8 +187,46 @@ final class LocalBackendService: AppBackend {
     }
 
     func loadFeed(userId: UUID) async throws -> [FeedPost] {
-        let posts = try AppStorageManager.loadAll(FeedPost.self, from: AppStorageManager.feedDir(userId: userId))
+        var posts = try AppStorageManager.loadAll(FeedPost.self, from: AppStorageManager.feedDir(userId: userId))
+        let users = loadUsersIndex()
+        for user in users where user.id != userId {
+            let friendPosts = (try? AppStorageManager.loadAll(FeedPost.self, from: AppStorageManager.feedDir(userId: user.id))) ?? []
+            posts.append(contentsOf: friendPosts)
+        }
         return posts.sorted { $0.timestamp > $1.timestamp }
+    }
+
+    // MARK: Feed social actions
+
+    func loadGimmes() async throws -> [FeedReaction] {
+        try AppStorageManager.loadAll(FeedReaction.self, from: AppStorageManager.feedReactionsDir)
+    }
+
+    func addGimme(postId: UUID, userId: UUID) async throws {
+        AppStorageManager.ensureDirectory(AppStorageManager.feedReactionsDir)
+        let existing = (try await loadGimmes()).first { $0.postId == postId && $0.userId == userId && $0.emoji == "gimme" }
+        let reaction = existing ?? FeedReaction(postId: postId, userId: userId, emoji: "gimme")
+        try AppStorageManager.save(reaction, to: AppStorageManager.feedReactionsDir.appendingPathComponent("\(reaction.id.uuidString).json"))
+    }
+
+    func removeGimme(postId: UUID, userId: UUID) async throws {
+        let reactions = try await loadGimmes()
+        for reaction in reactions where reaction.postId == postId && reaction.userId == userId && reaction.emoji == "gimme" {
+            let url = AppStorageManager.feedReactionsDir.appendingPathComponent("\(reaction.id.uuidString).json")
+            try? FileManager.default.removeItem(at: url)
+        }
+    }
+
+    func loadComments(postId: UUID) async throws -> [FeedComment] {
+        let comments = try AppStorageManager.loadAll(FeedComment.self, from: AppStorageManager.feedCommentsDir)
+        return comments
+            .filter { $0.postId == postId }
+            .sorted { $0.createdAt < $1.createdAt }
+    }
+
+    func addComment(_ comment: FeedComment) async throws {
+        AppStorageManager.ensureDirectory(AppStorageManager.feedCommentsDir)
+        try AppStorageManager.save(comment, to: AppStorageManager.feedCommentsDir.appendingPathComponent("\(comment.id.uuidString).json"))
     }
 
     // MARK: - Private helpers

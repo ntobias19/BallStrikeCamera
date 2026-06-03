@@ -1,10 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useState, Suspense } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { supabase } from "@/lib/supabase";
 import { useRouter, useSearchParams } from "next/navigation";
-import ThemeToggle from "@/components/ThemeToggle";
 
 function safeRedirectPath(value: string | null) {
   if (!value || !value.startsWith("/") || value.startsWith("//")) return "/account";
@@ -243,8 +242,25 @@ function LoginForm() {
 }
 
 export default function LoginPage() {
+  const [navPhase, setNavPhase] = useState<"entering" | "transitioning" | "settled">("entering");
+
+  useEffect(() => {
+    const transitionTimer = window.setTimeout(() => setNavPhase("transitioning"), 40);
+    const settledTimer = window.setTimeout(() => setNavPhase("settled"), 680);
+    return () => {
+      window.clearTimeout(transitionTimer);
+      window.clearTimeout(settledTimer);
+    };
+  }, []);
+
+  const authPageClassName = [
+    "auth-page",
+    navPhase === "entering" ? "auth-page-entering" : null,
+    navPhase === "settled" ? "auth-page-settled" : null,
+  ].filter(Boolean).join(" ");
+
   return (
-    <div className="auth-page">
+    <div className={authPageClassName}>
       <header className="auth-nav">
         <Link href="/" className="auth-brand" aria-label="True Carry home">
           <img src="/truecarry-logo.png" alt="" aria-hidden />
@@ -252,7 +268,6 @@ export default function LoginPage() {
         </Link>
         <nav className="auth-nav-links" aria-label="Login page navigation">
           <Link href="/#h07">Pricing</Link>
-          <ThemeToggle />
         </nav>
       </header>
       <Suspense>

@@ -40,7 +40,16 @@ enum FeedPostFactory {
                 FeedStat(label: "Putts", value: "\(s.totalPutts)")
             ],
             timestamp: round.endedAt ?? Date(),
-            linkedRoundId: round.id
+            linkedRoundId: round.id,
+            activityMetadata: FeedActivityMetadata(
+                kind: .round,
+                courseName: round.courseName,
+                totalScore: s.totalScore,
+                scoreToPar: diff,
+                fairwaysHit: s.fairwaysHit,
+                greensInRegulation: s.greensInReg,
+                putts: s.totalPutts
+            )
         )
     }
 
@@ -60,7 +69,15 @@ enum FeedPostFactory {
                 FeedStat(label: "Best", value: "\(Int(s.bestCarry.rounded())) yd")
             ],
             timestamp: session.endedAt ?? Date(),
-            linkedSessionId: session.id
+            linkedSessionId: session.id,
+            activityMetadata: FeedActivityMetadata(
+                kind: .range,
+                clubName: session.selectedClubName,
+                shotCount: s.shotCount,
+                averageCarryYards: Int(s.avgCarry.rounded()),
+                bestCarryYards: Int(s.bestCarry.rounded()),
+                averageBallSpeedMph: Int(s.avgBallSpeed.rounded())
+            )
         )
     }
 
@@ -79,7 +96,12 @@ enum FeedPostFactory {
                 FeedStat(label: "Source", value: provider)
             ],
             timestamp: sim.endedAt ?? Date(),
-            linkedSessionId: sim.id
+            linkedSessionId: sim.id,
+            activityMetadata: FeedActivityMetadata(
+                kind: .sim,
+                providerName: provider,
+                shotCount: sim.shotIds.count
+            )
         )
     }
 }

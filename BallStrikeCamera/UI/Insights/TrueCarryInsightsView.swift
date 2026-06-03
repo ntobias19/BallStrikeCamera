@@ -136,7 +136,8 @@ struct TrueCarryInsightsView: View {
                     TCHeaderBar(initials: userInitials) {
                         TCProfileAvatarButton(initials: userInitials, devMode: session.entitlementVM.isDeveloperMode) { showProfile = true }
                     }
-                    VStack(spacing: 0) {
+                    VStack(spacing: TCTheme.sectionGap) {
+                        pageTitleSection
                         clubPicker
                         if availableClubs.isEmpty {
                             emptyState
@@ -147,6 +148,7 @@ struct TrueCarryInsightsView: View {
                         }
                     }
                     .padding(.horizontal, TCTheme.hPad)
+                    .padding(.top, 8)
                 }
             }
         }
@@ -167,39 +169,50 @@ struct TrueCarryInsightsView: View {
         }
     }
 
-    // MARK: - Separator
+    // MARK: - Page Title
 
-    private var sep: some View {
-        Rectangle().fill(TCTheme.border).frame(height: 1)
+    private var pageTitleSection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Insights")
+                .font(.system(size: 34, weight: .semibold))
+                .foregroundColor(TCTheme.textPrimary)
+            Text("Your numbers, club by club.")
+                .font(.system(size: 14))
+                .foregroundColor(TCTheme.textMuted)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Club Picker
 
     private var clubPicker: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 6) {
-                Text("CLUB")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(TCTheme.textMuted)
-                    .tracking(1.5)
+        HStack(spacing: 10) {
+            Text("CLUB")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(TCTheme.textMuted)
+                .tracking(1.5)
 
-                Picker("", selection: $selectedClub) {
-                    Text("Select a club").tag(Optional<String>.none)
-                    ForEach(availableClubs, id: \.self) { club in
-                        let count = shotsFor(club).count
-                        Text(count > 0 ? "\(club)  ·  \(count) shots" : club)
-                            .tag(Optional<String>.some(club))
-                    }
+            Picker("", selection: $selectedClub) {
+                Text("Select a club").tag(Optional<String>.none)
+                ForEach(availableClubs, id: \.self) { club in
+                    let count = shotsFor(club).count
+                    Text(count > 0 ? "\(club)  ·  \(count) shots" : club)
+                        .tag(Optional<String>.some(club))
                 }
-                .pickerStyle(.menu)
-                .tint(TCTheme.gold)
-
-                Spacer()
             }
-            .padding(.vertical, 14)
+            .pickerStyle(.menu)
+            .tint(TCTheme.gold)
 
-            sep
+            Spacer(minLength: 0)
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(TCTheme.panel)
+        .clipShape(RoundedRectangle(cornerRadius: TCTheme.cardRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: TCTheme.cardRadius, style: .continuous)
+                .strokeBorder(TCTheme.border, lineWidth: 1)
+        )
     }
 
     // MARK: - Empty / Prompt
@@ -218,7 +231,8 @@ struct TrueCarryInsightsView: View {
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 60)
+        .padding(.vertical, 44)
+        .tcCard(padding: 16)
     }
 
     private var selectPrompt: some View {
@@ -226,7 +240,8 @@ struct TrueCarryInsightsView: View {
             .font(.system(size: 14))
             .foregroundColor(TCTheme.textMuted)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 40)
+            .padding(.vertical, 36)
+            .tcCard(padding: 16)
     }
 
     // MARK: - Stats Content
@@ -234,19 +249,31 @@ struct TrueCarryInsightsView: View {
     @ViewBuilder
     private var statsContent: some View {
         let s = selectedShots
-        dispersionSection(s)
-        sep
-        metricsSection(s)
-        sep
-        carryTrendSection(s)
-        sep
-        spinSection(s)
+        dispersionCard(s)
+        metricsCard(s)
+        carryTrendCard(s)
+        spinCard(s)
         Spacer(minLength: 140)
+    }
+
+    /// Green section header (the title treatment carried across the app).
+    private func cardHeader(_ title: String, _ subtitle: String? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(TCTheme.textPrimary)
+            if let subtitle {
+                Text(subtitle)
+                    .font(.system(size: 12))
+                    .foregroundColor(TCTheme.textMuted)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Dispersion
 
-    private func dispersionSection(_ shots: [SavedShot]) -> some View {
+    private func dispersionCard(_ shots: [SavedShot]) -> some View {
         let dots = dispersionDots(shots)
 
         let hlaSpread: String = {
@@ -265,15 +292,7 @@ struct TrueCarryInsightsView: View {
         }()
 
         return VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Shot Dispersion")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(TCTheme.textPrimary)
-                Text("Plotted from horizontal launch angle and carry")
-                    .font(.system(size: 12))
-                    .foregroundColor(TCTheme.textMuted)
-            }
-            .padding(.top, 20)
+            cardHeader("Shot Dispersion", "Horizontal launch angle vs. carry")
 
             TCDispersionFairwayGraphic(dots: dots, showRings: true)
                 .frame(maxWidth: .infinity)
@@ -287,32 +306,35 @@ struct TrueCarryInsightsView: View {
                 verticalDivider(height: 28)
                 inlineStat(shots.isEmpty ? "—" : "\(shots.count)",            "SHOTS")
             }
-            .padding(.bottom, 20)
         }
+        .tcCard(padding: 16)
     }
 
     // MARK: - Main Metrics
 
-    private func metricsSection(_ shots: [SavedShot]) -> some View {
+    private func metricsCard(_ shots: [SavedShot]) -> some View {
         let carry  = avg(shots.map { $0.metrics.carryYards })
         let best   = shots.map { $0.metrics.carryYards }.filter { $0 > 0 }.max()
         let speed  = avg(shots.map { $0.metrics.ballSpeedMph })
         let launch = avg(shots.map { $0.metrics.vlaDegrees })
-        return HStack(spacing: 0) {
-            statCol("AVG CARRY",  fmt(carry),               carry  == nil ? "" : "yds")
-            verticalDivider(height: 40)
-            statCol("BEST CARRY", fmt(best),                best   == nil ? "" : "yds")
-            verticalDivider(height: 40)
-            statCol("BALL SPEED", fmt(speed),               speed  == nil ? "" : "mph")
-            verticalDivider(height: 40)
-            statCol("LAUNCH",     fmt(launch, decimals: 1), launch == nil ? "" : "°")
+        return VStack(alignment: .leading, spacing: 16) {
+            cardHeader("Key Metrics")
+            HStack(spacing: 0) {
+                statCol("AVG CARRY",  fmt(carry),               carry  == nil ? "" : "yds")
+                verticalDivider(height: 40)
+                statCol("BEST CARRY", fmt(best),                best   == nil ? "" : "yds")
+                verticalDivider(height: 40)
+                statCol("BALL SPEED", fmt(speed),               speed  == nil ? "" : "mph")
+                verticalDivider(height: 40)
+                statCol("LAUNCH",     fmt(launch, decimals: 1), launch == nil ? "" : "°")
+            }
         }
-        .padding(.vertical, 20)
+        .tcCard(padding: 16)
     }
 
     // MARK: - Carry Trend
 
-    private func carryTrendSection(_ shots: [SavedShot]) -> some View {
+    private func carryTrendCard(_ shots: [SavedShot]) -> some View {
         let carries = Array(
             shots.sorted { $0.timestamp < $1.timestamp }
                 .map { $0.metrics.carryYards }.filter { $0 > 0 }.suffix(10)
@@ -339,13 +361,12 @@ struct TrueCarryInsightsView: View {
                     .font(.system(size: 12))
                     .foregroundColor(TCTheme.textMuted)
             }
-            .padding(.top, 20)
 
             if carries.isEmpty {
                 Text("Hit more shots to see your carry trend.")
                     .font(.system(size: 13))
                     .foregroundColor(TCTheme.textMuted)
-                    .padding(.vertical, 20)
+                    .padding(.vertical, 8)
             } else {
                 TCTrendLine(values: carries, color: TCTheme.sage)
                     .frame(height: 56)
@@ -358,27 +379,30 @@ struct TrueCarryInsightsView: View {
                 verticalDivider(height: 40)
                 statCol("CHANGE",  changeStr, "")
             }
-            .padding(.bottom, 20)
         }
+        .tcCard(padding: 16)
     }
 
     // MARK: - Spin / Ball Data
 
-    private func spinSection(_ shots: [SavedShot]) -> some View {
+    private func spinCard(_ shots: [SavedShot]) -> some View {
         let spin   = avg(shots.map { $0.metrics.backspinRpm })
         let smash  = avg(shots.map { $0.metrics.smashFactor })
         let cSpeed = avg(shots.map { $0.metrics.clubSpeedMph })
         let total  = avg(shots.map { $0.metrics.totalYards })
-        return HStack(spacing: 0) {
-            statCol("BACKSPIN",     fmt(spin),               spin   == nil ? "" : "rpm")
-            verticalDivider(height: 40)
-            statCol("SMASH FACTOR", fmt(smash, decimals: 2), "")
-            verticalDivider(height: 40)
-            statCol("CLUB SPEED",   fmt(cSpeed),             cSpeed == nil ? "" : "mph")
-            verticalDivider(height: 40)
-            statCol("TOTAL DIST",   fmt(total),              total  == nil ? "" : "yds")
+        return VStack(alignment: .leading, spacing: 16) {
+            cardHeader("Ball Data")
+            HStack(spacing: 0) {
+                statCol("BACKSPIN",     fmt(spin),               spin   == nil ? "" : "rpm")
+                verticalDivider(height: 40)
+                statCol("SMASH FACTOR", fmt(smash, decimals: 2), "")
+                verticalDivider(height: 40)
+                statCol("CLUB SPEED",   fmt(cSpeed),             cSpeed == nil ? "" : "mph")
+                verticalDivider(height: 40)
+                statCol("TOTAL DIST",   fmt(total),              total  == nil ? "" : "yds")
+            }
         }
-        .padding(.vertical, 20)
+        .tcCard(padding: 16)
     }
 
     // MARK: - Reusable stat views

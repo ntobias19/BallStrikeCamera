@@ -291,6 +291,7 @@ struct FeedPost: Codable, Identifiable {
     var linkedShotId: UUID?
     var linkedSessionId: UUID?
     var linkedRoundId: UUID?
+    var activityMetadata: FeedActivityMetadata? = nil
 }
 
 /// One stat column in a feed card (Strava-style: small label over bold value).
@@ -302,4 +303,118 @@ struct FeedStat: Codable, Hashable, Identifiable {
 
 enum FeedPostType: String, Codable {
     case shot, session, round, achievement
+}
+
+enum FeedActivityKind: String, Codable, Hashable {
+    case round
+    case range
+    case sim
+    case manual
+}
+
+struct FeedActivityMetadata: Codable, Hashable {
+    var kind: FeedActivityKind
+    var courseName: String?
+    var clubName: String?
+    var providerName: String?
+    var totalScore: Int?
+    var scoreToPar: Int?
+    var fairwaysHit: Int?
+    var greensInRegulation: Int?
+    var putts: Int?
+    var shotCount: Int?
+    var averageCarryYards: Int?
+    var bestCarryYards: Int?
+    var bestTotalYards: Int?
+    var averageBallSpeedMph: Int?
+
+    var primaryValue: String {
+        switch kind {
+        case .round:
+            if let totalScore { return "\(totalScore)" }
+            return scoreToPar.map { $0 == 0 ? "E" : $0 > 0 ? "+\($0)" : "\($0)" } ?? "--"
+        case .range:
+            return bestCarryYards.map { "\($0)" } ?? averageCarryYards.map { "\($0)" } ?? "\(shotCount ?? 0)"
+        case .sim:
+            return "\(shotCount ?? 0)"
+        case .manual:
+            return bestCarryYards.map { "\($0)" } ?? "--"
+        }
+    }
+
+    var primaryUnit: String {
+        switch kind {
+        case .round: return "score"
+        case .range: return bestCarryYards != nil || averageCarryYards != nil ? "yd" : "shots"
+        case .sim: return "shots"
+        case .manual: return bestCarryYards != nil ? "yd" : ""
+        }
+    }
+}
+
+struct FeedHomeSummary: Codable, Hashable {
+    var weeklyRounds: Int = 0
+    var weeklyShots: Int = 0
+    var bestCarryYards: Int = 0
+    var activeStreakDays: Int = 0
+    var friendsCount: Int = 0
+    var gimmesReceived: Int = 0
+
+    static let empty = FeedHomeSummary()
+}
+
+struct FeedPage: Codable {
+    var posts: [FeedPost]
+    var nextCursor: Date?
+    var hasMore: Bool
+}
+
+struct FeedEngagementSummary: Codable, Hashable {
+    var gimmeCounts: [UUID: Int] = [:]
+    var gimmedByMe: Set<UUID> = []
+    var commentCounts: [UUID: Int] = [:]
+}
+
+enum FeedLeaderboardPeriod: String, Codable, Hashable {
+    case week
+    case month
+}
+
+enum FeedLeaderboardMetric: String, Codable, Hashable {
+    case longestDrive
+    case bestScore
+    case practiceShots
+
+    var title: String {
+        switch self {
+        case .longestDrive: return "Longest Drive"
+        case .bestScore: return "Best Score"
+        case .practiceShots: return "Practice Shots"
+        }
+    }
+
+    var unit: String {
+        switch self {
+        case .longestDrive: return "yd"
+        case .bestScore: return ""
+        case .practiceShots: return "shots"
+        }
+    }
+}
+
+struct FeedLeaderboardEntry: Identifiable, Codable, Hashable {
+    var id: String { "\(metric.rawValue)-\(userId.uuidString)" }
+    var userId: UUID
+    var displayName: String
+    var metric: FeedLeaderboardMetric
+    var value: Int
+    var subtitle: String
+}
+
+struct FeedChallengePreview: Identifiable, Codable, Hashable {
+    var id: String { title }
+    var title: String
+    var subtitle: String
+    var progress: Double
+    var icon: String
 }

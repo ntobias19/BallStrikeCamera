@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
-import ThemeToggle from "@/components/ThemeToggle";
 
 /** Sticky, scroll-aware glass navigation used across marketing pages. */
 export default function SiteNav({ actions }: { actions?: ReactNode }) {
@@ -32,7 +31,6 @@ export default function SiteNav({ actions }: { actions?: ReactNode }) {
               </Link>
             </>
           )}
-          <ThemeToggle />
         </div>
       </div>
     </nav>
