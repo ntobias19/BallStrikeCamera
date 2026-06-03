@@ -13,6 +13,12 @@ struct TrueCarryPlayView: View {
     @State private var showUpgradeAlert = false
     @State private var selectedCourse: GolfCourse?
     @State private var selectedTeeBox: TeeBox?
+
+    /// Holds the course+tee atomically so fullScreenCover(item:) never sees a partial state.
+    private struct PendingRound: Identifiable {
+        let id = UUID(); let course: GolfCourse; let tee: TeeBox
+    }
+    @State private var pendingRound: PendingRound?
     @State private var unfinishedRound: CourseRound?
     @State private var resumeRound: CourseRound?
     @State private var didApplyDefaultMode = false
@@ -84,15 +90,10 @@ struct TrueCarryPlayView: View {
         .sheet(isPresented: $showCourseSearch) {
             NavigationStack {
                 CourseSearchView(userId: session.currentUser?.id ?? UUID()) { course, tee in
-                    selectedCourse = course
-                    selectedTeeBox = tee
+                    // Set atomically — fullScreenCover(item:) presents only when non-nil,
+                    // and SwiftUI automatically queues it until the sheet is fully gone.
+                    pendingRound = PendingRound(course: course, tee: tee)
                     showCourseSearch = false
-                    // Delay so the sheet fully dismisses before fullScreenCover opens.
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
-                        if selectedCourse != nil && selectedTeeBox != nil {
-                            showCourseMode = true
-                        }
-                    }
                 }
             }
             .tcAppearance()
@@ -107,16 +108,13 @@ struct TrueCarryPlayView: View {
         } message: {
             Text("Course Mode is available with Basic, Pro, or Unlimited plans.")
         }
-        .fullScreenCover(isPresented: $showCourseMode) {
-            if let course = selectedCourse,
-               let tee = selectedTeeBox {
-                CourseModeGPSHoleView(
-                    userId: session.currentUser?.id ?? UUID(),
-                    backend: session.backend,
-                    initialCourse: course,
-                    initialTeeBox: tee
-                )
-            }
+        .fullScreenCover(item: $pendingRound) { pr in
+            CourseModeGPSHoleView(
+                userId: session.currentUser?.id ?? UUID(),
+                backend: session.backend,
+                initialCourse: pr.course,
+                initialTeeBox: pr.tee
+            )
         }
         .fullScreenCover(item: $resumeRound) { round in
             CourseModeGPSHoleView(
@@ -132,9 +130,9 @@ struct TrueCarryPlayView: View {
             // Flush any deferred remote writes from prior offline rounds.
             await SyncQueue.shared.flush(using: session.backend)
         }
-        .onChange(of: showCourseMode) { isShowing in
-            // Recheck unfinished rounds after the user leaves a round screen.
-            if !isShowing { Task { await refreshUnfinishedRound() } }
+        .onChange(of: pendingRound == nil) { isNil in
+            // Recheck unfinished rounds when course mode closes.
+            if isNil { Task { await refreshUnfinishedRound() } }
         }
         .onChange(of: prewarmLocation.currentLocation?.latitude) { _ in
             guard let loc = prewarmLocation.currentLocation else { return }

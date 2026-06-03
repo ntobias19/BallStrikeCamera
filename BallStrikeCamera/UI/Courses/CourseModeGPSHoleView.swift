@@ -610,9 +610,8 @@ private struct SatelliteMapBackground: UIViewRepresentable {
 
     func makeUIView(context: Context) -> MKMapView {
         let map = MKMapView()
-        // Simulator uses .standard (vector, always available); device uses .satellite.
         #if targetEnvironment(simulator)
-        map.mapType = .standard
+        map.mapType = .hybrid    // satellite tiles load fine in sim; standard looks wrong
         #else
         map.mapType = .satellite
         #endif
