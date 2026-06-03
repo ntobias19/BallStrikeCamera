@@ -1360,7 +1360,11 @@ struct CourseModeGPSHoleView: View {
     private var userIsNearCurrentHole: Bool {
         guard let user = vm.location.currentLocation,
               let center = currentMapHole?.greenCenterCoordinate?.clCoordinate else { return false }
-        return Self.metersBetween(user, center) < 1_000
+        // Threshold = hole yardage + 100y buffer, so GPS activates from the tee box.
+        let holeYards = Double(scorecardYardage ?? Int((Self.metersBetween(
+            currentMapHole?.teeCoordinate?.clCoordinate ?? center, center) * 1.09361).rounded()))
+        let thresholdMeters = (holeYards + 100) / 1.09361
+        return Self.metersBetween(user, center) < thresholdMeters
     }
 
     private var estimatedTeeDistances: GreenDistances {
