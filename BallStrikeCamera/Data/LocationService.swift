@@ -95,6 +95,7 @@ extension LocationService: CLLocationManagerDelegate {
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        print("[Location] FAILED: \(error)")
         Task { @MainActor in
             locationError = error.localizedDescription
         }
