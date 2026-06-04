@@ -66,11 +66,16 @@ struct RangeCameraScreen: View {
         )
         // Silent NFC club detection — fires when user taps a tagged club to phone
         .onChange(of: nfcManager.lastScannedClubId) { clubId in
-            guard let clubId,
-                  let match = clubs.first(where: { $0.id == clubId }) else { return }
-            selectedClub   = match.name
-            selectedClubId = match.id
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            print("[NFC] RangeCameraScreen onChange clubId=\(clubId?.uuidString ?? "nil") clubs=\(clubs.count)")
+            guard let clubId else { return }
+            if let match = clubs.first(where: { $0.id == clubId }) {
+                print("[NFC] matched club: \(match.name)")
+                selectedClub   = match.name
+                selectedClubId = match.id
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            } else {
+                print("[NFC] no match — club IDs: \(clubs.map { $0.id.uuidString })")
+            }
         }
         .onChange(of: camera.showShotResult) { isShowing in
             guard isShowing, !isCourseMode,

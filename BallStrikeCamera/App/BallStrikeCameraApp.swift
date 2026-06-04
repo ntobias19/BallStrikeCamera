@@ -24,20 +24,18 @@ struct BallStrikeCameraApp: App {
                 // Silent NFC club detection — two delivery paths:
                 // 1. URL routing: truecarry://nfc/{uuid} when app is backgrounded
                 .onOpenURL { url in
+                    if url.scheme == "truecarry" { print("[NFC] onOpenURL: \(url.absoluteString)") }
                     NFCManager.shared.handleNFCURL(url)
                 }
                 // 2. NSUserActivity: delivered directly to foreground app with zero UI
+                // (requires NSUserActivityTypes in Info.plist)
                 .onContinueUserActivity("com.apple.corenfc.tag") { activity in
-                    let message = activity.ndefMessagePayload
-                    for record in message.records {
+                    print("[NFC] NSUserActivity received — records: \(activity.ndefMessagePayload.records.count)")
+                    for record in activity.ndefMessagePayload.records {
+                        print("[NFC] record typeNameFormat=\(record.typeNameFormat.rawValue)")
                         if let url = record.wellKnownTypeURIPayload() {
+                            print("[NFC] URI: \(url.absoluteString)")
                             NFCManager.shared.handleNFCURL(url)
-                            return
-                        }
-                        // Also handle text records (fallback)
-                        if let text = String(data: record.payload.dropFirst(min(3, record.payload.count)), encoding: .utf8),
-                           let uuid = UUID(uuidString: text) {
-                            NFCManager.shared.lastScannedClubId = uuid
                             return
                         }
                     }

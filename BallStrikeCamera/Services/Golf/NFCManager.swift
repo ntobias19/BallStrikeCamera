@@ -104,11 +104,15 @@ final class NFCManager: NSObject, ObservableObject {
     /// Returns the parsed club UUID if the URL is a valid NFC club URL.
     @discardableResult
     func handleNFCURL(_ url: URL) -> UUID? {
-        // Expected format: truecarry://nfc/{club-uuid}
+        print("[NFC] handleNFCURL: \(url.absoluteString)")
         guard url.scheme?.lowercased() == "truecarry",
               url.host?.lowercased() == "nfc",
               let uuidString = url.pathComponents.dropFirst().first,
-              let uuid = UUID(uuidString: uuidString) else { return nil }
+              let uuid = UUID(uuidString: uuidString) else {
+            print("[NFC] handleNFCURL: parse failed scheme=\(url.scheme ?? "nil") host=\(url.host ?? "nil")")
+            return nil
+        }
+        print("[NFC] handleNFCURL: parsed uuid=\(uuid)")
         lastScannedClubId = uuid
         return uuid
     }
