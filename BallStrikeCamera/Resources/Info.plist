@@ -34,7 +34,7 @@
 			</array>
 		</dict>
 	</array>
-	<key>NFCScannerUsageDescription</key>
+	<key>NFCReaderUsageDescription</key>
 	<string>True Carry uses NFC to identify which club you're hitting when you tap it to your iPhone.</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
