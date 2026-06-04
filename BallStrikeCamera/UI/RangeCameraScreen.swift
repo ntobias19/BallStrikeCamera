@@ -45,6 +45,9 @@ struct RangeCameraScreen: View {
             shotCount: isCourseMode ? 0 : rangeVM.shots.count,
             context: context,
             onChooseClub: { showClubPicker = true },
+            onNFCScanClub: NFCNDEFReaderSession.readingAvailable ? {
+                NFCManager.shared.beginReading(alertMessage: "Tap your club's NFC sticker to select it.")
+            } : nil,
             onDismiss: {
                 if !isCourseMode && !rangeVM.shots.isEmpty {
                     showEndConfirmation = true

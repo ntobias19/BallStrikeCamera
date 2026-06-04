@@ -64,6 +64,39 @@ final class NFCManager: NSObject, ObservableObject {
         pendingClubId = nil
     }
 
+    // MARK: - Foreground Read
+    //
+    // Background NDEF routing (truecarry:// URL) is suspended when the app is in
+    // the foreground. To detect a club tap while the user is actively using the app
+    // (range / course mode), we start an explicit NFCNDEFReaderSession. The system
+    // shows a brief "Ready to Scan" sheet that dismisses automatically on success.
+
+    private var readSession: NFCNDEFReaderSession?
+
+    enum ReadState: Equatable {
+        case idle, scanning, success, failure(String)
+    }
+    @Published var readState: ReadState = .idle
+
+    /// Starts a one-shot foreground NFC read. On success, `lastScannedClubId` is
+    /// published just like the background URL path.
+    func beginReading(alertMessage: String = "Hold your club's NFC sticker near the top of your iPhone.") {
+        guard NFCNDEFReaderSession.readingAvailable else {
+            readState = .failure("NFC is not available on this device.")
+            return
+        }
+        readState = .scanning
+        readSession = NFCNDEFReaderSession(delegate: self, queue: .main, invalidateAfterFirstRead: true)
+        readSession?.alertMessage = alertMessage
+        readSession?.begin()
+    }
+
+    func cancelRead() {
+        readSession?.invalidate()
+        readSession = nil
+        readState = .idle
+    }
+
     // MARK: - Read (URL routing)
 
     /// Called by BallStrikeCameraApp when the OS delivers a truecarry:// URL
@@ -96,19 +129,39 @@ extension NFCManager: NFCNDEFReaderSessionDelegate {
     nonisolated func readerSession(_ session: NFCNDEFReaderSession,
                                    didInvalidateWithError error: Error) {
         let nfcError = error as? NFCReaderError
-        // Code 200 = user cancelled — not a real error
-        guard nfcError?.code != .readerSessionInvalidationErrorUserCanceled else {
-            Task { @MainActor in self.writeState = .idle }
-            return
-        }
+        let cancelled = nfcError?.code == .readerSessionInvalidationErrorUserCanceled
+        let firstRead  = nfcError?.code == .readerSessionInvalidationErrorFirstNDEFTagRead
         Task { @MainActor in
-            self.writeState = .failure(error.localizedDescription)
+            if session === self.readSession {
+                // Foreground read session ended
+                self.readSession = nil
+                if !cancelled && !firstRead { self.readState = .failure(error.localizedDescription) }
+                else if cancelled            { self.readState = .idle }
+                // .success already set in didDetectNDEFs
+            } else {
+                // Write session ended
+                self.writeSession = nil
+                if !cancelled { self.writeState = .failure(error.localizedDescription) }
+                else           { self.writeState = .idle }
+            }
         }
     }
 
     nonisolated func readerSession(_ session: NFCNDEFReaderSession,
                                    didDetectNDEFs messages: [NFCNDEFMessage]) {
-        // Not used — writing uses didDetect tags
+        // Used by the foreground read session (invalidateAfterFirstRead: true)
+        guard let record = messages.first?.records.first else { return }
+        // Parse the URI payload — NFCNDEFPayload for URI records has a uri property
+        if let url = record.wellKnownTypeURIPayload() {
+            let urlString = url.absoluteString
+            guard urlString.hasPrefix("truecarry://nfc/"),
+                  let uuidStr = urlString.components(separatedBy: "truecarry://nfc/").last,
+                  let uuid = UUID(uuidString: uuidStr) else { return }
+            Task { @MainActor in
+                self.lastScannedClubId = uuid
+                self.readState = .success
+            }
+        }
     }
 
     nonisolated func readerSession(_ session: NFCNDEFReaderSession,

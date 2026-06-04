@@ -8,6 +8,7 @@ struct LaunchMonitorScaffoldView: View {
     let shotCount: Int
     var context: ShotContext? = nil
     var onChooseClub: (() -> Void)? = nil
+    var onNFCScanClub: (() -> Void)? = nil
     var onDismiss: () -> Void = {}
     var onShotSaved: ((SavedShot) -> Void)? = nil
     var onShotComplete: (() -> Void)? = nil
@@ -64,6 +65,17 @@ struct LaunchMonitorScaffoldView: View {
                                         .buttonStyle(.plain)
                                     } else {
                                         clubPill
+                                    }
+
+                                    if let onNFCScanClub {
+                                        Button(action: onNFCScanClub) {
+                                            RangeOverlayPill {
+                                                Image(systemName: "wave.3.right")
+                                                    .font(.system(size: 12, weight: .bold))
+                                                    .foregroundColor(.white.opacity(0.85))
+                                            }
+                                        }
+                                        .buttonStyle(.plain)
                                     }
 
                                     RangeOverlayPill {
