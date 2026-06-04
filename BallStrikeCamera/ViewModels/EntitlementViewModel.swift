@@ -36,6 +36,19 @@ final class EntitlementViewModel: ObservableObject {
     func load(userId: UUID) async {
         isLoading = true
         defer { isLoading = false }
+        // Authorised dev accounts always get unlimited regardless of DB state.
+        if Self.authorisedDevUserIds.contains(userId.uuidString) {
+            entitlement = UserEntitlement(
+                id: UUID(), userId: userId, tier: .unlimited,
+                paymentStatus: .active,
+                stripeCustomerId: nil, stripeSubscriptionId: nil,
+                currentPeriodStart: nil,
+                currentPeriodEnd: Calendar.current.date(byAdding: .year, value: 73, to: Date()),
+                cancelAtPeriodEnd: false
+            )
+            _isDeveloperModeStored = true
+            return
+        }
         entitlement = (try? await backend.loadEntitlement(userId: userId)) ?? UserEntitlement.freeTier(userId: userId)
         usage = try? await backend.loadUsageCounter(userId: userId, date: UsageCounter.todayKey())
     }

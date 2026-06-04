@@ -201,14 +201,11 @@ final class SupabaseBackendService: AppBackend {
     // MARK: - Clubs
 
     func saveClub(_ club: UserClub) async throws {
-        do {
-            try await upsert(table: "clubs", body: try toDict(club))
-        } catch {
-            var body = try toDict(club)
-            body.removeValue(forKey: "brand")
-            body.removeValue(forKey: "loft_degrees")
-            try await upsert(table: "clubs", body: body)
-        }
+        var body = try toDict(club)
+        // loft_degrees and brand are not yet in the DB schema — strip them unconditionally.
+        body.removeValue(forKey: "loft_degrees")
+        body.removeValue(forKey: "brand")
+        try await upsert(table: "clubs", body: body)
     }
 
     func deleteClub(clubId: UUID, userId: UUID) async throws {
