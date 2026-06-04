@@ -50,7 +50,6 @@ struct TrueCarryProfileView: View {
                         cameraCard
                         accountCard
                         appCard
-                        developerCard
                         signOutButton
                         Spacer(minLength: 140)
                     }
