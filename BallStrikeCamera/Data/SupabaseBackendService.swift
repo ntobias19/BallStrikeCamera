@@ -189,7 +189,8 @@ final class SupabaseBackendService: AppBackend {
 
     func saveUserProfile(_ profile: UserProfile) async throws {
         let body = profileToDict(profile)
-        try await upsert(table: "profiles", body: body)
+        // on_conflict=user_id so merge-duplicates resolves on the unique user_id column
+        try await upsert(table: "profiles", body: body, onConflict: "user_id")
     }
 
     func loadUserProfile(userId: UUID) async throws -> UserProfile? {
@@ -808,13 +809,17 @@ final class SupabaseBackendService: AppBackend {
         }
     }
 
-    private func upsert(table: String, body: [String: Any]) async throws {
-        var req = authorizedRequest(url: restURL(table), method: "POST")
-        req.setValue("return=representation,resolution=merge-duplicates", forHTTPHeaderField: "Prefer")
+    private func upsert(table: String, body: [String: Any], onConflict: String? = nil) async throws {
+        var components = URLComponents(url: restURL(table), resolvingAgainstBaseURL: false)!
+        if let col = onConflict {
+            components.queryItems = [URLQueryItem(name: "on_conflict", value: col)]
+        }
+        var req = authorizedRequest(url: components.url!, method: "POST")
+        req.setValue("return=minimal,resolution=merge-duplicates", forHTTPHeaderField: "Prefer")
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, response) = try await session.data(for: req)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard status == 200 || status == 201 else {
+        guard status == 200 || status == 201 || status == 204 else {
             logError("upsert:\(table)", data: data, response: response)
             throw BackendError.saveFailed(table)
         }
