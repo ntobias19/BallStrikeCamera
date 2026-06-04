@@ -28,7 +28,7 @@ struct BallStrikeCameraApp: App {
                 }
                 // 2. NSUserActivity: delivered directly to foreground app with zero UI
                 .onContinueUserActivity("com.apple.corenfc.tag") { activity in
-                    guard let message = activity.ndefMessagePayload else { return }
+                    let message = activity.ndefMessagePayload
                     for record in message.records {
                         if let url = record.wellKnownTypeURIPayload() {
                             NFCManager.shared.handleNFCURL(url)
