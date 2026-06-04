@@ -206,10 +206,6 @@ final class SupabaseBackendService: AppBackend {
         // Strip columns not yet in the DB schema (apply migration 016 to enable them).
         body.removeValue(forKey: "loft_degrees")
         body.removeValue(forKey: "brand")
-        // nfc_tag_id is added by migration 016; strip if column doesn't exist yet
-        // (the upsert will still succeed for existing columns).
-        // Once the migration is applied, remove the next line.
-        body.removeValue(forKey: "nfc_tag_id")
         try await upsert(table: "clubs", body: body, onConflict: "user_id,id")
     }
 
