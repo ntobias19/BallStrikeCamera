@@ -1299,6 +1299,7 @@ struct CourseModeGPSHoleView: View {
     @State private var showScoreEntry  = false
     @State private var showScorecard   = false
     @State private var showFinishAlert = false
+    @State private var showDeleteRoundConfirm = false
     @State private var gpsOn           = true
     @State private var infoMessage: String?
     @State private var roundStartTime  = Date()
@@ -1896,7 +1897,7 @@ struct CourseModeGPSHoleView: View {
         .navigationBarHidden(true)
         // Alerts
         .alert("Finish Round?", isPresented: $showFinishAlert) {
-            Button("Finish & Save", role: .destructive) {
+            Button("Finish & Save") {
                 Task {
                     await vm.finishRound()
                     WidgetBridge.clear()
@@ -1904,9 +1905,25 @@ struct CourseModeGPSHoleView: View {
                     dismiss()
                 }
             }
+            Button("Delete Round", role: .destructive) {
+                showDeleteRoundConfirm = true
+            }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Your round will be saved.")
+        }
+        .alert("Delete this round?", isPresented: $showDeleteRoundConfirm) {
+            Button("Delete Round", role: .destructive) {
+                Task {
+                    await vm.discardRound()
+                    WidgetBridge.clear()
+                    if #available(iOS 16.2, *) { ActivityBridge.end() }
+                    dismiss()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This cannot be undone.")
         }
         .alert("Course Tool", isPresented: Binding(
             get:  { infoMessage != nil },

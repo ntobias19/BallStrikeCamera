@@ -340,6 +340,12 @@ final class CourseRoundViewModel: ObservableObject {
         currentHoleIndex = index
     }
 
+    func discardRound() async {
+        guard let round = activeRound else { return }
+        try? await backend.deleteCourseRound(roundId: round.id, userId: userId)
+        activeRound = nil
+    }
+
     func finishRound() async {
         guard var round = activeRound else { return }
         let hasShots  = !round.shotIds.isEmpty

@@ -8,7 +8,22 @@ final class EntitlementViewModel: ObservableObject {
     @Published var usage: UsageCounter?
     @Published var isLoading = false
 
-    @AppStorage("tc_dev_mode") var isDeveloperMode: Bool = false
+    @AppStorage("tc_dev_mode") private var _isDeveloperModeStored: Bool = false
+
+    /// Only honoured for explicitly authorised user IDs — prevents guests from
+    /// keeping developer mode active if they had it toggled before the toggle was removed.
+    private static let authorisedDevUserIds: Set<String> = [
+        "35eabe3f-68db-43e1-bf4d-4995ccb3301a"  // noahtobias19@gmail.com
+    ]
+
+    var isDeveloperMode: Bool {
+        get {
+            guard _isDeveloperModeStored else { return false }
+            let uid = entitlement.userId.uuidString
+            return Self.authorisedDevUserIds.contains(uid)
+        }
+        set { _isDeveloperModeStored = newValue }
+    }
 
     private let backend: AppBackend
 
