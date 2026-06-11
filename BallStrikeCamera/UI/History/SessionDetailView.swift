@@ -93,7 +93,10 @@ struct SessionDetailView: View {
                         VStack(spacing: TCTheme.sectionGap) {
                             headerCard
                             if case .range(let rs) = item { rangeStatsCard(rs) }
-                            if case .course(let r) = item { courseStatsCard(r) }
+                            if case .course(let r)  = item { courseStatsCard(r) }
+                            if case .course(let r)  = item, !r.nfcShots.isEmpty {
+                                roundShotLogSection(r)
+                            }
                             shotsSection
                             Spacer(minLength: 40)
                         }
@@ -176,6 +179,16 @@ struct SessionDetailView: View {
             }
         }
         .tcCard()
+    }
+
+    // MARK: Round Shot Map
+
+    private func roundShotLogSection(_ r: CourseRound) -> some View {
+        let holeCount = Set(r.nfcShots.map { $0.holeNumber }).count
+        return VStack(alignment: .leading, spacing: 12) {
+            TCSectionHeader(title: "Shot Map · \(r.nfcShots.count) taps · \(holeCount) hole\(holeCount == 1 ? "" : "s")")
+            RoundShotLogView(round: r)
+        }
     }
 
     // MARK: Shots List

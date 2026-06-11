@@ -32,16 +32,30 @@ final class CourseRoundViewModel: ObservableObject {
     // MARK: - NFC Shot Tracking
 
     /// Records an NFC club tap at the user's current GPS position for the active hole.
+    /// Captures shot number within the hole and distance to the green center.
     func recordNFCShot(club: UserClub) {
         guard var round = activeRound,
               let coord = location.currentLocation else { return }
-        let holeNum = currentHole?.holeNumber ?? (currentHoleIndex + 1)
+        let holeNum   = currentHole?.holeNumber ?? (currentHoleIndex + 1)
+        let shotNum   = round.nfcShots.filter { $0.holeNumber == holeNum }.count + 1
+
+        var distYards: Double?
+        if let course   = selectedCourse,
+           let golfHole = course.holes.first(where: { $0.number == holeNum }),
+           let pinCoord = golfHole.greenCenterCoordinate?.clCoordinate {
+            let shotLoc = CLLocation(latitude: coord.latitude,    longitude: coord.longitude)
+            let pinLoc  = CLLocation(latitude: pinCoord.latitude, longitude: pinCoord.longitude)
+            distYards = shotLoc.distance(from: pinLoc) * 1.09361  // metres → yards
+        }
+
         let shot = NFCShot(
-            clubId:      club.id,
-            clubName:    club.name,
-            holeNumber:  holeNum,
-            latitude:    coord.latitude,
-            longitude:   coord.longitude
+            clubId:             club.id,
+            clubName:           club.name,
+            holeNumber:         holeNum,
+            shotNumber:         shotNum,
+            latitude:           coord.latitude,
+            longitude:          coord.longitude,
+            distanceToPinYards: distYards
         )
         round.nfcShots.append(shot)
         activeRound = round

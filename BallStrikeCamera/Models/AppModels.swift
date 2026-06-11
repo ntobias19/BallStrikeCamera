@@ -73,8 +73,10 @@ struct NFCShot: Codable, Identifiable {
     var clubId: UUID
     var clubName: String
     var holeNumber: Int
+    var shotNumber: Int = 1
     var latitude: Double
     var longitude: Double
+    var distanceToPinYards: Double?
     var tappedAt: Date = Date()
 }
 
