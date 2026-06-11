@@ -32,6 +32,7 @@ final class OpenGolfSimViewModel: ObservableObject {
     // MARK: - Private
 
     private let client = OpenGolfSimClient()
+    private var didAutoScanOnFailure = false
 
     // MARK: - Computed
 
@@ -53,7 +54,25 @@ final class OpenGolfSimViewModel: ObservableObject {
         portString = UserDefaults.standard.string(forKey: "ogs_port") ?? "3111"
 
         client.onStateChange = { [weak self] state in
-            Task { @MainActor [weak self] in self?.connectionState = state }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.connectionState = state
+                switch state {
+                case .connected:
+                    self.didAutoScanOnFailure = false
+                case .failed:
+                    guard !self.didAutoScanOnFailure,
+                          !self.host.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+                    self.didAutoScanOnFailure = true
+                    let prevHost = self.host
+                    await self.scanForHosts()
+                    if self.host != prevHost {
+                        try? await Task.sleep(for: .seconds(0.4))
+                        self.connect()
+                    }
+                default: break
+                }
+            }
         }
         client.onResult = { [weak self] result in
             Task { @MainActor [weak self] in self?.lastResult = result }
@@ -81,6 +100,7 @@ final class OpenGolfSimViewModel: ObservableObject {
     func disconnect() {
         client.disconnect()
         connectionState = .disconnected
+        didAutoScanOnFailure = false
     }
 
     func scanForHosts() async {

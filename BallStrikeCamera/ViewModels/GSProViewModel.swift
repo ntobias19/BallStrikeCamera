@@ -34,6 +34,7 @@ final class GSProViewModel: ObservableObject {
     private let client = GSProClient()
     private var shotCounter = 0
     private var heartbeatTask: Task<Void, Never>?
+    private var didAutoScanOnFailure = false
 
     // MARK: - Computed
 
@@ -54,12 +55,27 @@ final class GSProViewModel: ObservableObject {
 
         client.onStateChange = { [weak self] state in
             Task { @MainActor [weak self] in
-                self?.connectionState = state
-                if case .connected = state {
-                    self?.sendReadySignal()
-                    self?.startHeartbeat()
-                } else {
-                    self?.stopHeartbeat()
+                guard let self else { return }
+                self.connectionState = state
+                switch state {
+                case .connected:
+                    self.sendReadySignal()
+                    self.startHeartbeat()
+                    self.didAutoScanOnFailure = false
+                case .failed:
+                    self.stopHeartbeat()
+                    // Auto-scan once if the saved IP is stale so the user doesn't have to intervene.
+                    guard !self.didAutoScanOnFailure,
+                          !self.host.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+                    self.didAutoScanOnFailure = true
+                    let prevHost = self.host
+                    await self.scanForHosts()
+                    if self.host != prevHost {
+                        try? await Task.sleep(for: .seconds(0.4))
+                        self.connect()
+                    }
+                default:
+                    self.stopHeartbeat()
                 }
             }
         }
@@ -92,6 +108,7 @@ final class GSProViewModel: ObservableObject {
         client.disconnect()
         connectionState = .disconnected
         playerInfo = nil
+        didAutoScanOnFailure = false
     }
 
     func scanForHosts() async {
