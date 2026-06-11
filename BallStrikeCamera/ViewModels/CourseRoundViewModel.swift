@@ -358,6 +358,23 @@ final class CourseRoundViewModel: ObservableObject {
 
     func addShot(_ shot: SavedShot) async {
         guard var round = activeRound else { return }
+
+        // Link this camera shot to the nearest unlinked NFC tap on the same hole
+        // within a 3-minute window. The golfer taps their club then (or just after)
+        // hitting — closest tap in time is almost always the correct match.
+        let holeNum = currentHole?.holeNumber ?? (currentHoleIndex + 1)
+        let candidates = round.nfcShots.indices.filter {
+            round.nfcShots[$0].holeNumber == holeNum &&
+            round.nfcShots[$0].linkedShotId == nil &&
+            abs(round.nfcShots[$0].tappedAt.timeIntervalSince(shot.timestamp)) <= 180
+        }
+        if let bestIdx = candidates.min(by: { i, j in
+            abs(round.nfcShots[i].tappedAt.timeIntervalSince(shot.timestamp)) <
+            abs(round.nfcShots[j].tappedAt.timeIntervalSince(shot.timestamp))
+        }) {
+            round.nfcShots[bestIdx].linkedShotId = shot.id
+        }
+
         if !round.shotIds.contains(shot.id) {
             round.shotIds.append(shot.id)
         }

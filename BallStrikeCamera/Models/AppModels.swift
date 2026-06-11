@@ -78,6 +78,9 @@ struct NFCShot: Codable, Identifiable {
     var longitude: Double
     var distanceToPinYards: Double?
     var tappedAt: Date = Date()
+    /// ID of the SavedShot (camera capture) matched to this tap — set when a
+    /// camera shot is saved within 3 minutes of this tap on the same hole.
+    var linkedShotId: UUID?
 }
 
 enum ClubType: String, Codable, CaseIterable {
