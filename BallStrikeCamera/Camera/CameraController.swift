@@ -50,6 +50,8 @@ final class CameraController: NSObject, ObservableObject {
 
     private var stableRect: CGRect?
     private var stableFrameCount = 0
+    private var trackingMissCount = 0
+    private let trackingMissLimit = 5   // tolerate brief gaps before resetting stable count
     private var lockedBallRect: CGRect?
     private let requiredStableFrames = 8
     private let stableCenterThreshold: CGFloat = 0.025
@@ -390,9 +392,16 @@ extension CameraController: AVCaptureVideoDataOutputSampleBufferDelegate {
         }
 
         guard let observation else {
+            // During tracking, tolerate a short run of nil frames (glare flicker, single
+            // bad detection) so one missed frame doesn't reset 7 frames of stable count.
+            if phase == .tracking {
+                trackingMissCount += 1
+                if trackingMissCount <= trackingMissLimit { return }
+            }
             resetShotPipeline(to: .searching, status: "Looking for ball")
             return
         }
+        trackingMissCount = 0
 
         lastPublishedDetectionTime = CACurrentMediaTime()
 
@@ -672,6 +681,7 @@ extension CameraController: AVCaptureVideoDataOutputSampleBufferDelegate {
         impactDetector.reset()
         stableRect = nil
         stableFrameCount = 0
+        trackingMissCount = 0
         readyLostFrameCount = 0
     }
 

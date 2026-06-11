@@ -89,6 +89,14 @@ struct SimModeView: View {
                 .statusBarHidden(true)
         }
         // Phase 1: Save / Delete / Continue
+        .alert("Save Failed", isPresented: Binding(
+            get: { simVM.errorMessage != nil },
+            set: { if !$0 { simVM.errorMessage = nil } }
+        )) {
+            Button("OK") { simVM.errorMessage = nil }
+        } message: {
+            Text(simVM.errorMessage ?? "")
+        }
         .confirmationDialog("End Sim Session?", isPresented: $showEndConfirmation, titleVisibility: .visible) {
             Button("Save Sim Session") {
                 Task {

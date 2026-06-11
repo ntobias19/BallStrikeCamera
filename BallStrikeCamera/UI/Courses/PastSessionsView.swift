@@ -12,6 +12,8 @@ struct PastSessionsView: View {
     @State private var rounds:        [CourseRound]     = []
 
     @State private var itemToDelete: DeletionTarget?
+    @State private var isLoading = false
+    @State private var loadError: String?
 
     private let filters = ["All", "Range", "Sim", "Course", "Saved Shots"]
 
@@ -101,7 +103,28 @@ struct PastSessionsView: View {
         .navigationTitle("Past Sessions")
         .navigationBarTitleDisplayMode(.large)
         .toolbarBackground(.clear, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                if isLoading {
+                    ProgressView().tint(TCTheme.textMuted)
+                } else {
+                    Button { Task { await loadData() } } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .foregroundColor(TCTheme.textMuted)
+                    }
+                }
+            }
+        }
         .task { await loadData() }
+        .alert("Load Error", isPresented: Binding(
+            get: { loadError != nil },
+            set: { if !$0 { loadError = nil } }
+        )) {
+            Button("Retry") { Task { await loadData() } }
+            Button("Dismiss", role: .cancel) { loadError = nil }
+        } message: {
+            Text(loadError ?? "")
+        }
         .alert(
             "Delete \(itemToDelete?.label ?? "item")?",
             isPresented: Binding(get: { itemToDelete != nil }, set: { if !$0 { itemToDelete = nil } })
@@ -491,16 +514,19 @@ struct PastSessionsView: View {
     // MARK: - Data Loading
 
     private func loadData() async {
-        guard let uid = session.currentUser?.id else { return }
+        guard let uid = session.currentUser?.id else {
+            loadError = "Not signed in — please sign in and try again."
+            return
+        }
+        isLoading = true
+        defer { isLoading = false }
         let backend = session.backend
-        async let shotList      = backend.loadShots(userId: uid)
-        async let rangeList     = backend.loadRangeSessions(userId: uid)
-        async let simList       = backend.loadSimSessions(userId: uid)
-        async let roundList     = backend.loadCourseRounds(userId: uid)
-        shots         = (try? await shotList)   ?? []
-        rangeSessions = (try? await rangeList)  ?? []
-        simSessions   = (try? await simList)    ?? []
-        rounds        = (try? await roundList)  ?? []
+        var firstError: Error?
+        do { shots         = try await backend.loadShots(userId: uid)         } catch { if firstError == nil { firstError = error } }
+        do { rangeSessions = try await backend.loadRangeSessions(userId: uid) } catch { if firstError == nil { firstError = error } }
+        do { simSessions   = try await backend.loadSimSessions(userId: uid)   } catch { if firstError == nil { firstError = error } }
+        do { rounds        = try await backend.loadCourseRounds(userId: uid)  } catch { if firstError == nil { firstError = error } }
+        if let err = firstError { loadError = err.localizedDescription }
     }
 
     // MARK: - Deletion
