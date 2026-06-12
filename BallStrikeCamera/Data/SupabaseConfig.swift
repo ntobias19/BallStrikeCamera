@@ -36,17 +36,37 @@ struct SupabaseConfig {
             return nil
         }
 
-        guard !anonKey.hasPrefix("YOUR_"), !anonKey.hasSuffix("...") else {
+        let normalizedAnonKey = anonKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !isPlaceholder(normalizedAnonKey) else {
             print("[TrueCarry] Supabase anon key is a placeholder — using LocalBackendService")
             return nil
         }
 
-        guard !normalized.contains("YOUR_") else {
+        guard looksLikeSupabaseClientKey(normalizedAnonKey) else {
+            print("[TrueCarry] Supabase anon key is malformed — using LocalBackendService")
+            return nil
+        }
+
+        guard !isPlaceholder(normalized) else {
             print("[TrueCarry] Supabase URL is a placeholder — using LocalBackendService")
             return nil
         }
 
         print("[TrueCarry] Supabase config found — using SupabaseBackendService (\(url.host ?? "?"))")
-        return SupabaseConfig(baseURL: url, anonKey: anonKey)
+        return SupabaseConfig(baseURL: url, anonKey: normalizedAnonKey)
+    }
+
+    private static func isPlaceholder(_ value: String) -> Bool {
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let uppercased = normalized.uppercased()
+        return normalized.isEmpty
+            || uppercased.contains("YOUR_")
+            || uppercased.contains("PLACEHOLDER")
+            || normalized.contains("<")
+            || normalized.hasSuffix("...")
+    }
+
+    private static func looksLikeSupabaseClientKey(_ key: String) -> Bool {
+        key.hasPrefix("sb_publishable_") || (key.hasPrefix("eyJ") && key.split(separator: ".").count == 3)
     }
 }

@@ -36,12 +36,22 @@ final class SupabaseBackendService: AppBackend {
     // MARK: - Auth
 
     func currentUser() async throws -> AppUser? {
-        // Try to refresh if we have a refresh token but no access token
-        if accessToken == nil, let _ = refreshToken {
+        if accessToken == nil, refreshToken != nil {
             try? await refreshSession()
         }
         guard let token = accessToken else { return nil }
 
+        if let user = try await fetchCurrentUser(accessToken: token) {
+            return user
+        }
+        guard refreshToken != nil else { return nil }
+
+        try? await refreshSession()
+        guard let refreshedToken = accessToken, refreshedToken != token else { return nil }
+        return try await fetchCurrentUser(accessToken: refreshedToken)
+    }
+
+    private func fetchCurrentUser(accessToken token: String) async throws -> AppUser? {
         let url = config.authBaseURL.appendingPathComponent("user")
         var req = baseRequest(url: url)
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -282,6 +292,10 @@ final class SupabaseBackendService: AppBackend {
         )
     }
 
+    func deleteSimSession(sessionId: UUID, userId: UUID) async throws {
+        try await deleteRow(table: "sim_sessions", id: sessionId)
+    }
+
     func loadSimSessions(userId: UUID) async throws -> [SimSession] {
         let rows: [SupabasePayloadRow<SimSession>] = try await selectWhere(
             table: "sim_sessions", column: "user_id", value: userId.uuidString)
@@ -303,6 +317,10 @@ final class SupabaseBackendService: AppBackend {
             table: "course_rounds",
             body: try payloadRowBody(id: round.id, userId: round.userId, payload: round, dateColumn: "started_at", date: round.startedAt)
         )
+    }
+
+    func deleteCourseRound(roundId: UUID, userId: UUID) async throws {
+        try await deleteRow(table: "course_rounds", id: roundId)
     }
 
     func loadCourseRounds(userId: UUID) async throws -> [CourseRound] {
@@ -379,7 +397,7 @@ final class SupabaseBackendService: AppBackend {
             URLQueryItem(name: "limit", value: "40")
         ]
         let req = authorizedRequest(url: components.url!)
-        let (data, response) = try await session.data(for: req)
+        let (data, response) = try await performAuthorizedRequest(req)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else {
             logError("select:course_geometries(near)", data: data, response: response)
             throw BackendError.loadFailed("course_geometries")
@@ -409,7 +427,7 @@ final class SupabaseBackendService: AppBackend {
             URLQueryItem(name: "limit", value: "20")
         ]
         let req = authorizedRequest(url: components.url!)
-        let (data, response) = try await session.data(for: req)
+        let (data, response) = try await performAuthorizedRequest(req)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
         let rows = try decoder.decode([SupabaseCourseGeometryRow].self, from: data)
         let candidates = rows.map { $0.toGolfCourse() }.filter { $0.hasTrustedGeometry }
@@ -469,7 +487,7 @@ final class SupabaseBackendService: AppBackend {
         var req = authorizedRequest(url: components.url!, method: "POST")
         req.setValue("return=minimal,resolution=merge-duplicates", forHTTPHeaderField: "Prefer")
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
-        let (data, response) = try await session.data(for: req)
+        let (data, response) = try await performAuthorizedRequest(req)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard status == 200 || status == 201 || status == 204 else {
             logError("upsert:geometry_backfill_requests", data: data, response: response)
@@ -503,7 +521,7 @@ final class SupabaseBackendService: AppBackend {
             URLQueryItem(name: "limit", value: "100")
         ]
         let req = authorizedRequest(url: components.url!)
-        let (data, response) = try await session.data(for: req)
+        let (data, response) = try await performAuthorizedRequest(req)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else {
             logError("select:feed_posts", data: data, response: response)
             throw BackendError.loadFailed("feed_posts")
@@ -524,7 +542,7 @@ final class SupabaseBackendService: AppBackend {
         var components = URLComponents(url: restURL("feed_posts"), resolvingAgainstBaseURL: false)!
         components.queryItems = queryItems
         let req = authorizedRequest(url: components.url!)
-        let (data, response) = try await session.data(for: req)
+        let (data, response) = try await performAuthorizedRequest(req)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else {
             logError("select:feed_posts:page", data: data, response: response)
             throw BackendError.loadFailed("feed_posts")
@@ -546,7 +564,7 @@ final class SupabaseBackendService: AppBackend {
             URLQueryItem(name: "emoji", value: "eq.gimme")
         ]
         let reactionsRequest = authorizedRequest(url: reactionsComponents.url!)
-        let (reactionData, reactionResponse) = try await session.data(for: reactionsRequest)
+        let (reactionData, reactionResponse) = try await performAuthorizedRequest(reactionsRequest)
         guard (reactionResponse as? HTTPURLResponse)?.statusCode == 200 else {
             logError("select:feed_reactions:batch", data: reactionData, response: reactionResponse)
             throw BackendError.loadFailed("feed_reactions")
@@ -568,7 +586,7 @@ final class SupabaseBackendService: AppBackend {
             URLQueryItem(name: "select", value: "id,post_id")
         ]
         let commentsRequest = authorizedRequest(url: commentsComponents.url!)
-        let (commentData, commentResponse) = try await session.data(for: commentsRequest)
+        let (commentData, commentResponse) = try await performAuthorizedRequest(commentsRequest)
         guard (commentResponse as? HTTPURLResponse)?.statusCode == 200 else {
             logError("select:feed_comments:batch", data: commentData, response: commentResponse)
             throw BackendError.loadFailed("feed_comments")
@@ -589,7 +607,7 @@ final class SupabaseBackendService: AppBackend {
         var components = URLComponents(url: restURL("feed_reactions"), resolvingAgainstBaseURL: false)!
         components.queryItems = [URLQueryItem(name: "emoji", value: "eq.gimme")]
         let req = authorizedRequest(url: components.url!)
-        let (data, response) = try await session.data(for: req)
+        let (data, response) = try await performAuthorizedRequest(req)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else {
             logError("select:feed_reactions", data: data, response: response)
             throw BackendError.loadFailed("feed_reactions")
@@ -612,7 +630,7 @@ final class SupabaseBackendService: AppBackend {
         var req = authorizedRequest(url: components.url!, method: "POST")
         req.setValue("return=minimal,resolution=merge-duplicates", forHTTPHeaderField: "Prefer")
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
-        let (data, response) = try await session.data(for: req)
+        let (data, response) = try await performAuthorizedRequest(req)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard status == 200 || status == 201 || status == 204 else {
             logError("addGimme", data: data, response: response)
@@ -629,7 +647,7 @@ final class SupabaseBackendService: AppBackend {
         ]
         var req = authorizedRequest(url: components.url!, method: "DELETE")
         req.setValue("return=minimal", forHTTPHeaderField: "Prefer")
-        _ = try? await session.data(for: req)
+        _ = try? await performAuthorizedRequest(req)
     }
 
     // MARK: - Comments
@@ -641,7 +659,7 @@ final class SupabaseBackendService: AppBackend {
             URLQueryItem(name: "order", value: "created_at.asc")
         ]
         let req = authorizedRequest(url: components.url!)
-        let (data, response) = try await session.data(for: req)
+        let (data, response) = try await performAuthorizedRequest(req)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else {
             logError("select:feed_comments", data: data, response: response)
             throw BackendError.loadFailed("feed_comments")
@@ -693,7 +711,7 @@ final class SupabaseBackendService: AppBackend {
         var req = authorizedRequest(url: components.url!, method: "PATCH")
         req.setValue("return=minimal", forHTTPHeaderField: "Prefer")
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
-        _ = try? await session.data(for: req)
+        _ = try? await performAuthorizedRequest(req)
     }
 
     func loadFriends() async throws -> [FriendProfile] {
@@ -728,7 +746,7 @@ final class SupabaseBackendService: AppBackend {
             URLQueryItem(name: "date", value: "eq.\(date)")
         ]
         let req = authorizedRequest(url: components.url!)
-        let (data, response) = try await session.data(for: req)
+        let (data, response) = try await performAuthorizedRequest(req)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
         let rows = try decoder.decode([UsageCounter].self, from: data)
         return rows.first
@@ -741,7 +759,7 @@ final class SupabaseBackendService: AppBackend {
             "p_user_id": userId.uuidString,
             "p_action": action.rpcKey
         ])
-        let (data, response) = try await session.data(for: req)
+        let (data, response) = try await performAuthorizedRequest(req)
         if (response as? HTTPURLResponse)?.statusCode != 200 {
             logError("incrementUsage", data: data, response: response)
         }
@@ -769,11 +787,36 @@ final class SupabaseBackendService: AppBackend {
         return req
     }
 
+    private func performAuthorizedRequest(_ request: URLRequest) async throws -> (Data, URLResponse) {
+        var req = request
+        if req.value(forHTTPHeaderField: "Authorization") == nil, refreshToken != nil {
+            try? await refreshSession()
+        }
+        if let token = accessToken {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+
+        let (data, response) = try await session.data(for: req)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (status == 401 || status == 403), refreshToken != nil else {
+            return (data, response)
+        }
+
+        let previousToken = accessToken
+        try? await refreshSession()
+        guard let refreshedToken = accessToken, refreshedToken != previousToken else {
+            return (data, response)
+        }
+
+        req.setValue("Bearer \(refreshedToken)", forHTTPHeaderField: "Authorization")
+        return try await session.data(for: req)
+    }
+
     private func selectWhere<T: Decodable>(table: String, column: String, value: String) async throws -> [T] {
         var components = URLComponents(url: restURL(table), resolvingAgainstBaseURL: false)!
         components.queryItems = [URLQueryItem(name: column, value: "eq.\(value)")]
         let req = authorizedRequest(url: components.url!)
-        let (data, response) = try await session.data(for: req)
+        let (data, response) = try await performAuthorizedRequest(req)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else {
             logError("select:\(table)", data: data, response: response)
             throw BackendError.loadFailed(table)
@@ -786,7 +829,7 @@ final class SupabaseBackendService: AppBackend {
         let url = config.rpcBaseURL.appendingPathComponent(name)
         var req = authorizedRequest(url: url, method: "POST")
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
-        let (data, response) = try await session.data(for: req)
+        let (data, response) = try await performAuthorizedRequest(req)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard status == 200 || status == 201 else {
             logError("rpc:\(name)", data: data, response: response)
@@ -801,7 +844,7 @@ final class SupabaseBackendService: AppBackend {
         let url = config.rpcBaseURL.appendingPathComponent(name)
         var req = authorizedRequest(url: url, method: "POST")
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
-        let (data, response) = try await session.data(for: req)
+        let (data, response) = try await performAuthorizedRequest(req)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard status == 200 || status == 201 || status == 204 else {
             logError("rpc:\(name)", data: data, response: response)
@@ -817,7 +860,7 @@ final class SupabaseBackendService: AppBackend {
         var req = authorizedRequest(url: components.url!, method: "POST")
         req.setValue("return=minimal,resolution=merge-duplicates", forHTTPHeaderField: "Prefer")
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
-        let (data, response) = try await session.data(for: req)
+        let (data, response) = try await performAuthorizedRequest(req)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard status == 200 || status == 201 || status == 204 else {
             logError("upsert:\(table)", data: data, response: response)
@@ -830,7 +873,7 @@ final class SupabaseBackendService: AppBackend {
         components.queryItems = [URLQueryItem(name: "id", value: "eq.\(id.uuidString)")]
         var req = authorizedRequest(url: components.url!, method: "DELETE")
         req.setValue("return=minimal", forHTTPHeaderField: "Prefer")
-        _ = try? await session.data(for: req)
+        _ = try? await performAuthorizedRequest(req)
     }
 
     private func toDict<T: Encodable>(_ value: T) throws -> [String: Any] {

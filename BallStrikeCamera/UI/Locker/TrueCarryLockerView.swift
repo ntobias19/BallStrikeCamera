@@ -100,7 +100,7 @@ struct TrueCarryLockerView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     TextEditor(text: $lockerNotes)
                         .scrollContentBackground(.hidden)
-                        .foregroundColor(.white)
+                        .foregroundColor(TCTheme.textPrimary)
                         .padding(12)
                         .background(TCTheme.panelRaised)
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -133,57 +133,68 @@ struct TrueCarryLockerView: View {
     // MARK: - Profile Card
 
     private var profileCard: some View {
-        HStack(spacing: 16) {
-            Text(String(userInitials.prefix(2)).uppercased())
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundColor(TCTheme.textSecondary)
-                .frame(width: 48, alignment: .leading)
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text(displayName)
-                    .font(.system(size: 26, weight: .semibold))
-                    .foregroundColor(TCTheme.textPrimary)
-
-                HStack(spacing: 4) {
-                    Image(systemName: "location.fill")
-                        .font(.system(size: 10))
-                        .foregroundColor(TCTheme.sage)
-                    Text(homeCourseName)
-                        .font(.system(size: 12))
-                        .foregroundColor(TCTheme.textMuted)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(TCTheme.panelRaised)
+                    Circle()
+                        .strokeBorder(TCTheme.gold.opacity(0.55), lineWidth: 1.5)
+                    Text(String(userInitials.prefix(2)).uppercased())
+                        .font(.system(size: 19, weight: .semibold))
+                        .foregroundColor(TCTheme.gold)
                 }
+                .frame(width: 56, height: 56)
 
-                Spacer(minLength: 4)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(displayName)
+                        .font(.system(size: 24, weight: .semibold, design: .serif))
+                        .foregroundColor(TCTheme.textPrimary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
 
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
-                        statBadge("HANDICAP", "—", "Index", TCTheme.gold)
-                        statBadge("ROUNDS", "\(rounds.count)", "This Year", TCTheme.sage)
-                        statBadge("AVG SCORE", avgScoreStr, "Last 20", TCTheme.cyan)
+                    HStack(spacing: 4) {
+                        Image(systemName: "location.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(TCTheme.sage)
+                        Text(homeCourseName)
+                            .font(.system(size: 12))
+                            .foregroundColor(TCTheme.textMuted)
+                            .lineLimit(1)
                     }
-                    .padding(.horizontal, 2)
                 }
+
+                Spacer(minLength: 0)
             }
 
-            Spacer(minLength: 0)
+            HStack(spacing: 8) {
+                statBadge("HANDICAP", "—", "Index")
+                statBadge("ROUNDS", "\(rounds.count)", "This Year")
+                statBadge("AVG SCORE", avgScoreStr, "Last 20")
+            }
         }
         .tcCard()
     }
 
-    private func statBadge(_ label: String, _ value: String, _ sub: String, _ color: Color) -> some View {
-        VStack(alignment: .center, spacing: 2) {
+    private func statBadge(_ label: String, _ value: String, _ sub: String) -> some View {
+        VStack(alignment: .center, spacing: 3) {
             Text(label)
                 .font(.system(size: 8, weight: .bold))
                 .foregroundColor(TCTheme.textMuted)
                 .tracking(0.8)
             Text(value)
-                .font(.system(size: 16, weight: .semibold))
+                .font(.system(size: 17, weight: .semibold, design: .monospaced))
                 .foregroundColor(TCTheme.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
             Text(sub)
                 .font(.system(size: 9))
                 .foregroundColor(TCTheme.textMuted)
         }
-        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 9)
+        .background(TCTheme.panelRaised.opacity(0.55))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     // MARK: - Clubs in Bag Card
@@ -237,10 +248,10 @@ struct TrueCarryLockerView: View {
                 columns: [GridItem(.flexible()), GridItem(.flexible())],
                 spacing: 10
             ) {
-                TCMilestoneBadge(icon: "checkmark.seal.fill", value: "\(rounds.count)",  label: "Rounds\nCompleted")
-                TCMilestoneBadge(icon: "flame.fill",          value: "\(subEightyCount)", label: "Sub-80\nRounds")
-                TCMilestoneBadge(icon: "star.fill",           value: bestRoundStr,        label: "Best\nRound")
-                TCMilestoneBadge(icon: "scope",               value: "\(shots.count)",    label: "Shots\nTracked")
+                TCMilestoneBadge(icon: "checkmark.seal.fill", value: "\(rounds.count)",  label: "Rounds\nCompleted", accent: TCTheme.sage)
+                TCMilestoneBadge(icon: "flame.fill",          value: "\(subEightyCount)", label: "Sub-80\nRounds",    accent: TCTheme.gold)
+                TCMilestoneBadge(icon: "star.fill",           value: bestRoundStr,        label: "Best\nRound",       accent: TCTheme.goldLight)
+                TCMilestoneBadge(icon: "scope",               value: "\(shots.count)",    label: "Shots\nTracked",    accent: TCTheme.silver)
             }
         }
         .tcCard()

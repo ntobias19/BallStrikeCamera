@@ -155,10 +155,10 @@ struct TrueCarryPlayView: View {
                         .foregroundColor(.white)
                 }
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Resume Round")
-                        .font(.system(size: 13, weight: .bold))
+                    Text("RESUME ROUND")
+                        .font(.system(size: 11, weight: .bold))
                         .foregroundColor(TCTheme.gold)
-                        .tracking(0.5)
+                        .tracking(1.2)
                     Text(round.courseName)
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundColor(TCTheme.textPrimary)
@@ -189,7 +189,7 @@ struct TrueCarryPlayView: View {
     private var pageTitleSection: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Play")
-                .font(.system(size: 38, weight: .semibold))
+                .font(.system(size: 34, weight: .semibold, design: .serif))
                 .foregroundColor(TCTheme.textPrimary)
             Text("Choose how you want to play today.")
                 .font(.system(size: 14))

@@ -3,46 +3,37 @@ import SwiftUI
 struct PastSessionsView: View {
     @EnvironmentObject var session: AuthSessionStore
 
-    @State private var selectedFilter = "All"
+    @State private var selectedFilter: HistoryFilter = .all
     @State private var showSearch = false
     @State private var searchText = ""
-    @State private var shots:         [SavedShot]       = []
+    @State private var shots: [SavedShot] = []
     @State private var rangeSessions: [PracticeSession] = []
-    @State private var simSessions:   [SimSession]      = []
-    @State private var rounds:        [CourseRound]     = []
-
+    @State private var simSessions: [SimSession] = []
+    @State private var rounds: [CourseRound] = []
+    @State private var isLoading = true
+    @State private var didLoad = false
+    @State private var loadError: String?
     @State private var itemToDelete: DeletionTarget?
+    @State private var skeletonPulse = false
 
-    private let filters = ["All", "Range", "Sim", "Course", "Saved Shots"]
+    private static let shortDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMM d"
+        return f
+    }()
 
-    // MARK: - Deletion target
+    private static let longDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.timeStyle = .short
+        return f
+    }()
 
-    private enum DeletionTarget: Identifiable {
-        case rangeSession(PracticeSession)
-        case simSession(SimSession)
-        case courseRound(CourseRound)
-        case shot(SavedShot)
-
-        var id: String {
-            switch self {
-            case .rangeSession(let s): "r_\(s.id)"
-            case .simSession(let s):   "s_\(s.id)"
-            case .courseRound(let r):  "c_\(r.id)"
-            case .shot(let s):         "sh_\(s.id)"
-            }
-        }
-
-        var label: String {
-            switch self {
-            case .rangeSession: "range session"
-            case .simSession:   "sim session"
-            case .courseRound:  "round"
-            case .shot:         "shot"
-            }
-        }
-    }
-
-    // MARK: - Body
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .abbreviated
+        return f
+    }()
 
     var body: some View {
         ZStack {
@@ -50,58 +41,23 @@ struct PastSessionsView: View {
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: TCTheme.sectionGap) {
-                    // Header
-                    TCHeaderBar(initials: userInitials) {
-                        TCIconButton(icon: "magnifyingglass") { showSearch.toggle() }
-                        TCIconButton(icon: "slider.horizontal.3") { cycleFilter() }
-                    }
-
-                    // Section label
-                    Text("PAST SESSIONS")
-                        .font(.system(size: 30, weight: .semibold))
-                        .foregroundColor(TCTheme.textPrimary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, TCTheme.hPad)
-
-                    // Filter tabs
-                    if showSearch {
-                        TextField("Search sessions", text: $searchText)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .foregroundColor(TCTheme.textPrimary)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 10)
-                            .background(TCTheme.panelRaised)
-                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                            .padding(.horizontal, TCTheme.hPad)
-                    }
-
-                    // Filter tabs
-                    TCFilterTabBar(tabs: filters, selected: $selectedFilter)
-                        .padding(.horizontal, TCTheme.hPad)
-
-                    // Summary strip
+                    headerBar
+                    titleBlock
+                    if showSearch { searchField }
+                    filterBar
                     summaryStrip
-                        .padding(.horizontal, TCTheme.hPad)
-
-                    // Session cards
-                    sessionCards
-                        .padding(.horizontal, TCTheme.hPad)
-
-                    // Export card
-                    exportCard
-                        .padding(.horizontal, TCTheme.hPad)
-
+                    content
                     Spacer(minLength: 140)
                 }
                 .padding(.top, 8)
                 .padding(.bottom, 40)
             }
+            .refreshable { await loadData() }
         }
-        .navigationTitle("Past Sessions")
+        .navigationTitle("History")
         .navigationBarTitleDisplayMode(.large)
         .toolbarBackground(.clear, for: .navigationBar)
-        .task { await loadData() }
+        .task(id: session.currentUser?.id) { await loadData() }
         .alert(
             "Delete \(itemToDelete?.label ?? "item")?",
             isPresented: Binding(get: { itemToDelete != nil }, set: { if !$0 { itemToDelete = nil } })
@@ -114,274 +70,329 @@ struct PastSessionsView: View {
             }
             Button("Cancel", role: .cancel) { itemToDelete = nil }
         } message: {
-            Text("This cannot be undone.")
+            Text("This removes it from your history and cannot be undone.")
         }
     }
 
-    // MARK: - Summary Strip
+    // MARK: - Header
 
-    private var totalSessions: Int { rangeSessions.count + simSessions.count + rounds.count }
-
-    private var avgBallSpeedStr: String {
-        let vals = shots.map { $0.metrics.ballSpeedMph }.filter { $0 > 0 }
-        guard !vals.isEmpty else { return "—" }
-        return "\(Int(vals.reduce(0, +) / Double(vals.count)))"
+    private var headerBar: some View {
+        TCHeaderBar(initials: userInitials) {
+            TCIconButton(icon: showSearch ? "xmark" : "magnifyingglass") {
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+                    showSearch.toggle()
+                    if !showSearch { searchText = "" }
+                }
+            }
+            TCIconButton(icon: "arrow.clockwise") {
+                Task { await loadData() }
+            }
+        }
     }
+
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("History")
+                .font(.system(size: 34, weight: .semibold, design: .serif))
+                .foregroundColor(TCTheme.textPrimary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text(historySubtitle)
+                .font(.system(size: 13))
+                .foregroundColor(TCTheme.textMuted)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, TCTheme.hPad)
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(TCTheme.textMuted)
+            TextField("Search clubs, courses, dates", text: $searchText)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .foregroundColor(TCTheme.textPrimary)
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(TCTheme.textUltraMuted)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .background(TCTheme.panelRaised)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(TCTheme.border, lineWidth: 1)
+        )
+        .padding(.horizontal, TCTheme.hPad)
+        .transition(.opacity.combined(with: .move(edge: .top)))
+    }
+
+    private var filterBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(HistoryFilter.allCases) { filter in
+                    filterButton(filter)
+                }
+            }
+            .padding(.horizontal, TCTheme.hPad)
+        }
+    }
+
+    private func filterButton(_ filter: HistoryFilter) -> some View {
+        let selected = selectedFilter == filter
+        return Button {
+            withAnimation(.spring(response: 0.30, dampingFraction: 0.82)) {
+                selectedFilter = filter
+            }
+        } label: {
+            HStack(spacing: 7) {
+                Image(systemName: filter.icon)
+                    .font(.system(size: 12, weight: .semibold))
+                Text(filter.title)
+                    .font(.system(size: 13, weight: .semibold))
+                Text("\(count(for: filter))")
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundColor(selected ? TCTheme.onPrimary.opacity(0.75) : TCTheme.textUltraMuted)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule().fill(selected ? TCTheme.onPrimary.opacity(0.14) : TCTheme.panelRaised)
+                    )
+            }
+            .foregroundColor(selected ? TCTheme.onPrimary : TCTheme.textMuted)
+            .padding(.horizontal, 13)
+            .padding(.vertical, 9)
+            .background(selected ? AnyShapeStyle(TCTheme.primaryFill) : AnyShapeStyle(TCTheme.panel))
+            .clipShape(Capsule())
+            .overlay(
+                Capsule()
+                    .strokeBorder(selected ? Color.clear : TCTheme.border, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Summary
 
     private var summaryStrip: some View {
-        HStack(spacing: 0) {
-            summaryItem("\(totalSessions)", "Total Sessions")
-
-            Rectangle()
-                .fill(TCTheme.border)
-                .frame(width: 1, height: 24)
-
-            summaryItem("\(shots.count)", "Saved Shots")
-
-            Rectangle()
-                .fill(TCTheme.border)
-                .frame(width: 1, height: 24)
-
-            summaryItem(avgBallSpeedStr, "Avg Ball Speed")
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 6) {
+                Rectangle()
+                    .fill(TCTheme.gold)
+                    .frame(width: 16, height: 2)
+                    .clipShape(Capsule())
+                Text("ALL TIME")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(TCTheme.textMuted)
+                    .tracking(1.4)
+                Spacer()
+            }
+            HStack(spacing: 0) {
+                summaryItem("\(totalSessions)", "Sessions")
+                verticalDivider
+                summaryItem("\(shots.count)", "Shots")
+                verticalDivider
+                summaryItem(bestCarryString, "Best Carry", accent: true)
+                verticalDivider
+                summaryItem(avgBallSpeedString, "Avg Speed")
+            }
         }
-        .tcCard(padding: 14)
+        .padding(16)
+        .background(TCTheme.heroGradient)
+        .clipShape(RoundedRectangle(cornerRadius: TCTheme.cardRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: TCTheme.cardRadius, style: .continuous)
+                .strokeBorder(TCTheme.border, lineWidth: 1)
+        )
+        .padding(.horizontal, TCTheme.hPad)
     }
 
-    private func summaryItem(_ value: String, _ label: String) -> some View {
-        VStack(spacing: 3) {
+    private var verticalDivider: some View {
+        Rectangle()
+            .fill(TCTheme.border)
+            .frame(width: 1, height: 30)
+    }
+
+    private func summaryItem(_ value: String, _ label: String, accent: Bool = false) -> some View {
+        VStack(spacing: 4) {
             Text(value)
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundColor(TCTheme.textPrimary)
-            Text(label)
-                .font(.system(size: 10, weight: .bold))
+                .font(.system(size: 19, weight: .semibold, design: .monospaced))
+                .foregroundColor(accent ? TCTheme.gold : TCTheme.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+            Text(label.uppercased())
+                .font(.system(size: 8.5, weight: .semibold))
                 .foregroundColor(TCTheme.textMuted)
-                .tracking(0.5)
+                .tracking(0.6)
                 .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.8)
         }
         .frame(maxWidth: .infinity)
     }
 
-    // MARK: - Session Cards (filtered)
+    // MARK: - Content
 
     @ViewBuilder
-    private var sessionCards: some View {
-        VStack(spacing: 14) {
-            // Range sessions
-            if selectedFilter == "All" || selectedFilter == "Range" {
-                if filteredRangeSessions.isEmpty {
-                    emptySessionCard(icon: "scope", message: "No range sessions yet.")
-                } else {
-                    ForEach(filteredRangeSessions) { rs in
-                        rangeSessionCard(rs)
-                            .contextMenu {
-                                Button(role: .destructive) {
-                                    itemToDelete = .rangeSession(rs)
-                                } label: {
-                                    Label("Delete Session", systemImage: "trash")
-                                }
-                            }
-                    }
-                }
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let loadError, didLoad, hasAnyHistory {
+                warningBanner(loadError)
             }
 
-            // Sim sessions
-            if selectedFilter == "All" || selectedFilter == "Sim" {
-                if filteredSimSessions.isEmpty {
-                    emptySessionCard(icon: "display", message: "No sim sessions yet.")
-                } else {
-                    ForEach(filteredSimSessions) { ss in
-                        simSessionCard(ss)
-                            .contextMenu {
-                                Button(role: .destructive) {
-                                    itemToDelete = .simSession(ss)
-                                } label: {
-                                    Label("Delete Session", systemImage: "trash")
-                                }
-                            }
-                    }
-                }
-            }
-
-            // Course rounds
-            if selectedFilter == "All" || selectedFilter == "Course" {
-                if filteredRounds.isEmpty {
-                    emptySessionCard(icon: "flag.fill", message: "No rounds yet.")
-                } else {
-                    ForEach(filteredRounds) { r in
-                        courseRoundCard(r)
-                            .contextMenu {
-                                Button(role: .destructive) {
-                                    itemToDelete = .courseRound(r)
-                                } label: {
-                                    Label("Delete Round", systemImage: "trash")
-                                }
-                            }
-                    }
-                }
-            }
-
-            // Saved shots grid
-            if selectedFilter == "Saved Shots" {
-                savedShotsGrid
+            if isLoading && !didLoad {
+                loadingCard
+            } else if !hasAnyHistory, let loadError {
+                errorCard(loadError)
+            } else if visibleItems.isEmpty {
+                emptyState
+            } else {
+                timelineSection
             }
         }
+        .padding(.horizontal, TCTheme.hPad)
     }
 
-    // MARK: - Empty Session Card
-
-    private func emptySessionCard(icon: String, message: String) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 20))
-                .foregroundColor(TCTheme.textMuted)
-            Text(message)
-                .font(.system(size: 14))
-                .foregroundColor(TCTheme.textMuted)
-            Spacer()
+    private var loadingCard: some View {
+        VStack(spacing: 12) {
+            ForEach(0..<3, id: \.self) { _ in
+                HStack(alignment: .top, spacing: 12) {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(TCTheme.panelRaised)
+                        .frame(width: 44, height: 44)
+                    VStack(alignment: .leading, spacing: 8) {
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(TCTheme.panelRaised)
+                            .frame(width: 140, height: 13)
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(TCTheme.panelRaised.opacity(0.7))
+                            .frame(width: 200, height: 10)
+                    }
+                    Spacer()
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(TCTheme.panelRaised)
+                        .frame(width: 44, height: 20)
+                }
+                .tcCard()
+            }
         }
-        .padding(.vertical, 20)
+        .opacity(skeletonPulse ? 0.55 : 1)
+        .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: skeletonPulse)
+        .onAppear { skeletonPulse = true }
+    }
+
+    private func warningBanner(_ message: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(TCTheme.gold)
+            Text(message)
+                .font(.system(size: 12))
+                .foregroundColor(TCTheme.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .background(TCTheme.panelRaised)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(TCTheme.border, lineWidth: 1)
+        )
+    }
+
+    private func errorCard(_ message: String) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundColor(TCTheme.gold)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("History could not load")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(TCTheme.textPrimary)
+                    Text(message)
+                        .font(.system(size: 12))
+                        .foregroundColor(TCTheme.textMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+            }
+            Button {
+                Task { await loadData() }
+            } label: {
+                Label("Retry", systemImage: "arrow.clockwise")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(TCTheme.textPrimary)
+            }
+            .buttonStyle(.plain)
+        }
         .tcCard()
     }
 
-    // MARK: - Live Session Cards
-
-    private func rangeSessionCard(_ rs: PracticeSession) -> some View {
-        NavigationLink(destination: SessionDetailView(item: .range(rs))) {
-            VStack(spacing: 12) {
-                HStack(spacing: 14) {
-                    Image(systemName: "scope")
-                        .font(.system(size: 18, weight: .regular))
-                        .foregroundColor(TCTheme.textMuted)
-                        .frame(width: 28, alignment: .leading)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(rs.name.isEmpty ? "Range Session · \(shortDate(rs.startedAt))" : rs.name)
-                            .font(.system(size: 14, weight: .bold))
+    @ViewBuilder
+    private var emptyState: some View {
+        if normalizedSearch.isEmpty {
+            GolfBallEmptyField(
+                title: emptyStateTitle,
+                message: emptyStateMessage
+            )
+        } else {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(TCTheme.panelRaised)
+                            .frame(width: 42, height: 42)
+                        Image(systemName: emptyStateIcon)
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(TCTheme.textMuted)
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(emptyStateTitle)
+                            .font(.system(size: 16, weight: .bold))
                             .foregroundColor(TCTheme.textPrimary)
-                        Text(rs.selectedClubName ?? "All Clubs")
+                        Text(emptyStateMessage)
                             .font(.system(size: 12))
                             .foregroundColor(TCTheme.textMuted)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text("\(rs.shotIds.count)")
-                            .font(.system(size: 22, weight: .semibold))
-                            .foregroundColor(TCTheme.textPrimary)
-                        Text("SHOTS")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundColor(TCTheme.textMuted)
-                            .tracking(1)
-                    }
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(TCTheme.textUltraMuted)
-                }
-                TCDivider()
-                HStack(spacing: 0) {
-                    sessionStat("Avg Ball Speed", String(format: "%.0f mph", rs.summary.avgBallSpeed))
-                    sessionStat("Avg Carry",      String(format: "%.0f yds", rs.summary.avgCarry))
-                    sessionStat("Best Carry",     String(format: "%.0f yds", rs.summary.bestCarry))
                 }
             }
             .tcCard()
         }
-        .buttonStyle(.plain)
     }
 
-    private func simSessionCard(_ ss: SimSession) -> some View {
-        NavigationLink(destination: SessionDetailView(item: .sim(ss))) {
-            VStack(spacing: 12) {
-                HStack(spacing: 14) {
-                    Image(systemName: "display")
-                        .font(.system(size: 18, weight: .regular))
-                        .foregroundColor(TCTheme.textMuted)
-                        .frame(width: 28, alignment: .leading)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(ss.name.isEmpty ? "Sim Session · \(shortDate(ss.startedAt))" : ss.name)
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(TCTheme.textPrimary)
-                        Text(ss.provider.rawValue)
-                            .font(.system(size: 12))
+    private var timelineSection: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            ForEach(groupedItems, id: \.key) { group in
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 10) {
+                        Text(group.key.uppercased())
+                            .font(.system(size: 11, weight: .bold))
                             .foregroundColor(TCTheme.textMuted)
+                            .tracking(1.4)
+                            .fixedSize()
+                        Rectangle()
+                            .fill(TCTheme.border)
+                            .frame(height: 1)
+                        Text("\(group.items.count)")
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            .foregroundColor(TCTheme.textUltraMuted)
                     }
-                    Spacer()
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text("\(ss.shotIds.count)")
-                            .font(.system(size: 22, weight: .semibold))
-                            .foregroundColor(TCTheme.textPrimary)
-                        Text("SHOTS")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundColor(TCTheme.textMuted)
-                            .tracking(1)
-                    }
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(TCTheme.textUltraMuted)
-                }
-            }
-            .tcCard()
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func courseRoundCard(_ r: CourseRound) -> some View {
-        NavigationLink(destination: SessionDetailView(item: .course(r))) {
-            VStack(spacing: 12) {
-                HStack(spacing: 14) {
-                    Image(systemName: "flag")
-                        .font(.system(size: 18, weight: .regular))
-                        .foregroundColor(TCTheme.textMuted)
-                        .frame(width: 28, alignment: .leading)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(r.name.isEmpty ? "Round · \(shortDate(r.startedAt))" : r.name)
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(TCTheme.textPrimary)
-                        Text(r.courseName)
-                            .font(.system(size: 12))
-                            .foregroundColor(TCTheme.textMuted)
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(TCTheme.textUltraMuted)
-                }
-                TCDivider()
-                let diff = r.scoreSummary.totalScore - r.scoreSummary.totalPar
-                HStack(spacing: 0) {
-                    sessionStat("Score",    diff == 0 ? "E" : diff > 0 ? "+\(diff)" : "\(diff)")
-                    sessionStat("Fairways", "\(r.scoreSummary.fairwaysHit)")
-                    sessionStat("Putts",    "\(r.scoreSummary.totalPutts)")
-                }
-            }
-            .tcCard()
-        }
-        .buttonStyle(.plain)
-    }
-
-    // MARK: - Saved Shots Grid
-
-    private var savedShotsGrid: some View {
-        let displayShots = Array(filteredShots.prefix(9))
-        return LazyVGrid(
-            columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())],
-            spacing: 10
-        ) {
-            if displayShots.isEmpty {
-                Text("No shots saved yet.")
-                    .font(.system(size: 13))
-                    .foregroundColor(TCTheme.textMuted)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 20)
-            } else {
-                ForEach(displayShots) { shot in
-                    TCShotThumb(
-                        clubName: shot.clubName ?? "Driver",
-                        yards: Int(shot.metrics.carryYards)
-                    )
-                    .contextMenu {
-                        Button(role: .destructive) {
-                            itemToDelete = .shot(shot)
-                        } label: {
-                            Label("Delete Shot", systemImage: "trash")
+                    VStack(spacing: 12) {
+                        ForEach(group.items) { item in
+                            timelineCard(item)
                         }
                     }
                 }
@@ -389,138 +400,618 @@ struct PastSessionsView: View {
         }
     }
 
-    // MARK: - Export Card
-
-    private var exportCard: some View {
-        HStack(spacing: 14) {
-            Image(systemName: "square.and.arrow.up")
-                .font(.system(size: 18, weight: .regular))
-                .foregroundColor(TCTheme.textMuted)
-                .frame(width: 28, alignment: .leading)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Export Session")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundColor(TCTheme.textPrimary)
-                Text("Export data or analyze offline.")
-                    .font(.system(size: 12))
-                    .foregroundColor(TCTheme.textMuted)
-            }
-
-            Spacer()
-
-            Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(TCTheme.textUltraMuted)
+    private var groupedItems: [(key: String, items: [HistoryTimelineItem])] {
+        var order: [String] = []
+        var buckets: [String: [HistoryTimelineItem]] = [:]
+        for item in visibleItems {
+            let key = monthKey(for: item.date)
+            if buckets[key] == nil { order.append(key) }
+            buckets[key, default: []].append(item)
         }
-        .tcCard()
+        return order.map { (key: $0, items: buckets[$0] ?? []) }
     }
 
-    // MARK: - Helpers
+    private func monthKey(for date: Date) -> String {
+        let cal = Calendar.current
+        if cal.isDateInToday(date) || cal.isDateInYesterday(date) { return "This Week" }
+        if let weekAgo = cal.date(byAdding: .day, value: -7, to: Date()), date > weekAgo {
+            return "This Week"
+        }
+        return Self.monthFormatter.string(from: date)
+    }
 
-    private func sessionStat(_ label: String, _ value: String) -> some View {
+    private static let monthFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMMM yyyy"
+        return f
+    }()
+
+    @ViewBuilder
+    private func timelineCard(_ item: HistoryTimelineItem) -> some View {
+        switch item {
+        case .range(let rangeSession):
+            NavigationLink(destination: SessionDetailView(item: .range(rangeSession))) {
+                timelineRow(item)
+            }
+            .buttonStyle(.plain)
+            .contextMenu { deleteMenu(for: item) }
+        case .sim(let simSession):
+            NavigationLink(destination: SessionDetailView(item: .sim(simSession))) {
+                timelineRow(item)
+            }
+            .buttonStyle(.plain)
+            .contextMenu { deleteMenu(for: item) }
+        case .course(let round):
+            NavigationLink(destination: SessionDetailView(item: .course(round))) {
+                timelineRow(item)
+            }
+            .buttonStyle(.plain)
+            .contextMenu { deleteMenu(for: item) }
+        case .shot(let shot):
+            NavigationLink(destination: ShotDetailView(shot: shot)) {
+                timelineRow(item)
+            }
+            .buttonStyle(.plain)
+            .contextMenu { deleteMenu(for: item) }
+        }
+    }
+
+    private func timelineRow(_ item: HistoryTimelineItem) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(item.accent.opacity(0.14))
+                        .frame(width: 44, height: 44)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(item.accent.opacity(0.22), lineWidth: 1)
+                        .frame(width: 44, height: 44)
+                    Image(systemName: item.icon)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(item.accent)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(item.title)
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundColor(TCTheme.textPrimary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(item.subtitle)
+                        .font(.system(size: 12))
+                        .foregroundColor(TCTheme.textMuted)
+                        .lineLimit(2)
+                    HStack(spacing: 5) {
+                        Image(systemName: "clock")
+                            .font(.system(size: 9, weight: .semibold))
+                        Text(cardDate(item.date))
+                            .font(.system(size: 11))
+                    }
+                    .foregroundColor(TCTheme.textUltraMuted)
+                }
+
+                Spacer(minLength: 8)
+
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(item.primaryValue)
+                        .font(.system(size: 22, weight: .semibold, design: .monospaced))
+                        .foregroundColor(TCTheme.textPrimary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.65)
+                    Text(item.primaryLabel.uppercased())
+                        .font(.system(size: 8.5, weight: .semibold))
+                        .foregroundColor(TCTheme.textMuted)
+                        .tracking(0.6)
+                        .lineLimit(1)
+                }
+                .frame(minWidth: 54, alignment: .trailing)
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(TCTheme.textUltraMuted)
+                    .padding(.top, 7)
+            }
+
+            if !item.detailStats.isEmpty {
+                HStack(spacing: 0) {
+                    ForEach(item.detailStats) { stat in
+                        detailStat(stat)
+                    }
+                }
+                .padding(.vertical, 9)
+                .background(TCTheme.panelRaised.opacity(0.55))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+        }
+        .tcCard()
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(item.title), \(item.subtitle)")
+    }
+
+    /// "2h ago" for the last week, "Jun 3, 1:24 PM" beyond that.
+    private func cardDate(_ date: Date) -> String {
+        if let weekAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()), date > weekAgo {
+            return Self.relativeFormatter.localizedString(for: date, relativeTo: Date())
+        }
+        return Self.longDateFormatter.string(from: date)
+    }
+
+    private func detailStat(_ stat: HistoryStat) -> some View {
         VStack(spacing: 3) {
-            Text(value)
-                .font(.system(size: 15, weight: .bold))
+            Text(stat.value)
+                .font(.system(size: 13, weight: .bold, design: .monospaced))
                 .foregroundColor(TCTheme.textPrimary)
                 .lineLimit(1)
-                .minimumScaleFactor(0.8)
-            Text(label)
-                .font(.system(size: 9, weight: .bold))
+                .minimumScaleFactor(0.7)
+            Text(stat.label.uppercased())
+                .font(.system(size: 8.5, weight: .semibold))
                 .foregroundColor(TCTheme.textMuted)
                 .tracking(0.5)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.8)
         }
         .frame(maxWidth: .infinity)
     }
 
-    private func shortDate(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.dateFormat = "MMM d"
-        return f.string(from: date)
-    }
-
-    private var userInitials: String {
-        let name = session.userProfile?.displayName ?? "Player"
-        let parts = name.split(separator: " ")
-        if parts.count >= 2 {
-            return String((parts[0].first ?? "P")).uppercased()
-                 + String((parts[1].first ?? "L")).uppercased()
-        }
-        return String(name.prefix(2)).uppercased()
-    }
-
-    private var filteredRangeSessions: [PracticeSession] {
-        guard hasSearch else { return rangeSessions }
-        return rangeSessions.filter {
-            matches($0.selectedClubName) || matches(shortDate($0.startedAt)) || matches("Range Session")
+    @ViewBuilder
+    private func deleteMenu(for item: HistoryTimelineItem) -> some View {
+        Button(role: .destructive) {
+            itemToDelete = item.deletionTarget
+        } label: {
+            Label(item.deleteTitle, systemImage: "trash")
         }
     }
 
-    private var filteredSimSessions: [SimSession] {
-        guard hasSearch else { return simSessions }
-        return simSessions.filter { matches($0.provider.rawValue) || matches(shortDate($0.startedAt)) || matches("Sim Session") }
-    }
-
-    private var filteredRounds: [CourseRound] {
-        guard hasSearch else { return rounds }
-        return rounds.filter { matches($0.courseName) || matches($0.teeBoxName) || matches(shortDate($0.startedAt)) }
-    }
-
-    private var filteredShots: [SavedShot] {
-        guard hasSearch else { return shots }
-        return shots.filter { matches($0.clubName) || matches(shortDate($0.timestamp)) || matches("\(Int($0.metrics.carryYards))") }
-    }
-
-    private var hasSearch: Bool {
-        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private func matches(_ value: String?) -> Bool {
-        guard let value else { return false }
-        return value.localizedCaseInsensitiveContains(searchText.trimmingCharacters(in: .whitespacesAndNewlines))
-    }
-
-    private func cycleFilter() {
-        guard let index = filters.firstIndex(of: selectedFilter) else {
-            selectedFilter = filters[0]
-            return
-        }
-        selectedFilter = filters[(index + 1) % filters.count]
-    }
-
-    // MARK: - Data Loading
+    // MARK: - Data
 
     private func loadData() async {
-        guard let uid = session.currentUser?.id else { return }
-        let backend = session.backend
-        async let shotList      = backend.loadShots(userId: uid)
-        async let rangeList     = backend.loadRangeSessions(userId: uid)
-        async let simList       = backend.loadSimSessions(userId: uid)
-        async let roundList     = backend.loadCourseRounds(userId: uid)
-        shots         = (try? await shotList)   ?? []
-        rangeSessions = (try? await rangeList)  ?? []
-        simSessions   = (try? await simList)    ?? []
-        rounds        = (try? await roundList)  ?? []
-    }
+        guard let uid = session.currentUser?.id else {
+            shots = []
+            rangeSessions = []
+            simSessions = []
+            rounds = []
+            loadError = session.isLoading ? nil : "Sign in to load your saved activity."
+            isLoading = false
+            didLoad = true
+            return
+        }
 
-    // MARK: - Deletion
+        isLoading = true
+        loadError = nil
+
+        let backend = session.backend
+        var failures: [String] = []
+
+        do {
+            shots = try await backend.loadShots(userId: uid)
+        } catch {
+            shots = []
+            failures.append("shots")
+        }
+
+        do {
+            rangeSessions = try await backend.loadRangeSessions(userId: uid)
+        } catch {
+            rangeSessions = []
+            failures.append("range sessions")
+        }
+
+        do {
+            simSessions = try await backend.loadSimSessions(userId: uid)
+        } catch {
+            simSessions = []
+            failures.append("sim sessions")
+        }
+
+        do {
+            rounds = try await backend.loadCourseRounds(userId: uid)
+        } catch {
+            rounds = []
+            failures.append("rounds")
+        }
+
+        loadError = failures.isEmpty ? nil : "Could not load \(failures.joined(separator: ", ")). Pull to refresh and try again."
+        isLoading = false
+        didLoad = true
+    }
 
     private func performDelete(_ target: DeletionTarget) async {
         guard let uid = session.currentUser?.id else { return }
         let backend = session.backend
-        switch target {
-        case .rangeSession(let s):
-            try? await backend.deleteRangeSession(sessionId: s.id, userId: uid)
-            rangeSessions.removeAll { $0.id == s.id }
-        case .simSession(let s):
-            try? await backend.deleteSimSession(sessionId: s.id, userId: uid)
-            simSessions.removeAll { $0.id == s.id }
-        case .courseRound(let r):
-            try? await backend.deleteCourseRound(roundId: r.id, userId: uid)
-            rounds.removeAll { $0.id == r.id }
-        case .shot(let s):
-            try? await backend.deleteShot(shotId: s.id, userId: uid)
-            shots.removeAll { $0.id == s.id }
+
+        do {
+            switch target {
+            case .rangeSession(let rangeSession):
+                try await backend.deleteRangeSession(sessionId: rangeSession.id, userId: uid)
+                rangeSessions.removeAll { $0.id == rangeSession.id }
+            case .simSession(let simSession):
+                try await backend.deleteSimSession(sessionId: simSession.id, userId: uid)
+                simSessions.removeAll { $0.id == simSession.id }
+            case .courseRound(let round):
+                try await backend.deleteCourseRound(roundId: round.id, userId: uid)
+                rounds.removeAll { $0.id == round.id }
+            case .shot(let shot):
+                let service = ShotPersistenceService(userId: uid, backend: backend)
+                try await service.deleteShot(id: shot.id)
+                shots.removeAll { $0.id == shot.id }
+            }
+        } catch {
+            loadError = "Delete failed. \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - Derived State
+
+    private var totalSessions: Int {
+        rangeSessions.count + simSessions.count + rounds.count
+    }
+
+    private var hasAnyHistory: Bool {
+        totalSessions > 0 || !shots.isEmpty
+    }
+
+    private var normalizedSearch: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var visibleItems: [HistoryTimelineItem] {
+        let baseItems: [HistoryTimelineItem]
+        switch selectedFilter {
+        case .all:
+            baseItems = rangeSessions.map(HistoryTimelineItem.range)
+                + simSessions.map(HistoryTimelineItem.sim)
+                + rounds.map(HistoryTimelineItem.course)
+                + standaloneShots.map(HistoryTimelineItem.shot)
+        case .range:
+            baseItems = rangeSessions.map(HistoryTimelineItem.range)
+        case .sim:
+            baseItems = simSessions.map(HistoryTimelineItem.sim)
+        case .course:
+            baseItems = rounds.map(HistoryTimelineItem.course)
+        case .shots:
+            baseItems = shots.map(HistoryTimelineItem.shot)
+        }
+
+        let searched = normalizedSearch.isEmpty
+            ? baseItems
+            : baseItems.filter { $0.matches(normalizedSearch) }
+
+        return searched.sorted { $0.date > $1.date }
+    }
+
+    private var standaloneShots: [SavedShot] {
+        shots.filter { $0.sessionId == nil && $0.roundId == nil }
+    }
+
+    private func count(for filter: HistoryFilter) -> Int {
+        switch filter {
+        case .all: return rangeSessions.count + simSessions.count + rounds.count + standaloneShots.count
+        case .range: return rangeSessions.count
+        case .sim: return simSessions.count
+        case .course: return rounds.count
+        case .shots: return shots.count
+        }
+    }
+
+    private var historySubtitle: String {
+        guard let latest = (rangeSessions.map(\.startedAt) + simSessions.map(\.startedAt) + rounds.map(\.startedAt) + shots.map(\.timestamp)).max() else {
+            return "Saved sessions and shots will land here."
+        }
+        return "Last activity \(Self.relativeFormatter.localizedString(for: latest, relativeTo: Date()))."
+    }
+
+    private var bestCarryString: String {
+        let best = shots.map { $0.metrics.carryYards }.filter { $0 > 0 }.max()
+        guard let best else { return "--" }
+        return "\(Int(best.rounded())) yd"
+    }
+
+    private var avgBallSpeedString: String {
+        let speeds = shots.map { $0.metrics.ballSpeedMph }.filter { $0 > 0 }
+        guard !speeds.isEmpty else { return "--" }
+        let avg = speeds.reduce(0, +) / Double(speeds.count)
+        return "\(Int(avg.rounded())) mph"
+    }
+
+    private var emptyStateIcon: String {
+        if !normalizedSearch.isEmpty { return "magnifyingglass" }
+        return selectedFilter.icon
+    }
+
+    private var emptyStateTitle: String {
+        if !normalizedSearch.isEmpty { return "No matches" }
+        switch selectedFilter {
+        case .all: return "No history yet"
+        case .range: return "No range sessions"
+        case .sim: return "No sim sessions"
+        case .course: return "No course rounds"
+        case .shots: return "No saved shots"
+        }
+    }
+
+    private var emptyStateMessage: String {
+        if !normalizedSearch.isEmpty {
+            return "Try a different club, course, date, or metric."
+        }
+        switch selectedFilter {
+        case .all:
+            return "Finish a range session, sim session, course round, or save a shot to start building your timeline."
+        case .range:
+            return "Saved range sessions appear here after you end and save a session."
+        case .sim:
+            return "Sim sessions appear here after you save a simulator session."
+        case .course:
+            return "Course rounds appear here after you play and save a round."
+        case .shots:
+            return "Shots saved from review appear here and open into the full replay details."
+        }
+    }
+
+    private var userInitials: String {
+        let name = session.userProfile?.displayName ?? session.currentUser?.name ?? "Player"
+        let parts = name.split(separator: " ")
+        if parts.count >= 2 {
+            return String((parts[0].first ?? "P")).uppercased()
+                + String((parts[1].first ?? "L")).uppercased()
+        }
+        return String(name.prefix(2)).uppercased()
+    }
+
+    // MARK: - Types
+
+    private enum HistoryFilter: String, CaseIterable, Identifiable {
+        case all
+        case range
+        case sim
+        case course
+        case shots
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .all: return "All"
+            case .range: return "Range"
+            case .sim: return "Sim"
+            case .course: return "Course"
+            case .shots: return "Shots"
+            }
+        }
+
+        var sectionTitle: String {
+            switch self {
+            case .all: return "Recent Activity"
+            case .range: return "Range Sessions"
+            case .sim: return "Sim Sessions"
+            case .course: return "Course Rounds"
+            case .shots: return "Saved Shots"
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .all: return "clock.arrow.circlepath"
+            case .range: return "scope"
+            case .sim: return "display"
+            case .course: return "flag.fill"
+            case .shots: return "circle.inset.filled"
+            }
+        }
+    }
+
+    private enum DeletionTarget: Identifiable {
+        case rangeSession(PracticeSession)
+        case simSession(SimSession)
+        case courseRound(CourseRound)
+        case shot(SavedShot)
+
+        var id: String {
+            switch self {
+            case .rangeSession(let session): return "range-\(session.id.uuidString)"
+            case .simSession(let session): return "sim-\(session.id.uuidString)"
+            case .courseRound(let round): return "course-\(round.id.uuidString)"
+            case .shot(let shot): return "shot-\(shot.id.uuidString)"
+            }
+        }
+
+        var label: String {
+            switch self {
+            case .rangeSession: return "range session"
+            case .simSession: return "sim session"
+            case .courseRound: return "round"
+            case .shot: return "shot"
+            }
+        }
+    }
+
+    private struct HistoryStat: Identifiable {
+        let label: String
+        let value: String
+        var id: String { label }
+    }
+
+    private enum HistoryTimelineItem: Identifiable {
+        case range(PracticeSession)
+        case sim(SimSession)
+        case course(CourseRound)
+        case shot(SavedShot)
+
+        var id: String {
+            switch self {
+            case .range(let session): return "range-\(session.id.uuidString)"
+            case .sim(let session): return "sim-\(session.id.uuidString)"
+            case .course(let round): return "course-\(round.id.uuidString)"
+            case .shot(let shot): return "shot-\(shot.id.uuidString)"
+            }
+        }
+
+        var date: Date {
+            switch self {
+            case .range(let session): return session.endedAt ?? session.startedAt
+            case .sim(let session): return session.endedAt ?? session.startedAt
+            case .course(let round): return round.endedAt ?? round.startedAt
+            case .shot(let shot): return shot.timestamp
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .range: return "scope"
+            case .sim: return "display"
+            case .course: return "flag.fill"
+            case .shot: return "circle.inset.filled"
+            }
+        }
+
+        var accent: Color {
+            switch self {
+            case .range: return TCTheme.sage
+            case .sim: return TCTheme.gold
+            case .course: return TCTheme.sage
+            case .shot: return TCTheme.silver
+            }
+        }
+
+        var title: String {
+            switch self {
+            case .range(let session):
+                return session.name.isEmpty ? "Range Session" : session.name
+            case .sim(let session):
+                return session.name.isEmpty ? "Sim Session" : session.name
+            case .course(let round):
+                return round.name.isEmpty ? round.courseName : round.name
+            case .shot(let shot):
+                return "\(shot.clubName ?? "Saved") Shot"
+            }
+        }
+
+        var subtitle: String {
+            switch self {
+            case .range(let session):
+                let club = session.selectedClubName ?? "All Clubs"
+                return session.sessionDescription?.isEmpty == false ? "\(club) - \(session.sessionDescription!)" : club
+            case .sim(let session):
+                let source = session.usedOpenGolfSim ? "OpenGolfSim" : session.provider.rawValue
+                return session.sessionDescription?.isEmpty == false ? "\(source) - \(session.sessionDescription!)" : source
+            case .course(let round):
+                return "\(round.courseName) - \(round.teeBoxName) tees"
+            case .shot(let shot):
+                var parts = [Self.sourceLabel(for: shot.source)]
+                if let hole = shot.holeNumber { parts.append("Hole \(hole)") }
+                if shot.isBadShot { parts.append("Marked bad") }
+                return parts.joined(separator: " - ")
+            }
+        }
+
+        var primaryValue: String {
+            switch self {
+            case .range(let session): return "\(session.shotIds.count)"
+            case .sim(let session): return "\(session.shotIds.count)"
+            case .course(let round): return Self.scoreText(round.scoreSummary)
+            case .shot(let shot): return Self.yards(shot.metrics.carryYards)
+            }
+        }
+
+        var primaryLabel: String {
+            switch self {
+            case .range, .sim: return "shots"
+            case .course: return "score"
+            case .shot: return "carry"
+            }
+        }
+
+        var detailStats: [HistoryStat] {
+            switch self {
+            case .range(let session):
+                return [
+                    HistoryStat(label: "Avg Carry", value: Self.yards(session.summary.avgCarry)),
+                    HistoryStat(label: "Best Carry", value: Self.yards(session.summary.bestCarry)),
+                    HistoryStat(label: "Avg Speed", value: Self.speed(session.summary.avgBallSpeed))
+                ]
+            case .sim(let session):
+                return [
+                    HistoryStat(label: "Provider", value: session.provider.rawValue),
+                    HistoryStat(label: "Output", value: session.outputLog.isEmpty ? "--" : "\(session.outputLog.count)"),
+                    HistoryStat(label: "Duration", value: Self.duration(start: session.startedAt, end: session.endedAt))
+                ]
+            case .course(let round):
+                return [
+                    HistoryStat(label: "Fairways", value: "\(round.scoreSummary.fairwaysHit)"),
+                    HistoryStat(label: "Putts", value: "\(round.scoreSummary.totalPutts)"),
+                    HistoryStat(label: "Holes", value: "\(round.holes.count)")
+                ]
+            case .shot(let shot):
+                return [
+                    HistoryStat(label: "Total", value: Self.yards(shot.metrics.totalYards)),
+                    HistoryStat(label: "Ball Speed", value: Self.speed(shot.metrics.ballSpeedMph)),
+                    HistoryStat(label: "Mode", value: shot.mode.rawValue.capitalized)
+                ]
+            }
+        }
+
+        var deletionTarget: DeletionTarget {
+            switch self {
+            case .range(let session): return .rangeSession(session)
+            case .sim(let session): return .simSession(session)
+            case .course(let round): return .courseRound(round)
+            case .shot(let shot): return .shot(shot)
+            }
+        }
+
+        var deleteTitle: String {
+            switch self {
+            case .range: return "Delete Range Session"
+            case .sim: return "Delete Sim Session"
+            case .course: return "Delete Round"
+            case .shot: return "Delete Shot"
+            }
+        }
+
+        func matches(_ query: String) -> Bool {
+            let haystack = [
+                title,
+                subtitle,
+                primaryValue,
+                primaryLabel,
+                PastSessionsView.shortDateFormatter.string(from: date),
+                PastSessionsView.longDateFormatter.string(from: date)
+            ].joined(separator: " ")
+            return haystack.localizedCaseInsensitiveContains(query)
+        }
+
+        private static func yards(_ value: Double) -> String {
+            guard value > 0 else { return "--" }
+            return "\(Int(value.rounded())) yd"
+        }
+
+        private static func speed(_ value: Double) -> String {
+            guard value > 0 else { return "--" }
+            return "\(Int(value.rounded())) mph"
+        }
+
+        private static func scoreText(_ summary: RoundScoreSummary) -> String {
+            guard summary.totalPar > 0 else { return "--" }
+            let diff = summary.totalScore - summary.totalPar
+            if diff == 0 { return "E" }
+            return diff > 0 ? "+\(diff)" : "\(diff)"
+        }
+
+        private static func sourceLabel(for source: ShotSource) -> String {
+            switch source {
+            case .live: return "Live"
+            case .simulated: return "Simulated"
+            case .manual: return "Manual"
+            }
+        }
+
+        private static func duration(start: Date, end: Date?) -> String {
+            guard let end else { return "Active" }
+            let minutes = max(1, Int(end.timeIntervalSince(start) / 60))
+            if minutes < 60 { return "\(minutes)m" }
+            let hours = minutes / 60
+            let remaining = minutes % 60
+            return remaining == 0 ? "\(hours)h" : "\(hours)h \(remaining)m"
         }
     }
 }

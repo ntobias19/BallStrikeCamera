@@ -386,24 +386,41 @@ struct TCShotThumb: View {
     let yards: Int
     var isBest: Bool = false
 
-    private var isDriver: Bool { clubName.lowercased().hasPrefix("dr") }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if isBest {
-                Text("Best")
-                    .font(.system(size: 9, weight: .medium))
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text(clubName)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(TCTheme.textMuted)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                if isBest {
+                    Text("BEST")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundColor(TCTheme.gold)
+                        .tracking(0.8)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(TCTheme.gold.opacity(0.14)))
+                }
+            }
+            HStack(alignment: .lastTextBaseline, spacing: 3) {
+                Text("\(yards)")
+                    .font(.system(size: 22, weight: .semibold, design: .monospaced))
+                    .foregroundColor(TCTheme.textPrimary)
+                Text("yds")
+                    .font(.system(size: 10, weight: .semibold))
                     .foregroundColor(TCTheme.textMuted)
             }
-            Text(clubName)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(TCTheme.textPrimary)
-            Text("\(yards) yds")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(TCTheme.textSecondary)
         }
-        .frame(width: 94, alignment: .leading)
-        .padding(.vertical, 8)
+        .frame(width: 118, alignment: .leading)
+        .padding(10)
+        .background(TCTheme.panelRaised.opacity(0.55))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(isBest ? TCTheme.gold.opacity(0.30) : TCTheme.border, lineWidth: 1)
+        )
     }
 }
 
@@ -413,15 +430,23 @@ struct TCMilestoneBadge: View {
     let icon: String
     let value: String
     let label: String
+    var accent: Color = TCTheme.gold
 
     var body: some View {
         VStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.system(size: 18, weight: .regular))
-                .foregroundColor(TCTheme.textMuted)
+            ZStack {
+                Circle()
+                    .fill(accent.opacity(0.13))
+                    .frame(width: 36, height: 36)
+                Image(systemName: icon)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(accent)
+            }
             Text(value)
-                .font(.system(size: 16, weight: .semibold))
+                .font(.system(size: 17, weight: .semibold, design: .monospaced))
                 .foregroundColor(TCTheme.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
             Text(label)
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundColor(TCTheme.textMuted)
@@ -431,6 +456,8 @@ struct TCMilestoneBadge: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 14)
         .padding(.horizontal, 8)
+        .background(TCTheme.panelRaised.opacity(0.55))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 

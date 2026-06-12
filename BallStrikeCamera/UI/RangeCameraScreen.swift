@@ -66,6 +66,10 @@ struct RangeCameraScreen: View {
                     exitClean()
                 }
             },
+            onSaveSession: isCourseMode ? nil : {
+                beginSaveSessionFlow()
+            },
+            canSaveSession: !isCourseMode && rangeVM.sessionActive && !rangeVM.shots.isEmpty,
             onShotSaved: isCourseMode ? externalOnShotSaved : nil,
             onShotComplete: {}
         )
@@ -105,7 +109,7 @@ struct RangeCameraScreen: View {
             }
         }
         .onDisappear {
-            OrientationManager.shared.lockPortrait()
+            OrientationManager.shared.unlockAllButUpsideDown()
             camera.stop()
             if !isCourseMode {
                 WatchConnectivityBridge.shared.unregisterRangeCommandHandler()
@@ -148,7 +152,7 @@ struct RangeCameraScreen: View {
                     Task { await rangeVM.endSessionWithDetails(name: name, description: desc); publishWatchRangeState(); exitClean() }
                 },
                 onDelete: {
-                    Task { await rangeVM.discardSession(); exitClean() }
+                    Task { await rangeVM.discardSession(); publishWatchRangeState(); exitClean() }
                 }
             )
         }
@@ -161,6 +165,14 @@ struct RangeCameraScreen: View {
                 }
             }
             Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    private func beginSaveSessionFlow() {
+        guard rangeVM.sessionActive, !rangeVM.shots.isEmpty else { return }
+        Task {
+            saveSheetDefaultName = await rangeVM.computeDefaultName()
+            showSaveSheet = true
         }
     }
 
@@ -234,7 +246,7 @@ struct RangeCameraScreen: View {
     }
 
     private func exitClean() {
-        OrientationManager.shared.lockPortrait()
+        OrientationManager.shared.unlockAllButUpsideDown()
         dismiss()
     }
 

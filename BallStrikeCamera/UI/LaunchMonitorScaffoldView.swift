@@ -9,6 +9,8 @@ struct LaunchMonitorScaffoldView: View {
     var context: ShotContext? = nil
     var onChooseClub: (() -> Void)? = nil
     var onDismiss: () -> Void = {}
+    var onSaveSession: (() -> Void)? = nil
+    var canSaveSession: Bool = false
     var onShotSaved: ((SavedShot) -> Void)? = nil
     var onShotComplete: (() -> Void)? = nil
     @State private var exportedURL: URL?
@@ -77,6 +79,25 @@ struct LaunchMonitorScaffoldView: View {
                                                 .font(.system(size: 12, weight: .bold))
                                                 .foregroundColor(.white)
                                         }
+                                    }
+
+                                    if let onSaveSession {
+                                        Button(action: onSaveSession) {
+                                            RangeOverlayPill {
+                                                HStack(spacing: 6) {
+                                                    Image(systemName: "tray.and.arrow.down")
+                                                        .font(.system(size: 11, weight: .bold))
+
+                                                    Text("Save Session")
+                                                        .font(.system(size: 12, weight: .bold))
+                                                        .lineLimit(1)
+                                                }
+                                                .foregroundColor(.white.opacity(canSaveSession ? 0.94 : 0.42))
+                                            }
+                                        }
+                                        .buttonStyle(.plain)
+                                        .disabled(!canSaveSession)
+                                        .accessibilityLabel("Save Session")
                                     }
 
                                     Spacer()

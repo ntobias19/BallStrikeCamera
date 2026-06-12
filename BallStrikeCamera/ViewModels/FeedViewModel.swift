@@ -97,11 +97,13 @@ final class FeedViewModel: ObservableObject {
     func hasGimmed(_ post: FeedPost) -> Bool { gimmedByMe.contains(post.id) }
     func commentCount(for post: FeedPost) -> Int { commentCounts[post.id] ?? post.commentsCount }
 
-    func createPost(title: String, body: String, type: FeedPostType, highlight: String, authorName: String) async {
+    func createPost(title: String, body: String, type: FeedPostType, highlight: String, authorName: String,
+                    visibility: FeedVisibility = .everyone, photoData: Data? = nil, extraStats: [FeedStat] = []) async {
         let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanHighlight = highlight.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleanTitle.isEmpty || !cleanBody.isEmpty || !cleanHighlight.isEmpty else { return }
+        guard !cleanTitle.isEmpty || !cleanBody.isEmpty || !cleanHighlight.isEmpty
+                || !extraStats.isEmpty || photoData != nil else { return }
 
         let displayTitle: String
         if cleanTitle.isEmpty {
@@ -115,7 +117,9 @@ final class FeedViewModel: ObservableObject {
             displayTitle = cleanTitle
         }
 
-        let stats = cleanHighlight.isEmpty ? [] : [FeedStat(label: "Highlight", value: cleanHighlight)]
+        var stats = extraStats
+        if !cleanHighlight.isEmpty { stats.append(FeedStat(label: "Highlight", value: cleanHighlight)) }
+        let savedPhoto = photoData.flatMap { savePhoto($0) }
         let post = FeedPost(
             userId: userId,
             authorName: authorName,
@@ -129,7 +133,9 @@ final class FeedViewModel: ObservableObject {
                 kind: type == .round ? .round : type == .session ? .range : .manual,
                 shotCount: type == .session ? firstInteger(in: cleanHighlight) : nil,
                 bestCarryYards: type == .shot ? firstInteger(in: cleanHighlight) : nil
-            )
+            ),
+            visibility: visibility,
+            photoPath: savedPhoto
         )
 
         posts.insert(post, at: 0)
@@ -140,6 +146,20 @@ final class FeedViewModel: ObservableObject {
             posts.removeAll { $0.id == post.id }
             commentCounts.removeValue(forKey: post.id)
             errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Writes a post photo to the user's media dir; returns the relative filename
+    /// (resolved against `compositeDir` at render time so it survives path changes).
+    private func savePhoto(_ data: Data) -> String? {
+        let dir = AppStorageManager.compositeDir(userId: userId)
+        AppStorageManager.ensureDirectory(dir)
+        let filename = "post_\(UUID().uuidString).jpg"
+        do {
+            try data.write(to: dir.appendingPathComponent(filename))
+            return filename
+        } catch {
+            return nil
         }
     }
 

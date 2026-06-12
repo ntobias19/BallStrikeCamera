@@ -18,6 +18,8 @@ struct SimCameraScreen: View {
     @State private var selectedClubId: UUID?
     @State private var clubs: [UserClub] = []
     @State private var showClubPicker = false
+    @State private var showSaveSheet = false
+    @State private var saveSheetDefaultName = "Sim Session"
 
     var body: some View {
         LaunchMonitorScaffoldView(
@@ -33,6 +35,10 @@ struct SimCameraScreen: View {
             }
         },
             onDismiss: { dismiss() },
+            onSaveSession: {
+                beginSaveSessionFlow()
+            },
+            canSaveSession: simVM.sessionActive && !simVM.shots.isEmpty,
             onShotSaved: nil,   // auto-saved below; review screen is informational only
             onShotComplete: {}  // stay armed for next shot
         )
@@ -73,7 +79,7 @@ struct SimCameraScreen: View {
             Task { await loadClubs() }
         }
         .onDisappear {
-            OrientationManager.shared.lockPortrait()
+            OrientationManager.shared.unlockAllButUpsideDown()
             camera.stop()
         }
         .confirmationDialog("Select Club", isPresented: $showClubPicker, titleVisibility: .visible) {
@@ -86,9 +92,42 @@ struct SimCameraScreen: View {
             }
             Button("Cancel", role: .cancel) {}
         }
+        .sheet(isPresented: $showSaveSheet) {
+            SessionSaveSheet(
+                config: SessionSaveConfig(
+                    type: .sim,
+                    defaultName: saveSheetDefaultName,
+                    date: simVM.activeSession?.startedAt ?? Date()
+                ),
+                onSave: { name, desc in
+                    Task {
+                        await simVM.endSessionWithDetails(
+                            name: name,
+                            description: desc,
+                            usedOGS: ogsVM.connectionState.isConnected
+                        )
+                        dismiss()
+                    }
+                },
+                onDelete: {
+                    Task {
+                        await simVM.discardSession()
+                        dismiss()
+                    }
+                }
+            )
+        }
     }
 
     // MARK: - Auto-save
+
+    private func beginSaveSessionFlow() {
+        guard simVM.sessionActive, !simVM.shots.isEmpty else { return }
+        Task {
+            saveSheetDefaultName = await simVM.computeDefaultName()
+            showSaveSheet = true
+        }
+    }
 
     private func autoSave(analysis: ShotAnalysisResult, metrics: SavedShotMetrics) async {
         guard let uid = session.currentUser?.id else { return }

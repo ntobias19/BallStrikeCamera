@@ -321,6 +321,10 @@ struct FeedPost: Codable, Identifiable {
     var linkedSessionId: UUID?
     var linkedRoundId: UUID?
     var activityMetadata: FeedActivityMetadata? = nil
+    /// Optional so older stored posts decode cleanly; nil is treated as `.everyone`.
+    var visibility: FeedVisibility? = nil
+    /// Relative path (under the user's media dir) to an attached photo, if any.
+    var photoPath: String? = nil
 }
 
 /// One stat column in a feed card (Strava-style: small label over bold value).

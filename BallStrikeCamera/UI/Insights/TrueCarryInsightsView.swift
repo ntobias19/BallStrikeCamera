@@ -174,7 +174,7 @@ struct TrueCarryInsightsView: View {
     private var pageTitleSection: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Insights")
-                .font(.system(size: 34, weight: .semibold))
+                .font(.system(size: 34, weight: .semibold, design: .serif))
                 .foregroundColor(TCTheme.textPrimary)
             Text("Your numbers, club by club.")
                 .font(.system(size: 14))
@@ -186,33 +186,47 @@ struct TrueCarryInsightsView: View {
     // MARK: - Club Picker
 
     private var clubPicker: some View {
-        HStack(spacing: 10) {
-            Text("CLUB")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(TCTheme.textMuted)
-                .tracking(1.5)
-
-            Picker("", selection: $selectedClub) {
-                Text("Select a club").tag(Optional<String>.none)
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
                 ForEach(availableClubs, id: \.self) { club in
-                    let count = shotsFor(club).count
-                    Text(count > 0 ? "\(club)  ·  \(count) shots" : club)
-                        .tag(Optional<String>.some(club))
+                    clubChip(club)
                 }
             }
-            .pickerStyle(.menu)
-            .tint(TCTheme.gold)
-
-            Spacer(minLength: 0)
+            .padding(.horizontal, TCTheme.hPad)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(TCTheme.panel)
-        .clipShape(RoundedRectangle(cornerRadius: TCTheme.cardRadius, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: TCTheme.cardRadius, style: .continuous)
-                .strokeBorder(TCTheme.border, lineWidth: 1)
-        )
+        .padding(.horizontal, -TCTheme.hPad)
+    }
+
+    private func clubChip(_ club: String) -> some View {
+        let selected = selectedClub == club
+        let count = shotsFor(club).count
+        return Button {
+            withAnimation(.spring(response: 0.30, dampingFraction: 0.82)) { selectedClub = club }
+        } label: {
+            HStack(spacing: 7) {
+                Text(club)
+                    .font(.system(size: 13, weight: .semibold))
+                if count > 0 {
+                    Text("\(count)")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundColor(selected ? TCTheme.onPrimary.opacity(0.75) : TCTheme.textUltraMuted)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(
+                            Capsule().fill(selected ? TCTheme.onPrimary.opacity(0.14) : TCTheme.panelRaised)
+                        )
+                }
+            }
+            .foregroundColor(selected ? TCTheme.onPrimary : TCTheme.textMuted)
+            .padding(.horizontal, 13)
+            .padding(.vertical, 9)
+            .background(selected ? AnyShapeStyle(TCTheme.primaryFill) : AnyShapeStyle(TCTheme.panel))
+            .clipShape(Capsule())
+            .overlay(
+                Capsule().strokeBorder(selected ? Color.clear : TCTheme.border, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Empty / Prompt
@@ -256,16 +270,23 @@ struct TrueCarryInsightsView: View {
         Spacer(minLength: 140)
     }
 
-    /// Green section header (the title treatment carried across the app).
+    /// Card header with the small Marker Gold tick (the brand title treatment).
     private func cardHeader(_ title: String, _ subtitle: String? = nil) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(title)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundColor(TCTheme.textPrimary)
-            if let subtitle {
-                Text(subtitle)
-                    .font(.system(size: 12))
-                    .foregroundColor(TCTheme.textMuted)
+        HStack(alignment: .top, spacing: 8) {
+            Rectangle()
+                .fill(TCTheme.gold)
+                .frame(width: 3, height: 14)
+                .clipShape(Capsule())
+                .padding(.top, 3)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(TCTheme.textPrimary)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.system(size: 12))
+                        .foregroundColor(TCTheme.textMuted)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -352,14 +373,12 @@ struct TrueCarryInsightsView: View {
         }()
 
         return VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text("Carry Trend")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(TCTheme.textPrimary)
-                Spacer()
+            HStack(alignment: .top) {
+                cardHeader("Carry Trend")
                 Text(carries.isEmpty ? "" : "Last \(carries.count) shots")
                     .font(.system(size: 12))
                     .foregroundColor(TCTheme.textMuted)
+                    .fixedSize()
             }
 
             if carries.isEmpty {
@@ -411,8 +430,10 @@ struct TrueCarryInsightsView: View {
         VStack(spacing: 5) {
             HStack(alignment: .lastTextBaseline, spacing: 3) {
                 Text(value)
-                    .font(.system(size: 20, weight: .bold))
+                    .font(.system(size: 19, weight: .bold, design: .monospaced))
                     .foregroundColor(TCTheme.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
                 if !unitStr.isEmpty && value != "—" {
                     Text(unitStr)
                         .font(.system(size: 11))

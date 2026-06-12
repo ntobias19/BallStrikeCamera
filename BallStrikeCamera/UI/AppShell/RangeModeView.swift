@@ -66,7 +66,7 @@ struct RangeModeView: View {
             }
             .onAppear {
                 print("Navigating to RangeModeView")
-                OrientationManager.shared.lockPortrait()
+                OrientationManager.shared.unlockAllButUpsideDown()
             }
         }
         .tcAppearance()

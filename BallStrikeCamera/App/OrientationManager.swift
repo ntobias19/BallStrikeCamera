@@ -12,7 +12,9 @@ final class OrientationManager {
 
     // MARK: - State
 
-    private(set) var currentLock: UIInterfaceOrientationMask = .portrait
+    /// Default: follow the device tilt (portrait + both landscapes). Camera
+    /// capture screens temporarily lock landscape; everything else autorotates.
+    private(set) var currentLock: UIInterfaceOrientationMask = .allButUpsideDown
 
     // MARK: - Public API
 
