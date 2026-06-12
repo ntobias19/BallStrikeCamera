@@ -19,14 +19,6 @@ struct SupabaseAuthResponse: Decodable {
     let expiresIn: Int
     let refreshToken: String
     let user: SupabaseUser
-
-    enum CodingKeys: String, CodingKey {
-        case accessToken  = "access_token"
-        case tokenType    = "token_type"
-        case expiresIn    = "expires_in"
-        case refreshToken = "refresh_token"
-        case user
-    }
 }
 
 struct SupabaseSignUpResponse: Decodable {
@@ -35,26 +27,12 @@ struct SupabaseSignUpResponse: Decodable {
     let expiresIn: Int?
     let refreshToken: String?
     let user: SupabaseUser
-
-    enum CodingKeys: String, CodingKey {
-        case accessToken  = "access_token"
-        case tokenType    = "token_type"
-        case expiresIn    = "expires_in"
-        case refreshToken = "refresh_token"
-        case user
-    }
 }
 
 struct SupabaseUser: Decodable {
     let id: String
     let email: String?
     let userMetadata: [String: AnyCodable]?
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case email
-        case userMetadata = "user_metadata"
-    }
 }
 
 // MARK: - Table Row DTOs
@@ -68,17 +46,6 @@ struct SupabaseProfileRow: Codable {
     var speedUnit: String
     var homeCourseName: String
     var profileImagePath: String?
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case userId          = "user_id"
-        case displayName     = "display_name"
-        case handedness      = "handedness"
-        case distanceUnit    = "distance_unit"
-        case speedUnit       = "speed_unit"
-        case homeCourseName  = "home_course_name"
-        case profileImagePath = "profile_image_path"
-    }
 
     func toUserProfile() -> UserProfile? {
         guard let uid = UUID(uuidString: userId) else { return nil }
@@ -106,19 +73,6 @@ struct SupabaseEntitlementRow: Codable {
     var currentPeriodEnd: String?
     var cancelAtPeriodEnd: Bool
     var updatedAt: String
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case userId               = "user_id"
-        case tier
-        case paymentStatus        = "payment_status"
-        case stripeCustomerId     = "stripe_customer_id"
-        case stripeSubscriptionId = "stripe_subscription_id"
-        case currentPeriodStart   = "current_period_start"
-        case currentPeriodEnd     = "current_period_end"
-        case cancelAtPeriodEnd    = "cancel_at_period_end"
-        case updatedAt            = "updated_at"
-    }
 
     func toUserEntitlement() -> UserEntitlement? {
         guard let uid = UUID(uuidString: userId) else { return nil }
@@ -153,23 +107,6 @@ struct SupabaseCourseGeometryRow: Codable {
     var submittedBy: String?
     var updatedAt: String?
 
-    enum CodingKeys: String, CodingKey {
-        case courseId = "course_id"
-        case courseName = "course_name"
-        case city
-        case state
-        case source
-        case geometryState = "geometry_state"
-        case confidence
-        case schemaVersion = "schema_version"
-        case generatedBy = "generated_by"
-        case validationErrors = "validation_errors"
-        case imagerySource = "imagery_source"
-        case payload
-        case submittedBy = "submitted_by"
-        case updatedAt = "updated_at"
-    }
-
     func toGolfCourse() -> GolfCourse {
         var course = payload
         let state = CourseGeometryState(rawValue: geometryState ?? "") ?? .accepted
@@ -192,16 +129,11 @@ struct SupabasePayloadRow<Payload: Codable>: Codable {
     var id: String
     var userId: String
     var payload: Payload
-    var timestamp: Date?
-    var startedAt: Date?
+    var timestamp: String?
+    var startedAt: String?
 
-    enum CodingKeys: String, CodingKey {
-        case id
-        case userId = "user_id"
-        case payload
-        case timestamp
-        case startedAt = "started_at"
-    }
+    var parsedTimestamp: Date? { timestamp.flatMap { SupabaseDate.parse($0) } }
+    var parsedStartedAt: Date? { startedAt.flatMap { SupabaseDate.parse($0) } }
 }
 
 // MARK: - Feed / Social Row DTOs
@@ -214,14 +146,6 @@ struct SupabaseFeedPostRow: Codable {
     var payload: FeedPost
     var visibility: String
     var timestamp: String
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case userId = "user_id"
-        case payload
-        case visibility
-        case timestamp
-    }
 
     func toFeedPost() -> FeedPost? {
         var post = payload
@@ -238,13 +162,6 @@ struct SupabaseReactionRow: Codable {
     var postId: String
     var userId: String
     var emoji: String
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case postId = "post_id"
-        case userId = "user_id"
-        case emoji
-    }
 }
 
 /// Row returned by the `feed_comments` table.
@@ -255,15 +172,6 @@ struct SupabaseCommentRow: Codable {
     var authorName: String
     var body: String
     var createdAt: String
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case postId = "post_id"
-        case userId = "user_id"
-        case authorName = "author_name"
-        case body
-        case createdAt = "created_at"
-    }
 
     func toFeedComment() -> FeedComment? {
         guard let pid = UUID(uuidString: postId), let uid = UUID(uuidString: userId) else { return nil }
@@ -281,11 +189,6 @@ struct SupabaseCommentRow: Codable {
 struct SupabaseCommentCountRow: Codable {
     var id: String
     var postId: String
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case postId = "post_id"
-    }
 }
 
 /// Minimal public profile returned by the `search_users` / `list_friends` RPCs.
@@ -294,13 +197,6 @@ struct SupabaseUserSearchRow: Codable {
     var displayName: String
     var homeCourseName: String?
     var profileImagePath: String?
-
-    enum CodingKeys: String, CodingKey {
-        case userId = "user_id"
-        case displayName = "display_name"
-        case homeCourseName = "home_course_name"
-        case profileImagePath = "profile_image_path"
-    }
 
     func toFriendProfile() -> FriendProfile? {
         guard let uid = UUID(uuidString: userId) else { return nil }
@@ -314,13 +210,6 @@ struct SupabaseIncomingRequestRow: Codable {
     var fromUserId: String
     var displayName: String
     var sentAt: String
-
-    enum CodingKeys: String, CodingKey {
-        case requestId = "request_id"
-        case fromUserId = "from_user_id"
-        case displayName = "display_name"
-        case sentAt = "sent_at"
-    }
 
     func toIncomingRequest() -> IncomingFriendRequest? {
         guard let rid = UUID(uuidString: requestId), let uid = UUID(uuidString: fromUserId) else { return nil }

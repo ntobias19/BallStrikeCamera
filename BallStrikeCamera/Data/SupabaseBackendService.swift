@@ -246,7 +246,7 @@ final class SupabaseBackendService: AppBackend {
                 var shot = row.payload
                 if let id = UUID(uuidString: row.id) { shot.id = id }
                 if let uid = UUID(uuidString: row.userId) { shot.userId = uid }
-                if let timestamp = row.timestamp { shot.timestamp = timestamp }
+                if let timestamp = row.parsedTimestamp { shot.timestamp = timestamp }
                 return shot
             }
             .sorted { $0.timestamp > $1.timestamp }
@@ -277,7 +277,7 @@ final class SupabaseBackendService: AppBackend {
                 var rangeSession = row.payload
                 if let id = UUID(uuidString: row.id) { rangeSession.id = id }
                 if let uid = UUID(uuidString: row.userId) { rangeSession.userId = uid }
-                if let startedAt = row.startedAt { rangeSession.startedAt = startedAt }
+                if let startedAt = row.parsedStartedAt { rangeSession.startedAt = startedAt }
                 return rangeSession
             }
             .sorted { $0.startedAt > $1.startedAt }
@@ -304,7 +304,7 @@ final class SupabaseBackendService: AppBackend {
                 var simSession = row.payload
                 if let id = UUID(uuidString: row.id) { simSession.id = id }
                 if let uid = UUID(uuidString: row.userId) { simSession.userId = uid }
-                if let startedAt = row.startedAt { simSession.startedAt = startedAt }
+                if let startedAt = row.parsedStartedAt { simSession.startedAt = startedAt }
                 return simSession
             }
             .sorted { $0.startedAt > $1.startedAt }
@@ -331,7 +331,7 @@ final class SupabaseBackendService: AppBackend {
                 var round = row.payload
                 if let id = UUID(uuidString: row.id) { round.id = id }
                 if let uid = UUID(uuidString: row.userId) { round.userId = uid }
-                if let startedAt = row.startedAt { round.startedAt = startedAt }
+                if let startedAt = row.parsedStartedAt { round.startedAt = startedAt }
                 return round
             }
             .sorted { $0.startedAt > $1.startedAt }
