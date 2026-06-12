@@ -114,29 +114,42 @@ function SimContent() {
           background: var(--bg);
         }
         .sim-landing-card {
-          max-width: 480px;
+          max-width: 520px;
           width: 100%;
           text-align: center;
         }
         .sim-landing-eyebrow {
-          font-size: 12px;
-          font-weight: 700;
-          letter-spacing: 0.12em;
+          display: inline-flex;
+          align-items: center;
+          gap: 12px;
+          font-family: var(--r-mono);
+          font-size: 11px;
+          font-weight: 500;
+          letter-spacing: 0.28em;
           text-transform: uppercase;
-          color: var(--gold);
-          margin-bottom: 16px;
+          color: var(--carry-gold);
+          margin-bottom: 20px;
+        }
+        .sim-landing-eyebrow::before,
+        .sim-landing-eyebrow::after {
+          content: "";
+          width: 26px;
+          height: 1px;
+          background: var(--carry-gold);
         }
         .sim-landing-title {
-          font-size: clamp(1.8rem, 5vw, 2.6rem);
-          font-weight: 700;
+          font-family: var(--display);
+          font-weight: 400;
+          font-size: clamp(2.4rem, 6vw, 3.6rem);
+          letter-spacing: -0.03em;
           color: var(--cream);
-          margin-bottom: 16px;
-          line-height: 1.15;
+          margin-bottom: 18px;
+          line-height: 1.02;
         }
         .sim-landing-desc {
-          font-size: 15px;
+          font-size: 15.5px;
           color: var(--muted);
-          line-height: 1.65;
+          line-height: 1.7;
           margin-bottom: 36px;
         }
         .sim-landing-desc strong { color: var(--cream); }
@@ -148,45 +161,48 @@ function SimContent() {
           margin-bottom: 24px;
         }
         .sim-code-input {
-          width: 220px;
+          width: 240px;
           text-align: center;
           font-size: 2.4rem;
-          font-weight: 800;
-          letter-spacing: 0.18em;
-          padding: 16px 20px;
-          border-radius: 14px;
-          border: 1.5px solid var(--border);
+          font-weight: 500;
+          letter-spacing: 0.22em;
+          padding: 16px 8px 16px 16px;
+          border-radius: var(--radius);
+          border: 1px solid var(--border-strong);
           background: var(--surface);
           color: var(--cream);
           outline: none;
-          font-family: var(--font-mono, monospace);
-          transition: border-color 0.15s;
+          font-family: var(--r-mono);
+          transition: border-color 0.2s;
         }
-        .sim-code-input:focus { border-color: var(--gold); }
+        .sim-code-input:focus { border-color: var(--text); }
         .sim-code-input::placeholder { color: var(--faint); }
         .sim-code-btn {
-          padding: 14px 32px;
-          border-radius: 12px;
-          border: none;
-          background: linear-gradient(135deg, #8CA585 0%, #4d7a55 100%);
-          color: #fff;
-          font-size: 15px;
+          width: 240px;
+          padding: 15px 32px;
+          border-radius: 999px;
+          border: 1px solid var(--bone);
+          background: var(--bone);
+          color: var(--ink);
+          font-family: var(--r-mono);
+          font-size: 12px;
           font-weight: 700;
-          letter-spacing: 0.04em;
+          letter-spacing: 0.2em;
+          text-transform: uppercase;
           cursor: pointer;
-          transition: opacity 0.15s;
-          width: 220px;
+          transition: background 0.2s, border-color 0.2s, opacity 0.2s;
         }
+        .sim-code-btn:hover:not(:disabled) { background: var(--carry-gold); border-color: var(--carry-gold); }
         .sim-code-btn:disabled { opacity: 0.35; cursor: default; }
         .sim-landing-hint { font-size: 13px; color: var(--faint); }
-        .sim-link { color: var(--gold); text-decoration: none; }
-        .sim-link:hover { text-decoration: underline; }
+        .sim-link { color: var(--carry-gold); text-decoration: none; }
+        .sim-link:hover { color: var(--bone); }
 
         /* Fullscreen iframe mode */
         .sim-fullscreen {
           position: fixed;
           inset: 0;
-          background: #0a110c;
+          background: var(--forest-darker);
           z-index: 1000;
         }
         .sim-iframe {
@@ -201,19 +217,21 @@ function SimContent() {
           left: 50%;
           transform: translateX(-50%);
           z-index: 1001;
-          padding: 8px 18px;
-          border-radius: 20px;
-          border: 1px solid rgba(255,255,255,0.15);
-          background: rgba(0,0,0,0.55);
-          color: rgba(255,255,255,0.6);
-          font-size: 12px;
-          font-weight: 600;
-          letter-spacing: 0.06em;
+          padding: 9px 18px;
+          border-radius: 999px;
+          border: 1px solid rgba(236, 228, 210, 0.22);
+          background: rgba(14, 20, 15, 0.65);
+          color: rgba(236, 228, 210, 0.66);
+          font-family: var(--r-mono);
+          font-size: 11px;
+          font-weight: 500;
+          letter-spacing: 0.14em;
+          text-transform: uppercase;
           cursor: pointer;
           backdrop-filter: blur(8px);
-          transition: color 0.15s;
+          transition: color 0.15s, border-color 0.15s;
         }
-        .sim-change-code:hover { color: #fff; }
+        .sim-change-code:hover { color: var(--bone); border-color: rgba(236, 228, 210, 0.45); }
       `}</style>
     </>
   );

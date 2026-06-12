@@ -99,7 +99,7 @@ tracerGeo.setAttribute('position', new THREE.BufferAttribute(tracerPos, 3));
 tracerGeo.setDrawRange(0, 0);
 const tracer = new THREE.Line(
   tracerGeo,
-  new THREE.LineBasicMaterial({ color: 0xecd9ad, transparent: true, opacity: 0.85 }),
+  new THREE.LineBasicMaterial({ color: 0xCBB079, transparent: true, opacity: 0.85 }),
 );
 tracer.frustumCulled = false;
 scene.add(tracer);
@@ -109,14 +109,14 @@ let tracerCount = 0;
 const aimGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
 const aimLine = new THREE.Line(
   aimGeo,
-  new THREE.LineDashedMaterial({ color: 0xecd9ad, dashSize: 1.6, gapSize: 1.2, transparent: true, opacity: 0.6 }),
+  new THREE.LineDashedMaterial({ color: 0xCBB079, dashSize: 1.6, gapSize: 1.2, transparent: true, opacity: 0.6 }),
 );
 aimLine.frustumCulled = false;
 scene.add(aimLine);
 
 const ring = new THREE.Mesh(
   new THREE.TorusGeometry(1.5, 0.14, 10, 36),
-  new THREE.MeshBasicMaterial({ color: 0xc9a86a, transparent: true, opacity: 0.85 }),
+  new THREE.MeshBasicMaterial({ color: 0xB89A5E, transparent: true, opacity: 0.85 }),
 );
 ring.rotation.x = -Math.PI / 2;
 scene.add(ring);

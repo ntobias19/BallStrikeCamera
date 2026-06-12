@@ -320,7 +320,7 @@ export class HUD {
     if (ball && aimDir) {
       const [bx, by] = this.mapPt(ball.x, ball.z);
       const [ax, ay] = this.mapPt(ball.x + aimDir.x * 400, ball.z + aimDir.z * 400);
-      ctx.strokeStyle = 'rgba(236, 217, 173, 0.55)';
+      ctx.strokeStyle = 'rgba(203, 176, 121, 0.6)';
       ctx.lineWidth = 1;
       ctx.setLineDash([4, 4]);
       ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(ax, ay); ctx.stroke();

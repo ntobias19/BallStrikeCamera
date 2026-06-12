@@ -1,20 +1,21 @@
 /* ============================================================
-   GSPro Web — private indoor country club aesthetic
-   dark glass · pine green · brushed gold · broadcast telemetry
+   True Carry Sim — Carry Forest after dark
+   dark glass · forest green · Marker Gold · broadcast telemetry
+   (same tokens as truecarry.app: Range Bone / Marker Gold / sage)
    ============================================================ */
 
 :root {
-  --ink:        #0a110c;
-  --glass:      rgba(9, 16, 11, 0.74);
-  --glass-edge: rgba(201, 168, 106, 0.38);
-  --gold:       #c9a86a;
-  --gold-hi:    #ecd9ad;
-  --cream:      #f2eee1;
-  --cream-dim:  rgba(242, 238, 225, 0.55);
-  --pine:       #8fd49a;
-  --red:        #e2654f;
-  --font-disp:  'Marcellus', serif;
-  --font-data:  'Rajdhani', sans-serif;
+  --ink:        #0E140F;
+  --glass:      rgba(14, 20, 15, 0.78);
+  --glass-edge: rgba(184, 154, 94, 0.38);
+  --gold:       #B89A5E;
+  --gold-hi:    #CBB079;
+  --cream:      #ECE4D2;
+  --cream-dim:  rgba(236, 228, 210, 0.55);
+  --pine:       #8CA585;
+  --red:        #E07A6F;
+  --font-disp:  'Instrument Serif', Georgia, serif;
+  --font-data:  'JetBrains Mono', ui-monospace, monospace;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -81,7 +82,7 @@ html, body {
 }
 #hc-name {
   margin-top: 7px; padding-top: 6px;
-  border-top: 1px solid rgba(201,168,106,0.22);
+  border-top: 1px solid rgba(184,154,94,0.22);
   font-family: var(--font-disp);
   font-size: 13px; letter-spacing: 0.32em;
   color: var(--gold);
@@ -96,14 +97,14 @@ html, body {
 }
 #wind-rose {
   width: 44px; height: 44px;
-  border: 1px solid rgba(201,168,106,0.35);
+  border: 1px solid rgba(184,154,94,0.35);
   border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
   color: var(--pine);
 }
 #wind-arrow { transition: transform 0.25s ease; }
 #wind-text { display: flex; align-items: baseline; gap: 4px; }
-#wind-speed { font-size: 30px; font-weight: 700; line-height: 1; }
+#wind-speed { font-size: 30px; font-weight: 500; line-height: 1; }
 .wind-unit  { font-size: 12px; letter-spacing: 0.2em; color: var(--cream-dim); }
 #wind.calm #wind-rose { color: var(--cream-dim); }
 
@@ -141,15 +142,15 @@ html, body {
 .club-btn {
   pointer-events: auto;
   width: 34px; height: 52px;
-  background: rgba(201,168,106,0.08);
-  border: 1px solid rgba(201,168,106,0.3);
+  background: rgba(184,154,94,0.08);
+  border: 1px solid rgba(184,154,94,0.3);
   border-radius: 7px;
   color: var(--gold);
   font-size: 13px;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
-.club-btn:hover { background: rgba(201,168,106,0.22); color: var(--gold-hi); }
+.club-btn:hover { background: rgba(184,154,94,0.22); color: var(--gold-hi); }
 #club-info { min-width: 132px; text-align: center; padding: 0 8px; }
 #club-name {
   font-family: var(--font-disp);
@@ -170,7 +171,7 @@ html, body {
   text-align: center; min-width: 150px;
 }
 #pin-dist { display: flex; align-items: baseline; justify-content: center; gap: 3px; }
-#pin-num  { font-size: 46px; font-weight: 700; line-height: 0.95; color: var(--cream); }
+#pin-num  { font-size: 46px; font-weight: 500; line-height: 0.95; color: var(--cream); }
 .pin-unit { font-size: 19px; font-weight: 600; color: var(--gold); }
 #pin-label {
   font-size: 11px; font-weight: 600; letter-spacing: 0.3em;
@@ -180,13 +181,13 @@ html, body {
   margin-top: 8px;
   display: inline-block;
   padding: 3px 14px;
-  border: 1px solid rgba(143,212,154,0.45);
+  border: 1px solid rgba(140,165,133,0.45);
   border-radius: 999px;
   font-size: 12px; font-weight: 700; letter-spacing: 0.24em;
   color: var(--pine);
 }
-#lie-chip.bad   { color: var(--gold);  border-color: rgba(201,168,106,0.5); }
-#lie-chip.hazard{ color: var(--red);   border-color: rgba(226,101,79,0.5); }
+#lie-chip.bad   { color: var(--gold);  border-color: rgba(184,154,94,0.5); }
+#lie-chip.hazard{ color: var(--red);   border-color: rgba(224,122,111,0.5); }
 
 /* ---------------- launch monitor data ---------------- */
 
@@ -198,7 +199,7 @@ html, body {
 .sd-row {
   display: flex; justify-content: space-between; gap: 18px;
   padding: 3px 0;
-  border-bottom: 1px solid rgba(201,168,106,0.12);
+  border-bottom: 1px solid rgba(184,154,94,0.12);
 }
 .sd-row:last-child { border-bottom: none; }
 .sd-label {
@@ -206,7 +207,7 @@ html, body {
   color: var(--cream-dim); align-self: center;
 }
 .sd-val {
-  font-size: 16px; font-weight: 700; letter-spacing: 0.06em;
+  font-size: 15px; font-weight: 600; letter-spacing: 0.04em;
   color: var(--gold-hi);
 }
 
@@ -222,7 +223,7 @@ html, body {
 #meter-track {
   position: relative;
   width: 26px; height: 270px;
-  background: rgba(9,16,11,0.78);
+  background: rgba(14,20,15,0.8);
   border: 1px solid var(--glass-edge);
   border-radius: 13px;
   overflow: hidden;
@@ -231,20 +232,20 @@ html, body {
 #meter-sweet {
   position: absolute; left: 0; right: 0;
   top: 0; height: 14%;
-  background: linear-gradient(to bottom, rgba(201,168,106,0.55), rgba(201,168,106,0.12));
+  background: linear-gradient(to bottom, rgba(184,154,94,0.55), rgba(184,154,94,0.12));
 }
 #meter-fill {
   position: absolute; left: 3px; right: 3px; bottom: 3px;
   height: 0%;
   border-radius: 10px;
-  background: linear-gradient(to top, #5b8f50, #9ed47f 60%, var(--gold-hi));
+  background: linear-gradient(to top, #4C6147, #8CA585 60%, var(--gold-hi));
   transition: none;
 }
 #meter-snapline {
   position: absolute; left: 0; right: 0;
   bottom: 12%; height: 2px;
   background: var(--cream);
-  box-shadow: 0 0 8px rgba(242,238,225,0.9);
+  box-shadow: 0 0 8px rgba(236,228,210,0.9);
 }
 #meter-cursor {
   position: absolute; left: -4px; right: -4px;
@@ -254,10 +255,10 @@ html, body {
 }
 #meter-powermark {
   position: absolute; left: 0; right: 0;
-  height: 2px; background: rgba(242,238,225,0.55);
+  height: 2px; background: rgba(236,228,210,0.55);
 }
 #meter-readout {
-  font-size: 15px; font-weight: 700; letter-spacing: 0.18em;
+  font-size: 14px; font-weight: 600; letter-spacing: 0.18em;
   color: var(--gold-hi);
   text-shadow: 0 2px 8px rgba(0,0,0,0.8);
 }
@@ -280,7 +281,7 @@ html, body {
   position: absolute;
   bottom: 8px; left: 50%; transform: translateX(-50%);
   font-size: 10px; font-weight: 600; letter-spacing: 0.22em;
-  color: rgba(242,238,225,0.34);
+  color: rgba(236,228,210,0.34);
   white-space: nowrap;
 }
 
@@ -294,11 +295,23 @@ html, body {
 
 #title-screen {
   background:
-    radial-gradient(ellipse at 50% 110%, rgba(46,84,52,0.55), transparent 60%),
-    radial-gradient(ellipse at 50% -20%, rgba(201,168,106,0.14), transparent 55%),
-    linear-gradient(170deg, #0b130d 0%, #0a110c 55%, #07150c 100%);
+    radial-gradient(ellipse at 50% 110%, rgba(42,58,46,0.6), transparent 60%),
+    radial-gradient(ellipse at 50% -20%, rgba(184,154,94,0.14), transparent 55%),
+    linear-gradient(170deg, #121A14 0%, #0E140F 55%, #0B1410 100%);
 }
-.title-inner { text-align: center; animation: rise 0.9s cubic-bezier(0.2,0.8,0.2,1) both; }
+/* dimple lattice — the brand background pattern, barely there */
+#title-screen::before {
+  content: '';
+  position: absolute; inset: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  background-image:
+    radial-gradient(circle at 30% 30%, rgba(236,228,210,0.045) 0 2px, transparent 2.5px),
+    radial-gradient(circle at 70% 70%, rgba(236,228,210,0.045) 0 2px, transparent 2.5px);
+  background-size: 22px 22px, 22px 22px;
+  background-position: 0 0, 11px 11px;
+}
+.title-inner { position: relative; text-align: center; animation: rise 0.9s cubic-bezier(0.2,0.8,0.2,1) both; }
 @keyframes rise { from { opacity: 0; transform: translateY(26px); } to { opacity: 1; transform: none; } }
 
 .title-kicker {
@@ -309,11 +322,11 @@ html, body {
   margin-top: 14px;
   font-family: var(--font-disp);
   font-size: clamp(72px, 13vw, 150px);
-  font-weight: 400; line-height: 0.95; letter-spacing: 0.04em;
+  font-weight: 400; line-height: 0.95; letter-spacing: -0.02em;
   color: var(--cream);
-  text-shadow: 0 8px 60px rgba(201,168,106,0.25);
+  text-shadow: 0 8px 60px rgba(184,154,94,0.25);
 }
-.title-logo span { color: var(--gold); }
+.title-logo span { color: var(--gold-hi); font-style: italic; }
 .title-sub {
   margin-top: 10px;
   font-size: 14px; font-weight: 500; letter-spacing: 0.42em;
@@ -336,17 +349,17 @@ html, body {
   font-size: 17px; font-weight: 700; letter-spacing: 0.34em;
   padding: 15px 54px 14px 60px;
   color: var(--ink);
-  background: linear-gradient(160deg, var(--gold-hi), var(--gold) 55%, #a8854a);
+  background: linear-gradient(160deg, var(--gold-hi), var(--gold) 55%, #8C7240);
   border: none; border-radius: 4px;
   cursor: pointer;
-  box-shadow: 0 8px 30px rgba(201,168,106,0.35), inset 0 1px 0 rgba(255,255,255,0.55);
+  box-shadow: 0 8px 30px rgba(184,154,94,0.35), inset 0 1px 0 rgba(255,255,255,0.55);
   transition: transform 0.15s, box-shadow 0.15s;
 }
-.gold-btn:hover { transform: translateY(-2px); box-shadow: 0 14px 40px rgba(201,168,106,0.5), inset 0 1px 0 rgba(255,255,255,0.55); }
+.gold-btn:hover { transform: translateY(-2px); box-shadow: 0 14px 40px rgba(184,154,94,0.5), inset 0 1px 0 rgba(255,255,255,0.55); }
 .gold-btn:active { transform: translateY(0); }
 .gold-btn:disabled {
   opacity: 0.55; cursor: wait; transform: none;
-  box-shadow: 0 8px 30px rgba(201,168,106,0.15);
+  box-shadow: 0 8px 30px rgba(184,154,94,0.15);
 }
 
 .ghost-btn {
@@ -355,13 +368,13 @@ html, body {
   font-size: 14px; font-weight: 700; letter-spacing: 0.28em;
   padding: 13px 34px 12px 40px;
   color: var(--gold);
-  background: rgba(201,168,106,0.07);
-  border: 1px solid rgba(201,168,106,0.4);
+  background: rgba(184,154,94,0.07);
+  border: 1px solid rgba(184,154,94,0.4);
   border-radius: 4px;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
-.ghost-btn:hover { background: rgba(201,168,106,0.2); color: var(--gold-hi); }
+.ghost-btn:hover { background: rgba(184,154,94,0.2); color: var(--gold-hi); }
 
 .title-actions { display: flex; gap: 16px; justify-content: center; align-items: center; }
 
@@ -376,8 +389,8 @@ html, body {
 }
 .hole-tile {
   pointer-events: auto;
-  background: rgba(201,168,106,0.06);
-  border: 1px solid rgba(201,168,106,0.3);
+  background: rgba(184,154,94,0.06);
+  border: 1px solid rgba(184,154,94,0.3);
   border-radius: 8px;
   padding: 10px 8px 9px;
   cursor: pointer;
@@ -385,8 +398,8 @@ html, body {
   transition: background 0.15s, transform 0.1s;
   font-family: var(--font-data);
 }
-.hole-tile:hover { background: rgba(201,168,106,0.22); transform: translateY(-2px); }
-.hole-tile .ht-num { font-size: 22px; font-weight: 700; color: var(--cream); line-height: 1; }
+.hole-tile:hover { background: rgba(184,154,94,0.22); transform: translateY(-2px); }
+.hole-tile .ht-num { font-size: 22px; font-weight: 500; color: var(--cream); line-height: 1; }
 .hole-tile .ht-meta { margin-top: 3px; font-size: 10px; font-weight: 600; letter-spacing: 0.14em; color: var(--gold); }
 .hole-tile .ht-name { margin-top: 2px; font-size: 8px; letter-spacing: 0.12em; color: var(--cream-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hole-tile.played .ht-num { color: var(--pine); }
@@ -407,7 +420,7 @@ html, body {
   text-shadow: 0 4px 30px rgba(0,0,0,0.7);
 }
 .intro-meta { margin-top: 8px; font-size: 16px; font-weight: 600; letter-spacing: 0.3em; color: var(--cream-dim); }
-.intro-skip { margin-top: 26px; font-size: 11px; letter-spacing: 0.3em; color: rgba(242,238,225,0.4); }
+.intro-skip { margin-top: 26px; font-size: 11px; letter-spacing: 0.3em; color: rgba(236,228,210,0.4); }
 
 /* ---------------- scorecard / summary ---------------- */
 
@@ -431,15 +444,15 @@ html, body {
 .card-inner th, .card-inner td {
   padding: 6px 10px;
   font-size: 14px; font-weight: 600; letter-spacing: 0.08em;
-  border-bottom: 1px solid rgba(201,168,106,0.16);
+  border-bottom: 1px solid rgba(184,154,94,0.16);
 }
 .card-inner tr.card-gap td { border-bottom: none; padding: 6px 0; }
 .card-inner th { color: var(--cream-dim); font-size: 11px; letter-spacing: 0.26em; }
 .card-inner td.under { color: var(--pine); }
 .card-inner td.over  { color: var(--red); }
-.card-hint { margin-top: 20px; font-size: 11px; letter-spacing: 0.3em; color: rgba(242,238,225,0.4); }
+.card-hint { margin-top: 20px; font-size: 11px; letter-spacing: 0.3em; color: rgba(236,228,210,0.4); }
 .summary-big {
-  font-size: 74px; font-weight: 700; line-height: 1;
+  font-size: 74px; font-weight: 500; line-height: 1;
   color: var(--gold-hi); margin: 6px 0 24px;
 }
 #btn-again { margin-top: 28px; }
