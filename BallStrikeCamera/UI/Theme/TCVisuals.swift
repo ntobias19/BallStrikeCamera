@@ -466,8 +466,7 @@ struct TCDispersionFairwayGraphic: View {
 struct TCRangeFinderDispersion: View {
     struct ShotPoint {
         let carry: Double    // yards (> 0)
-        let hla: Double      // signed degrees: + right, − left
-        var lateral: Double { carry * tan(hla * .pi / 180) }
+        let lateral: Double  // yards, signed: + right, − left (pre-computed landing offset)
     }
 
     let shots: [ShotPoint]

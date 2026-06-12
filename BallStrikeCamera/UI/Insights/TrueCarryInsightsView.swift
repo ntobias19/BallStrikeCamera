@@ -228,11 +228,35 @@ struct TrueCarryInsightsView: View {
 
     private func dispersionCard(_ shots: [SavedShot]) -> some View {
         let rangePoints = shots.compactMap { shot -> TCRangeFinderDispersion.ShotPoint? in
-            guard shot.metrics.carryYards > 0 else { return nil }
-            let hla = shot.metrics.hlaDirection.lowercased() == "left"
-                ? -shot.metrics.hlaDegrees
-                : shot.metrics.hlaDegrees
-            return TCRangeFinderDispersion.ShotPoint(carry: shot.metrics.carryYards, hla: hla)
+            let carry = shot.metrics.carryYards
+            guard carry > 0 else { return nil }
+            let total = shot.metrics.totalYards > 0 ? shot.metrics.totalYards : carry
+
+            // Signed HLA component
+            let signedHLA = shot.metrics.hlaDirection.lowercased() == "left"
+                ? -shot.metrics.hlaDegrees : shot.metrics.hlaDegrees
+            let hlaRad = signedHLA * .pi / 180.0
+
+            // Curve from spin axis (preferred) or sidespin — identical to ShotResultView
+            let spinAxis = shot.metrics.spinAxisDegrees   // already signed
+            let sidespin = shot.metrics.sidespinRpm       // already signed
+            let curveStrength: Double
+            if abs(spinAxis) > 0.5 {
+                curveStrength = (spinAxis > 0 ? 1.0 : -1.0) * min(abs(spinAxis) / 16.0, 1.0)
+            } else if abs(sidespin) > 30 {
+                curveStrength = (sidespin > 0 ? 1.0 : -1.0) * min(abs(sidespin) / 1100.0, 1.0)
+            } else {
+                curveStrength = 0
+            }
+            let curveMagnitude = abs(curveStrength) * max(total * 0.10, 8.0)
+            let curveSign: Double = curveStrength >= 0 ? 1.0 : -1.0
+
+            // Lateral landing at the carry point (p = carry / total)
+            let carryFrac = carry / total
+            let lateral = tan(hlaRad) * total * carryFrac
+                        + curveSign * curveMagnitude * pow(carryFrac, 1.6)
+
+            return TCRangeFinderDispersion.ShotPoint(carry: carry, lateral: lateral)
         }
         let dispersion = TCRangeFinderDispersion(shots: rangePoints)
 
