@@ -472,101 +472,149 @@ struct TCRangeFinderDispersion: View {
 
     let shots: [ShotPoint]
 
-    private var maxRange: Double {
-        let maxCarry = shots.filter { $0.carry > 0 }.map { $0.carry }.max() ?? 150
-        return max(ceil(maxCarry / 50) * 50 + 25, 150)
+    private var valid: [ShotPoint] { shots.filter { $0.carry > 0 } }
+
+    private var maxCarry: Double {
+        let m = valid.map { $0.carry }.max() ?? 150
+        return max(ceil(m / 50) * 50 + 25, 200)
     }
 
-    private func ringYardages(maxRange: Double) -> [Double] {
-        let step: Double = maxRange > 175 ? 50 : 25
-        return stride(from: step, through: maxRange, by: step).map { $0 }
+    private var maxLateral: Double {
+        let m = valid.map { abs($0.lateral) }.max() ?? 30
+        return max(ceil(m / 25) * 25 + 10, 60)
+    }
+
+    var avgDispersionYds: Double? {
+        guard !valid.isEmpty else { return nil }
+        let avgLat = valid.map { abs($0.lateral) }.reduce(0, +) / Double(valid.count)
+        return avgLat
     }
 
     var body: some View {
         Canvas { ctx, size in
-            let W = size.width, H = size.height, cx = W / 2
-            let topPad: CGFloat = 28
-            let teeExtra: CGFloat = 44
-            let mr = maxRange
-            let ppy = (H - topPad + teeExtra) / CGFloat(mr)
-            let teeY = H + teeExtra
+            let W = size.width, H = size.height
+            // Padding: left for y-labels, bottom for x-labels
+            let lPad: CGFloat = 40
+            let bPad: CGFloat = 18
+            let tPad: CGFloat = 6
+            let rPad: CGFloat = 6
 
-            // Background
-            ctx.fill(Path(CGRect(origin: .zero, size: size)),
-                     with: .linearGradient(
-                        Gradient(colors: [
-                            Color(red: 0.05, green: 0.12, blue: 0.06),
-                            Color(red: 0.03, green: 0.07, blue: 0.04)
-                        ]),
-                        startPoint: .zero, endPoint: CGPoint(x: 0, y: H)))
+            let plotW = W - lPad - rPad
+            let plotH = H - bPad - tPad
+            let plotLeft  = lPad
+            let plotTop   = tPad
+            let plotRight = W - rPad
+            let plotBot   = H - bPad
 
-            // Center line
-            var cl = Path()
-            cl.move(to: CGPoint(x: cx, y: topPad))
-            cl.addLine(to: CGPoint(x: cx, y: H))
-            ctx.stroke(cl, with: .color(Color.white.opacity(0.22)),
-                       style: StrokeStyle(lineWidth: 0.8, dash: [4, 4]))
+            let mCarry   = maxCarry
+            let mLateral = maxLateral
 
-            // Arc rings
-            for yards in ringYardages(maxRange: mr) {
-                let r = CGFloat(yards) * ppy
-                let arcCenter = CGPoint(x: cx, y: teeY)
-                var arc = Path()
-                // Clockwise=false in iOS y-down system: traces from lower-left, up
-                // over the top (y=teeY−r), continuing to lower-right.
-                arc.addArc(center: arcCenter, radius: r,
-                           startAngle: .degrees(185), endAngle: .degrees(355), clockwise: false)
-                ctx.stroke(arc, with: .color(Color.white.opacity(0.20)), lineWidth: 1.0)
-
-                // Yardage label on the left side of each arc
-                let lRad = 197.0 * .pi / 180.0
-                let lx = cx + r * CGFloat(cos(lRad))
-                let ly = teeY + r * CGFloat(sin(lRad))
-                if ly > topPad + 4 && ly < H - 4 {
-                    ctx.draw(
-                        Text("\(Int(yards))y")
-                            .font(.system(size: 9, weight: .medium))
-                            .foregroundColor(Color.white.opacity(0.42)),
-                        at: CGPoint(x: lx - 12, y: ly)
-                    )
-                }
+            // Coordinate helpers
+            func xCG(_ lat: Double) -> CGFloat {
+                plotLeft + CGFloat((lat + mLateral) / (2 * mLateral)) * plotW
+            }
+            func yCG(_ carry: Double) -> CGFloat {
+                plotBot - CGFloat(carry / mCarry) * plotH
             }
 
-            // Dispersion ellipse (golden, 2-sigma)
-            let valid = shots.filter { $0.carry > 0 }
-            if valid.count > 2 {
-                let pts = valid.map { sp in
-                    CGPoint(x: cx + CGFloat(sp.lateral) * ppy,
-                            y: teeY - CGFloat(sp.carry) * ppy)
+            // Field background (rough: dark green)
+            ctx.fill(Path(CGRect(x: plotLeft, y: plotTop, width: plotW, height: plotH)),
+                     with: .color(Color(red: 0.08, green: 0.18, blue: 0.08)))
+
+            // Fairway stripe (central ±20 yds lateral = ~40 yd wide)
+            let fairwayHalfYds = 20.0
+            let fLeft  = max(xCG(-fairwayHalfYds), plotLeft)
+            let fRight = min(xCG(fairwayHalfYds),  plotRight)
+            ctx.fill(Path(CGRect(x: fLeft, y: plotTop, width: fRight - fLeft, height: plotH)),
+                     with: .color(Color(red: 0.16, green: 0.32, blue: 0.14)))
+
+            // Horizontal grid lines (carry)
+            let carryStep: Double = mCarry > 250 ? 50 : 25
+            var carry = carryStep
+            while carry <= mCarry - carryStep * 0.5 {
+                let y = yCG(carry)
+                if y >= plotTop && y <= plotBot {
+                    var line = Path()
+                    line.move(to: CGPoint(x: plotLeft, y: y))
+                    line.addLine(to: CGPoint(x: plotRight, y: y))
+                    ctx.stroke(line, with: .color(Color.white.opacity(0.10)), lineWidth: 0.5)
+                    ctx.draw(
+                        Text("\(Int(carry)) yds")
+                            .font(.system(size: 7.5, weight: .medium))
+                            .foregroundColor(Color.white.opacity(0.42)),
+                        at: CGPoint(x: plotLeft - 3, y: y),
+                        anchor: .trailing
+                    )
                 }
-                let meanX = pts.map { $0.x }.reduce(0, +) / CGFloat(pts.count)
-                let meanY = pts.map { $0.y }.reduce(0, +) / CGFloat(pts.count)
+                carry += carryStep
+            }
+
+            // Vertical grid lines (lateral): at 0 and ±step intervals
+            let latStep: Double = mLateral > 80 ? 50 : (mLateral > 40 ? 25 : 20)
+            var lat = -mLateral
+            while lat <= mLateral + 0.1 {
+                let x = xCG(lat)
+                if x >= plotLeft && x <= plotRight {
+                    var line = Path()
+                    line.move(to: CGPoint(x: x, y: plotTop))
+                    line.addLine(to: CGPoint(x: x, y: plotBot))
+                    let isCenter = abs(lat) < 0.5
+                    ctx.stroke(line,
+                               with: .color(Color.white.opacity(isCenter ? 0.28 : 0.09)),
+                               style: StrokeStyle(lineWidth: isCenter ? 1.0 : 0.5,
+                                                  dash: isCenter ? [3, 3] : []))
+                    // X-axis label
+                    if abs(lat) > 0.5 {
+                        let txt = "\(Int(abs(lat)))y \(lat < 0 ? "L" : "R")"
+                        ctx.draw(
+                            Text(txt)
+                                .font(.system(size: 7, weight: .medium))
+                                .foregroundColor(Color.white.opacity(0.38)),
+                            at: CGPoint(x: x, y: plotBot + 3),
+                            anchor: .top
+                        )
+                    }
+                }
+                lat += latStep
+            }
+
+            // Dispersion ellipse (2-sigma)
+            if valid.count > 2 {
+                let pts = valid.map { sp in CGPoint(x: xCG(sp.lateral), y: yCG(sp.carry)) }
+                let meanX  = pts.map { $0.x }.reduce(0, +) / CGFloat(pts.count)
+                let meanY  = pts.map { $0.y }.reduce(0, +) / CGFloat(pts.count)
                 let sdX = sqrt(pts.map { pow($0.x - meanX, 2) }.reduce(0, +) / CGFloat(pts.count))
                 let sdY = sqrt(pts.map { pow($0.y - meanY, 2) }.reduce(0, +) / CGFloat(pts.count))
                 let er = CGRect(x: meanX - sdX * 2, y: meanY - sdY * 2, width: sdX * 4, height: sdY * 4)
-                ctx.fill(Path(ellipseIn: er), with: .color(TCTheme.gold.opacity(0.08)))
-                ctx.stroke(Path(ellipseIn: er), with: .color(TCTheme.gold.opacity(0.40)), lineWidth: 1.5)
+                ctx.fill(Path(ellipseIn: er),   with: .color(Color.white.opacity(0.07)))
+                ctx.stroke(Path(ellipseIn: er), with: .color(Color.white.opacity(0.38)), lineWidth: 1.5)
             }
 
-            // Shot dots
+            // Shot dots: green if in fairway, pink if outside
             for sp in valid {
-                let pt = CGPoint(x: cx + CGFloat(sp.lateral) * ppy,
-                                 y: teeY - CGFloat(sp.carry) * ppy)
-                guard pt.y >= topPad - 8 && pt.y <= H + 8 && pt.x >= -10 && pt.x <= W + 10 else { continue }
-                let dr = CGRect(x: pt.x - 4.5, y: pt.y - 4.5, width: 9, height: 9)
-                ctx.fill(Path(ellipseIn: dr), with: .color(Color.white.opacity(0.88)))
-                ctx.stroke(Path(ellipseIn: dr), with: .color(.black.opacity(0.35)), lineWidth: 1)
+                let pt = CGPoint(x: xCG(sp.lateral), y: yCG(sp.carry))
+                guard pt.x >= plotLeft - 6 && pt.x <= plotRight + 6 &&
+                      pt.y >= plotTop - 6  && pt.y <= plotBot + 6 else { continue }
+                let inFairway = abs(sp.lateral) <= fairwayHalfYds
+                let dotColor: Color = inFairway
+                    ? Color(red: 0.50, green: 0.85, blue: 0.42)
+                    : Color(red: 0.92, green: 0.40, blue: 0.52)
+                let r: CGFloat = 4
+                ctx.fill(Path(ellipseIn: CGRect(x: pt.x - r, y: pt.y - r, width: r*2, height: r*2)),
+                         with: .color(dotColor.opacity(0.82)))
+                ctx.stroke(Path(ellipseIn: CGRect(x: pt.x - r, y: pt.y - r, width: r*2, height: r*2)),
+                           with: .color(Color.black.opacity(0.30)), lineWidth: 0.8)
             }
 
-            // Mean dot (gold, slightly larger)
+            // Mean dot (gold, larger)
             if !valid.isEmpty {
-                let avgCarry  = valid.map { $0.carry   }.reduce(0, +) / Double(valid.count)
-                let avgLateral = valid.map { $0.lateral }.reduce(0, +) / Double(valid.count)
-                let pt = CGPoint(x: cx + CGFloat(avgLateral) * ppy,
-                                 y: teeY - CGFloat(avgCarry) * ppy)
-                let mr2 = CGRect(x: pt.x - 7, y: pt.y - 7, width: 14, height: 14)
-                ctx.fill(Path(ellipseIn: mr2), with: .color(TCTheme.gold))
-                ctx.stroke(Path(ellipseIn: mr2), with: .color(.black.opacity(0.45)), lineWidth: 1.5)
+                let avgLat  = valid.map { $0.lateral }.reduce(0, +) / Double(valid.count)
+                let avgCarr = valid.map { $0.carry   }.reduce(0, +) / Double(valid.count)
+                let pt = CGPoint(x: xCG(avgLat), y: yCG(avgCarr))
+                ctx.fill(Path(ellipseIn: CGRect(x: pt.x - 7, y: pt.y - 7, width: 14, height: 14)),
+                         with: .color(TCTheme.gold))
+                ctx.stroke(Path(ellipseIn: CGRect(x: pt.x - 7, y: pt.y - 7, width: 14, height: 14)),
+                           with: .color(Color.black.opacity(0.45)), lineWidth: 1.5)
             }
         }
     }

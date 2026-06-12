@@ -115,6 +115,21 @@ struct RangeCameraScreen: View {
                 WatchConnectivityBridge.shared.unregisterRangeCommandHandler()
             }
         }
+        .onChange(of: showSaveSheet) { isShowing in
+            if isShowing {
+                OrientationManager.shared.unlockAllButUpsideDown()
+            } else {
+                OrientationManager.shared.lockLandscape()
+            }
+        }
+        .onChange(of: showEndConfirmation) { isShowing in
+            if isShowing {
+                OrientationManager.shared.unlockAllButUpsideDown()
+            } else if !showSaveSheet {
+                // Only re-lock if save sheet isn't about to appear
+                OrientationManager.shared.lockLandscape()
+            }
+        }
         // Phase 1: Save / Delete / Continue choice
         .confirmationDialog(
             "End Range Session?",
@@ -177,6 +192,7 @@ struct RangeCameraScreen: View {
     }
 
     private func autoSave(analysis: ShotAnalysisResult, metrics: SavedShotMetrics) async {
+        guard metrics.carryYards > 0 || metrics.ballSpeedMph > 0 else { return }
         let composite = ShotCompositeRenderer().render(analysis: analysis, mode: .darkenedHighContrast)
         let service = ShotPersistenceService(userId: userId, backend: backend)
         guard let shot = try? await service.saveShot(

@@ -22,6 +22,7 @@ struct TrueCarryInsightsView: View {
     private func shotsFor(_ club: String) -> [SavedShot] {
         let clubIds = Set(clubs.filter { $0.name == club }.map(\.id))
         return shots.filter { shot in
+            guard !shot.isBadShot, shot.metrics.carryYards > 0 else { return false }
             if shot.clubName == club { return true }
             guard let clubId = shot.clubId else { return false }
             return clubIds.contains(clubId)
@@ -233,34 +234,38 @@ struct TrueCarryInsightsView: View {
                 : shot.metrics.hlaDegrees
             return TCRangeFinderDispersion.ShotPoint(carry: shot.metrics.carryYards, hla: hla)
         }
+        let dispersion = TCRangeFinderDispersion(shots: rangePoints)
 
-        let hlaSpread: String = {
-            let vals = shots.map { s -> Double in
-                let d = s.metrics.hlaDegrees
-                return s.metrics.hlaDirection.lowercased() == "left" ? -d : d
-            }
-            guard vals.count > 1 else { return "—" }
-            return String(format: "%.1f°", (vals.max() ?? 0) - (vals.min() ?? 0))
+        let avgDispStr: String = {
+            guard let d = dispersion.avgDispersionYds else { return "—" }
+            return String(format: "%.0f yds", d)
         }()
 
         let onTarget: String = {
             guard !shots.isEmpty else { return "—" }
-            let n = shots.filter { $0.metrics.hlaDegrees < 3.0 }.count
+            let n = shots.filter { $0.metrics.hlaDegrees < 5.0 }.count
             return "\(Int(Double(n) / Double(shots.count) * 100))%"
         }()
 
         return VStack(alignment: .leading, spacing: 16) {
-            cardHeader("Shot Dispersion", "Carry distance & lateral spread")
+            HStack(alignment: .top) {
+                cardHeader("Shot Dispersion", "Carry distance & lateral spread")
+                Text(shots.isEmpty ? "" : "\(shots.count) Shots")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(TCTheme.textMuted)
+                    .fixedSize()
+                    .padding(.top, 2)
+            }
 
-            TCRangeFinderDispersion(shots: rangePoints)
+            dispersion
                 .frame(maxWidth: .infinity)
-                .frame(height: 240)
+                .frame(height: 300)
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
 
             HStack(spacing: 0) {
-                inlineStat(onTarget,                           "ON TARGET")
+                inlineStat(avgDispStr,                             "AVG DISPERSION")
                 verticalDivider(height: 28)
-                inlineStat(hlaSpread,                          "HLA SPREAD")
+                inlineStat(onTarget,                               "ON TARGET (<5°)")
                 verticalDivider(height: 28)
                 inlineStat(shots.isEmpty ? "—" : "\(shots.count)", "SHOTS")
             }

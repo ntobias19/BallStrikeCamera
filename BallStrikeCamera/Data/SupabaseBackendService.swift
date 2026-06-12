@@ -280,6 +280,7 @@ final class SupabaseBackendService: AppBackend {
                 if let startedAt = row.parsedStartedAt { rangeSession.startedAt = startedAt }
                 return rangeSession
             }
+            .filter { !$0.shotIds.isEmpty }
             .sorted { $0.startedAt > $1.startedAt }
     }
 
@@ -333,6 +334,12 @@ final class SupabaseBackendService: AppBackend {
                 if let uid = UUID(uuidString: row.userId) { round.userId = uid }
                 if let startedAt = row.parsedStartedAt { round.startedAt = startedAt }
                 return round
+            }
+            .filter { round in
+                // Only show finished rounds, or rounds that have at least one shot or score recorded.
+                round.endedAt != nil
+                    || !round.shotIds.isEmpty
+                    || round.holes.contains(where: { $0.score != nil })
             }
             .sorted { $0.startedAt > $1.startedAt }
     }

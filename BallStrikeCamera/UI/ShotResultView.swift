@@ -417,12 +417,20 @@ struct ShotResultView: View {
 
     private var topBar: some View {
         let doneLabel = context?.sourceMode == .course ? "Discard" : "Done"
-        return HStack(spacing: 12) {
+        return HStack(spacing: 8) {
             Button(doneLabel) { onDone() }
                 .font(.system(size: 14, weight: .semibold)).foregroundColor(.blue)
             Spacer()
             Text("Shot Result").font(.system(size: 15, weight: .semibold)).foregroundColor(.white)
             Spacer()
+            if !animationFinished {
+                Button("Skip ›") { skipToEnd() }
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.white.opacity(0.70))
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(Color.white.opacity(0.10))
+                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+            }
             Button("GO BACK TO HITTING") { onDone() }
                 .font(.system(size: 12, weight: .bold))
                 .foregroundColor(.white)

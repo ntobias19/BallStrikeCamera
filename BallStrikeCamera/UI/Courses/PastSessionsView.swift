@@ -585,6 +585,7 @@ struct PastSessionsView: View {
 
         do {
             shots = try await backend.loadShots(userId: uid)
+            shots = shots.filter { !$0.isBadShot && $0.metrics.carryYards > 0 }
         } catch {
             shots = []
             failures.append("shots")
