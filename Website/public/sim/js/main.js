@@ -146,6 +146,7 @@ const game = {
 };
 
 let rangeMarkers = null;
+let lastRangeShot = null;
 
 const club = () => CLUBS[game.clubIdx];
 const onGreen = () => game.lie === SURF.GREEN;
@@ -241,6 +242,12 @@ function setupShot() {
 
   hud.setStroke(game.strokes + 1, totalToPar());
   hud.setPin(rem);
+  if (game.isRange) {
+    const pinNum = document.getElementById('pin-num');
+    const pinLabel = document.getElementById('pin-label');
+    if (pinNum) pinNum.textContent = '0';
+    if (pinLabel) pinLabel.textContent = 'CARRY';
+  }
   hud.setLie(game.lie);
   refreshClubHud();
   hud.meterHide();
@@ -339,6 +346,10 @@ function fire(accuracyRaw) {
   } else {
     hud.shotDataShow({ speedMph: speed * 2.237, launchDeg, spinRpm: backspinRpm });
   }
+  if (game.isRange && !c.putter) {
+    lastRangeShot = { speedMph: speed * 2.237, launchDeg, spinRpm: backspinRpm, apexFt: 0 };
+    document.getElementById('range-pill')?.classList.add('hidden');
+  }
   game.shotApex = 0;
   game.shotGroundY = game.course.heightAt(game.ballPos.x, game.ballPos.z);
 
@@ -389,10 +400,21 @@ function resolveShot() {
       ? Math.hypot(sim.carryPos.x - game.shotStart.x, sim.carryPos.z - game.shotStart.z) : 0;
     const total = Math.hypot(sim.pos.x - game.shotStart.x, sim.pos.z - game.shotStart.z);
     if (!club().putter) hud.shotDataResult(fmtYards(carry), fmtYards(total));
-    hud.toast(
-      `<span class="t-gold">${fmtYards(carry)}y</span> CARRY · ${fmtYards(total)}y TOTAL` +
-      `<span class="t-sub">RANGE · ${finalLie === SURF.WATER ? 'INTO WATER' : finalLie.toUpperCase()}</span>`,
-      3500);
+    // populate last-shot pill
+    const rangePill = document.getElementById('range-pill');
+    if (rangePill) {
+      const rs = lastRangeShot || {};
+      const carryYd = fmtYards(carry), totalYd = fmtYards(total);
+      rangePill.innerHTML =
+        `<span class="rp-hi">${carryYd}</span><span class="rp-lo">y carry</span>` +
+        ` · <span class="rp-hi">${totalYd}</span><span class="rp-lo">y total</span>` +
+        (rs.speedMph > 0 ? ` · <span class="rp-hi">${Math.round(rs.speedMph)}</span><span class="rp-lo">mph</span>` : '') +
+        (rs.launchDeg > 0 ? ` · <span class="rp-hi">${Number(rs.launchDeg).toFixed(1)}°</span><span class="rp-lo">launch</span>` : '') +
+        (rs.spinRpm > 0 ? ` · <span class="rp-hi">${Math.round(rs.spinRpm).toLocaleString()}</span><span class="rp-lo">rpm</span>` : '') +
+        (rs.apexFt > 0 ? ` · <span class="rp-hi">${Math.round(rs.apexFt)}</span><span class="rp-lo">ft apex</span>` : '');
+      rangePill.classList.remove('hidden');
+    }
+
     const t = game.course.teePos;
     game.ballPos = { x: t.x, y: t.y + 0.0214, z: t.z };
     game.lie = SURF.TEE;
@@ -684,6 +706,31 @@ window.addEventListener('pointerup', () => {
   dragInfo = null;
 });
 
+// Map an app club name (e.g. "7 Iron", "SW") to a CLUBS index.
+function matchClubByName(name) {
+  if (!name) return -1;
+  const n = name.trim().toUpperCase().replace(/\s+/g, ' ');
+  let idx = CLUBS.findIndex(c => c.name === n);
+  if (idx >= 0) return idx;
+  idx = CLUBS.findIndex(c => c.id === n);
+  if (idx >= 0) return idx;
+  if (n.includes('DRIVER') || n === 'DR') return 0;
+  if ((n.includes('3') && n.includes('WOOD')) || n === 'W3') return 1;
+  if ((n.includes('5') && n.includes('WOOD')) || n === 'W5') return 2;
+  if (n.includes('HYBRID') || n === 'HY') return 3;
+  if ((n.includes('4') && n.includes('IRON')) || n === 'I4') return 4;
+  if ((n.includes('5') && n.includes('IRON')) || n === 'I5') return 5;
+  if ((n.includes('6') && n.includes('IRON')) || n === 'I6') return 6;
+  if ((n.includes('7') && n.includes('IRON')) || n === 'I7') return 7;
+  if ((n.includes('8') && n.includes('IRON')) || n === 'I8') return 8;
+  if ((n.includes('9') && n.includes('IRON')) || n === 'I9') return 9;
+  if (n.includes('PITCH') || n === 'PW' || n === 'P WEDGE') return 10;
+  if (n.includes('GAP') || n.includes('APPROACH') || n === 'GW' || n === 'AW') return 11;
+  if (n.includes('SAND') || n === 'SW' || n === 'S WEDGE') return 12;
+  if (n.includes('PUTT') || n === 'PT') return 13;
+  return -1;
+}
+
 function rotateAim(ang) {
   const { x, z } = game.aimDir;
   const c = Math.cos(ang), s = Math.sin(ang);
@@ -693,6 +740,7 @@ function rotateAim(ang) {
 }
 
 function changeClub(delta) {
+  if (window.__liveMode) return; // club is driven by app in live mode
   if (game.state !== 'AIM') return;
   game.clubIdx = (game.clubIdx + delta + CLUBS.length) % CLUBS.length;
   refreshClubHud();
@@ -797,12 +845,24 @@ function updateFlight() {
 
   ball.position.set(sim.pos.x, sim.pos.y, sim.pos.z);
   pushTracer(sim.pos);
-  hud.setPin(Math.hypot(sim.pos.x - game.course.pinPos.x, sim.pos.z - game.course.pinPos.z));
+
+  if (game.isRange) {
+    const pinNum = document.getElementById('pin-num');
+    const pinLabel = document.getElementById('pin-label');
+    if (pinNum && pinLabel) {
+      const d = Math.hypot(sim.pos.x - game.shotStart.x, sim.pos.z - game.shotStart.z);
+      pinNum.textContent = fmtYards(d);
+      pinLabel.textContent = sim.carryPos ? 'TOTAL' : 'CARRY';
+    }
+  } else {
+    hud.setPin(Math.hypot(sim.pos.x - game.course.pinPos.x, sim.pos.z - game.course.pinPos.z));
+  }
 
   const alt = sim.pos.y - game.shotGroundY;
   if (alt > game.shotApex) {
     game.shotApex = alt;
     if (!club().putter) hud.shotDataApex(game.shotApex * 3.28084);
+    if (lastRangeShot) lastRangeShot.apexFt = game.shotApex * 3.28084;
   }
 
   flightCamera();
@@ -896,15 +956,20 @@ window.parent?.postMessage({ type: 'SIM_READY' }, '*');
 
 // postMessage preview mode: course-builder sends PREVIEW_HOLE with custom holes array.
 window.addEventListener('message', (e) => {
-  // Play page tells the sim to start (dismiss title screen / begin).
+  // Play page tells the sim to start. Works from any state (course switching).
   if (e.data?.type === 'START_SIM') {
-    const btn = document.getElementById('btn-start');
-    if (btn && game.state === 'TITLE') btn.click();
+    assetsReady.then(() => {
+      if (game.state === 'TITLE') hud.titleHide();
+      startHole(0);
+    });
     return;
   }
 
   if (e.data?.type === 'START_RANGE') {
-    assetsReady.then(() => { hud.titleHide(); startRange(); });
+    assetsReady.then(() => {
+      if (game.state === 'TITLE') hud.titleHide();
+      startRange();
+    });
     return;
   }
 
@@ -1022,9 +1087,15 @@ if (liveCode) {
     function () {
       window.parent?.postMessage({ type: 'APP_CONNECTED' }, '*');
     },
-    // onClubChanged — update center badge with current club
+    // onClubChanged — sync club selection from app
     function (clubName) {
       updateLiveClub(clubName);
+      const idx = matchClubByName(clubName);
+      if (idx >= 0) {
+        game.clubIdx = idx;
+        refreshClubHud();
+        if (game.state === 'AIM') updateGuides();
+      }
     }
   );
 }
@@ -1052,6 +1123,10 @@ function fireLiveShot({ ballSpeedMph, vlaDegrees, backspinRpm, sidespinRpm, hlaD
   hud.meterHide();
   hud.toastHide();
   hud.shotDataShow({ speedMph: ballSpeedMph, launchDeg: vlaDegrees || 12, spinRpm: Math.abs(backspinRpm || 4000) });
+  if (game.isRange) {
+    lastRangeShot = { speedMph: ballSpeedMph, launchDeg: vlaDegrees || 12, spinRpm: Math.abs(backspinRpm || 0), apexFt: 0 };
+    document.getElementById('range-pill')?.classList.add('hidden');
+  }
   game.shotApex = 0;
   game.shotGroundY = game.course.heightAt(game.ballPos.x, game.ballPos.z);
 

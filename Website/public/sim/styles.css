@@ -551,10 +551,35 @@ html, body {
   border: 1px solid rgba(201,168,106,0.3);
 }
 
+/* ---------------- range last-shot pill ---------------- */
+
+.range-pill {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(9, 16, 11, 0.88);
+  border: 1px solid rgba(201, 168, 106, 0.45);
+  border-radius: 28px;
+  padding: 7px 20px;
+  font-family: var(--font-data);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: rgba(242, 238, 225, 0.85);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 40;
+  backdrop-filter: blur(6px);
+}
+.range-pill .rp-hi { color: var(--gold-hi); }
+.range-pill .rp-lo { color: rgba(200, 195, 175, 0.55); font-size: 11px; }
+
 /* ---------------- small screens ---------------- */
 
 @media (max-width: 860px) {
   #minimap { display: none; }
   #help-strip { display: none; }
   #hc-name { display: none; }
+  .range-pill { font-size: 11px; padding: 5px 14px; }
 }

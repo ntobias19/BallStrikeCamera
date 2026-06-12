@@ -50,7 +50,13 @@ export default function PlayPage() {
           <span className="sim-code-label">App code</span>
           <span className="sim-code-value">{code}</span>
         </div>
-        <a className="sim-full" href={src} target="_blank" rel="noreferrer">Full screen ↗</a>
+        {stage === "playing" ? (
+          <button className="sim-change-btn" onClick={() => setStage("select")}>
+            ↩ Change
+          </button>
+        ) : (
+          <a className="sim-full" href={src} target="_blank" rel="noreferrer">Full screen ↗</a>
+        )}
       </div>
 
       {/* Sim iframe — always loaded so Supabase connection is live */}
