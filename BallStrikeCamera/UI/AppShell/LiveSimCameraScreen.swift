@@ -149,5 +149,7 @@ struct LiveSimCameraScreen: View {
             selectedClubId = preferred.id
             simVM.selectedClub = preferred
         }
+        // Push current club to sim on connect (onChange won't fire if value didn't change)
+        await liveSimService.broadcastClub(selectedClub)
     }
 }
