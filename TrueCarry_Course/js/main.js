@@ -78,6 +78,14 @@ let puttBar = null;
 // Minimap canvas context helper
 let _minimapToC = null;
 
+function refreshMinimap() {
+  const canvas = document.getElementById('minimap');
+  if (!canvas || !courseData) return;
+  const result = drawMinimapBase(courseData, canvas, game.holeIdx);
+  minimapBase = result;
+  _minimapToC = result.toC;
+}
+
 // Ball mesh
 const ballGeo = new THREE.SphereGeometry(0.0214, 8, 6);
 const ballMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
@@ -119,12 +127,7 @@ async function boot() {
     }
 
     // Minimap
-    const minimapCanvas = document.getElementById('minimap');
-    if (minimapCanvas) {
-      const result = drawMinimapBase(courseData, minimapCanvas);
-      minimapBase = result;
-      _minimapToC = result.toC;
-    }
+    refreshMinimap();
 
     // Putting bar
     puttBar = createPuttingBar(document.getElementById('app'));
@@ -209,6 +212,8 @@ function startHole() {
   clearTrajectory();
 
   // Intro overlay
+  refreshMinimap();
+
   hud.showIntro(`Hole ${hole.number}`, hole.par, yardage);
   setTimeout(() => { hud.hideIntro(); setupShot(); }, 2200);
 
@@ -648,8 +653,8 @@ function updateMinimapBall() {
   const canvas = document.getElementById('minimap');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
-  // Redraw base then ball dot
-  if (minimapBase) drawMinimapBase(courseData, canvas);
+  // Redraw base for current hole then ball dot
+  if (minimapBase) drawMinimapBase(courseData, canvas, game.holeIdx);
   const [cx, cz] = _minimapToC(game.ballPos.x, game.ballPos.z);
   ctx.beginPath();
   ctx.arc(cx, cz, 4, 0, Math.PI * 2);

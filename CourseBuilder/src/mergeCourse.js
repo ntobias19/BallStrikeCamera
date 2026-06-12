@@ -98,17 +98,20 @@ function bakeHeightmap(elevData, holes, satGrid) {
 }
 
 // ---- Trees ----
-function buildTrees(woods, globalBunkers, globalGreens, treeNodes, proj, rng, satGrid) {
+// Hard rules: trees cannot be placed inside fairways, greens, bunkers, or water.
+function buildTrees(woods, globalBunkers, globalGreens, globalFairways, globalWater, treeNodes, proj, rng, satGrid) {
   const trees = [];
+  const exclusions = [...globalBunkers, ...globalGreens, ...globalFairways, ...globalWater];
 
-  // Explicit OSM tree nodes
+  // Explicit OSM tree nodes (keep — these are surveyed positions)
   for (const [lat, lng] of treeNodes) {
     const { x, z } = proj.toXZ(lat, lng);
+    // Still exclude from greens/bunkers (OSM data can have overlap artifacts)
+    if ([...globalBunkers, ...globalGreens].some(ex => pointInPolygon(x, z, ex))) continue;
     trees.push({ x, z, r: 2.8 + rng() * 1.6, isPine: rng() < 0.25 });
   }
 
-  // Wood polygon fill
-  const exclusions = [...globalBunkers, ...globalGreens];
+  // Wood polygon fill — exclude all course play areas
   for (const poly of woods) {
     if (!poly.length) continue;
     const polyXZ = ringToXZ(poly, proj);
@@ -121,17 +124,16 @@ function buildTrees(woods, globalBunkers, globalGreens, treeNodes, proj, rng, sa
     }
   }
 
-  // Satellite-detected tree clusters outside wood polygons
+  // Satellite-detected tree clusters — strict exclusion from all play surfaces
   if (satGrid) {
     const { data, cols, rows, originX, originZ, cellSize } = satGrid;
-    const SAMPLE_EVERY = 5; // check every Nth cell to avoid millions of points
+    const SAMPLE_EVERY = 5;
     for (let r = 0; r < rows; r += SAMPLE_EVERY) {
       for (let c = 0; c < cols; c += SAMPLE_EVERY) {
         if (data[r * cols + c] !== SAT.TREES) continue;
         const x = originX + c * cellSize;
         const z = originZ + r * cellSize;
         if (exclusions.some(ex => pointInPolygon(x, z, ex))) continue;
-        // Only add if not already covered by wood polygon
         const inWood = woods.some(w => pointInPolygon(x, z, ringToXZ(w, proj)));
         if (inWood) continue;
         if (rng() < 0.35) trees.push({ x, z, r: 2.2 + rng() * 1.8, isPine: rng() < 0.4 });
@@ -190,8 +192,10 @@ export function mergeCourse(osmData, backendData, elevData, satGrid = null) {
   }
 
   const holes = [];
-  const allGreenPolys = [];
-  const allBunkerPolys = [];
+  const allGreenPolys   = [];
+  const allBunkerPolys  = [];
+  const allFairwayPolys = [];
+  const allWaterPolys   = [];
   let totalPar = 0;
 
   for (const hl of osmData.holeLines) {
@@ -208,9 +212,11 @@ export function mergeCourse(osmData, backendData, elevData, satGrid = null) {
     const bunkerRings = (osmData.holeBunkers.get(ref) || []).map(r => ringToXZ(r, proj));
     const waterRings  = (osmData.holeWater.get(ref)  || []).map(r => ringToXZ(r, proj));
     for (const b of bunkerRings) allBunkerPolys.push(b);
+    for (const w of waterRings)  allWaterPolys.push(w);
 
     const osmFw  = osmData.holeFairways.get(ref);
     const fairway = osmFw ? ringToXZ(osmFw, proj) : buildFairwayCorridor(teeXZ, greenXZ, par);
+    allFairwayPolys.push(fairway);
 
     const pathXZ = hl.path.length > 2
       ? hl.path.map(p => [proj.toXZ(p[0], p[1]).x, proj.toXZ(p[0], p[1]).z])
@@ -246,9 +252,9 @@ export function mergeCourse(osmData, backendData, elevData, satGrid = null) {
   console.log('  Baking bunker/water depth into heightmap…');
   const bakedElev = bakeHeightmap(elevData, holes, satGrid);
 
-  // Trees
+  // Trees — exclusion zones: bunkers, greens, fairways, water (hard pipeline rule)
   const rng   = makeRNG(9999);
-  const trees = buildTrees(osmData.woods, allBunkerPolys, allGreenPolys, osmData.treeNodes, proj, rng, satGrid);
+  const trees = buildTrees(osmData.woods, allBunkerPolys, allGreenPolys, allFairwayPolys, allWaterPolys, osmData.treeNodes, proj, rng, satGrid);
 
   // Cart paths
   const cartPaths = buildCartPaths(osmData.cartPaths || [], satGrid, proj);

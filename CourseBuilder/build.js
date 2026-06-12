@@ -47,8 +47,8 @@ async function main() {
   }
   const bbox = { minX, maxX, minZ, maxZ };
 
-  // Step 4: Elevation grid (10m resolution via NED10m)
-  const elevData = await sampleElevationGrid(bbox, proj, 10);
+  // Step 4: Elevation grid (10m resolution via NED10m, cached)
+  const elevData = await sampleElevationGrid(bbox, proj, 10, REFRESH);
 
   // Step 5: Satellite vision (Esri World Imagery z=18, cached)
   console.log('  Running satellite vision model…');

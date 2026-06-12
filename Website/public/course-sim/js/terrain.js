@@ -622,42 +622,84 @@ export function holeCameraPos(hole, behindMeters = 18) {
   };
 }
 
-// ---------- Minimap ----------
-export function drawMinimapBase(courseData, canvas) {
+// ---------- Minimap — per-hole view ----------
+// holeIdx: 0-based index. When provided, zooms to just that hole with 30m padding.
+export function drawMinimapBase(courseData, canvas, holeIdx = null) {
   const ctx = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
-  const bbox = courseData.bbox;
-  const scaleX = W / (bbox.maxX - bbox.minX);
-  const scaleZ = H / (bbox.maxZ - bbox.minZ);
-  function toC(x, z) { return [(x-bbox.minX)*scaleX, (z-bbox.minZ)*scaleZ]; }
+
+  // Determine view bbox
+  let minX, maxX, minZ, maxZ;
+  const activeHole = holeIdx !== null ? courseData.holes[holeIdx] : null;
+
+  if (activeHole) {
+    const pts = [
+      activeHole.tee,
+      activeHole.green.center,
+      ...(activeHole.fairway   || []),
+      ...(activeHole.green.polygon || []),
+      ...activeHole.bunkers.flat(),
+      ...activeHole.water.flat(),
+      ...(activeHole.path || []),
+    ];
+    const xs = pts.map(p => p[0]), zs = pts.map(p => p[1]);
+    const pad = 35;
+    minX = Math.min(...xs) - pad; maxX = Math.max(...xs) + pad;
+    minZ = Math.min(...zs) - pad; maxZ = Math.max(...zs) + pad;
+    // Force square aspect so we don't distort the hole
+    const span = Math.max(maxX - minX, maxZ - minZ);
+    const cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2;
+    minX = cx - span / 2; maxX = cx + span / 2;
+    minZ = cz - span / 2; maxZ = cz + span / 2;
+  } else {
+    const bbox = courseData.bbox;
+    minX = bbox.minX; maxX = bbox.maxX; minZ = bbox.minZ; maxZ = bbox.maxZ;
+  }
+
+  const scaleX = W / (maxX - minX);
+  const scaleZ = H / (maxZ - minZ);
+  function toC(x, z) { return [(x - minX) * scaleX, (z - minZ) * scaleZ]; }
 
   ctx.clearRect(0, 0, W, H);
   ctx.fillStyle = '#1e3a10'; ctx.fillRect(0, 0, W, H);
 
-  function drawPoly(poly, color) {
+  function drawPoly(poly, color, alpha = 1) {
     if (!poly?.length) return;
+    ctx.save(); ctx.globalAlpha = alpha;
     ctx.beginPath(); ctx.fillStyle = color;
-    const [px, pz] = toC(poly[0][0], poly[0][1]);
-    ctx.moveTo(px, pz);
+    const [px, pz] = toC(poly[0][0], poly[0][1]); ctx.moveTo(px, pz);
     for (let i = 1; i < poly.length; i++) {
       const [qx, qz] = toC(poly[i][0], poly[i][1]); ctx.lineTo(qx, qz);
     }
-    ctx.closePath(); ctx.fill();
+    ctx.closePath(); ctx.fill(); ctx.restore();
   }
 
-  for (const hole of courseData.holes) {
+  // Faint context: draw all other holes dimly so player can orient
+  if (activeHole) {
+    for (const hole of courseData.holes) {
+      if (hole === activeHole) continue;
+      drawPoly(hole.fairway, '#2a4e12', 0.35);
+    }
+  }
+
+  // Active hole (or full course)
+  const holesToDraw = activeHole ? [activeHole] : courseData.holes;
+  for (const hole of holesToDraw) {
     drawPoly(hole.fairway, '#3a6a18');
     for (const b of hole.bunkers) drawPoly(b, '#c8a84a');
     for (const w of hole.water) drawPoly(w, '#2060a8');
     if (hole.green.polygon) drawPoly(hole.green.polygon, '#50cc60');
   }
 
-  // Cart paths
+  // Cart paths clipped to visible bbox
+  const pathScale = Math.min(scaleX, scaleZ);
   for (const path of (courseData.cartPaths || [])) {
     if (path.length < 2) continue;
+    const visible = path.filter(([x, z]) => x >= minX && x <= maxX && z >= minZ && z <= maxZ);
+    if (visible.length < 2) continue;
     ctx.beginPath();
-    ctx.strokeStyle = 'rgba(180,175,155,0.7)';
-    ctx.lineWidth   = Math.max(1, Math.min(scaleX, scaleZ) * 3.6);
+    ctx.strokeStyle = 'rgba(180,175,155,0.75)';
+    ctx.lineWidth   = Math.max(1, pathScale * 3.5);
     const [px, pz] = toC(path[0][0], path[0][1]); ctx.moveTo(px, pz);
     for (let i = 1; i < path.length; i++) {
       const [qx, qz] = toC(path[i][0], path[i][1]); ctx.lineTo(qx, qz);
@@ -665,9 +707,10 @@ export function drawMinimapBase(courseData, canvas) {
     ctx.stroke();
   }
 
-  for (const hole of courseData.holes) {
+  // Hole path line (tee→green direction)
+  for (const hole of holesToDraw) {
     if (hole.path?.length > 1) {
-      ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 0.5; ctx.beginPath();
+      ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 0.8; ctx.beginPath();
       const [px, pz] = toC(hole.path[0][0], hole.path[0][1]); ctx.moveTo(px, pz);
       for (let i = 1; i < hole.path.length; i++) {
         const [qx, qz] = toC(hole.path[i][0], hole.path[i][1]); ctx.lineTo(qx, qz);
@@ -675,5 +718,24 @@ export function drawMinimapBase(courseData, canvas) {
       ctx.stroke();
     }
   }
+
+  // Tee dot + hole number
+  for (const hole of holesToDraw) {
+    const [tx, tz] = toC(hole.tee[0], hole.tee[1]);
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(tx, tz, activeHole ? 4 : 2.5, 0, Math.PI * 2); ctx.fill();
+    if (activeHole) {
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 10px system-ui'; ctx.textAlign = 'center';
+      ctx.fillText(`H${hole.number}`, tx, tz - 7);
+    }
+  }
+
+  // Pin (flag) on green
+  for (const hole of holesToDraw) {
+    const [px, pz] = toC(hole.green.center[0], hole.green.center[1]);
+    ctx.fillStyle = '#ffd700';
+    ctx.beginPath(); ctx.arc(px, pz, activeHole ? 5 : 3, 0, Math.PI * 2); ctx.fill();
+  }
+
   return { toC, scaleX, scaleZ };
 }
