@@ -259,7 +259,7 @@ struct TrueCarryInsightsView: View {
 
             dispersion
                 .frame(maxWidth: .infinity)
-                .frame(height: 300)
+                .frame(height: 340)
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
 
             HStack(spacing: 0) {

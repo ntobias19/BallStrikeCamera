@@ -493,11 +493,11 @@ struct TCRangeFinderDispersion: View {
     var body: some View {
         Canvas { ctx, size in
             let W = size.width, H = size.height
-            // Padding: left for y-labels, bottom for x-labels
-            let lPad: CGFloat = 40
-            let bPad: CGFloat = 18
-            let tPad: CGFloat = 6
-            let rPad: CGFloat = 6
+            // Equal left/right padding so zero-lateral is centered on screen
+            let lPad: CGFloat = 44   // y-axis labels live here
+            let rPad: CGFloat = 44
+            let bPad: CGFloat = 24   // x-axis labels live here
+            let tPad: CGFloat = 8
 
             let plotW = W - lPad - rPad
             let plotH = H - bPad - tPad
@@ -509,7 +509,6 @@ struct TCRangeFinderDispersion: View {
             let mCarry   = maxCarry
             let mLateral = maxLateral
 
-            // Coordinate helpers
             func xCG(_ lat: Double) -> CGFloat {
                 plotLeft + CGFloat((lat + mLateral) / (2 * mLateral)) * plotW
             }
@@ -517,65 +516,63 @@ struct TCRangeFinderDispersion: View {
                 plotBot - CGFloat(carry / mCarry) * plotH
             }
 
-            // Field background (rough: dark green)
+            // Field background
             ctx.fill(Path(CGRect(x: plotLeft, y: plotTop, width: plotW, height: plotH)),
                      with: .color(Color(red: 0.08, green: 0.18, blue: 0.08)))
 
-            // Fairway stripe (central ±20 yds lateral = ~40 yd wide)
+            // Fairway stripe ±20 yds
             let fairwayHalfYds = 20.0
             let fLeft  = max(xCG(-fairwayHalfYds), plotLeft)
             let fRight = min(xCG(fairwayHalfYds),  plotRight)
             ctx.fill(Path(CGRect(x: fLeft, y: plotTop, width: fRight - fLeft, height: plotH)),
                      with: .color(Color(red: 0.16, green: 0.32, blue: 0.14)))
 
-            // Horizontal grid lines (carry)
-            let carryStep: Double = mCarry > 250 ? 50 : 25
-            var carry = carryStep
-            while carry <= mCarry - carryStep * 0.5 {
+            // Horizontal carry lines every 5 yds; labelled at every 50 yds
+            var carry: Double = 5
+            while carry <= mCarry - 1 {
                 let y = yCG(carry)
-                if y >= plotTop && y <= plotBot {
-                    var line = Path()
-                    line.move(to: CGPoint(x: plotLeft, y: y))
-                    line.addLine(to: CGPoint(x: plotRight, y: y))
-                    ctx.stroke(line, with: .color(Color.white.opacity(0.10)), lineWidth: 0.5)
+                guard y >= plotTop && y <= plotBot else { carry += 5; continue }
+                let isMajor = Int(carry) % 50 == 0
+                var line = Path()
+                line.move(to: CGPoint(x: plotLeft, y: y))
+                line.addLine(to: CGPoint(x: plotRight, y: y))
+                ctx.stroke(line,
+                           with: .color(Color.white.opacity(isMajor ? 0.20 : 0.06)),
+                           lineWidth: isMajor ? 0.7 : 0.35)
+                if isMajor {
                     ctx.draw(
                         Text("\(Int(carry)) yds")
-                            .font(.system(size: 7.5, weight: .medium))
-                            .foregroundColor(Color.white.opacity(0.42)),
-                        at: CGPoint(x: plotLeft - 3, y: y),
+                            .font(.system(size: 8, weight: .medium))
+                            .foregroundColor(Color.white.opacity(0.55)),
+                        at: CGPoint(x: plotLeft - 5, y: y),
                         anchor: .trailing
                     )
                 }
-                carry += carryStep
+                carry += 5
             }
 
-            // Vertical grid lines (lateral): at 0 and ±step intervals
-            let latStep: Double = mLateral > 80 ? 50 : (mLateral > 40 ? 25 : 20)
-            var lat = -mLateral
+            // Vertical lateral lines every 10 yds; labelled at each; center (0) is the straight-shot line
+            var lat: Double = -(mLateral - Double(Int(mLateral) % 10))
             while lat <= mLateral + 0.1 {
                 let x = xCG(lat)
-                if x >= plotLeft && x <= plotRight {
-                    var line = Path()
-                    line.move(to: CGPoint(x: x, y: plotTop))
-                    line.addLine(to: CGPoint(x: x, y: plotBot))
-                    let isCenter = abs(lat) < 0.5
-                    ctx.stroke(line,
-                               with: .color(Color.white.opacity(isCenter ? 0.28 : 0.09)),
-                               style: StrokeStyle(lineWidth: isCenter ? 1.0 : 0.5,
-                                                  dash: isCenter ? [3, 3] : []))
-                    // X-axis label
-                    if abs(lat) > 0.5 {
-                        let txt = "\(Int(abs(lat)))y \(lat < 0 ? "L" : "R")"
-                        ctx.draw(
-                            Text(txt)
-                                .font(.system(size: 7, weight: .medium))
-                                .foregroundColor(Color.white.opacity(0.38)),
-                            at: CGPoint(x: x, y: plotBot + 3),
-                            anchor: .top
-                        )
-                    }
-                }
-                lat += latStep
+                guard x >= plotLeft - 1 && x <= plotRight + 1 else { lat += 10; continue }
+                let isCenter = abs(lat) < 0.5
+                var line = Path()
+                line.move(to: CGPoint(x: x, y: plotTop))
+                line.addLine(to: CGPoint(x: x, y: plotBot))
+                ctx.stroke(line,
+                           with: .color(Color.white.opacity(isCenter ? 0.35 : 0.10)),
+                           style: StrokeStyle(lineWidth: isCenter ? 1.2 : 0.4,
+                                              dash: isCenter ? [4, 4] : []))
+                let label: String = isCenter ? "0" : (lat < 0 ? "\(Int(-lat))L" : "\(Int(lat))R")
+                ctx.draw(
+                    Text(label)
+                        .font(.system(size: 7.5, weight: isCenter ? .semibold : .regular))
+                        .foregroundColor(Color.white.opacity(isCenter ? 0.70 : 0.42)),
+                    at: CGPoint(x: x, y: plotBot + 5),
+                    anchor: .top
+                )
+                lat += 10
             }
 
             // Dispersion ellipse (2-sigma)
@@ -587,10 +584,10 @@ struct TCRangeFinderDispersion: View {
                 let sdY = sqrt(pts.map { pow($0.y - meanY, 2) }.reduce(0, +) / CGFloat(pts.count))
                 let er = CGRect(x: meanX - sdX * 2, y: meanY - sdY * 2, width: sdX * 4, height: sdY * 4)
                 ctx.fill(Path(ellipseIn: er),   with: .color(Color.white.opacity(0.07)))
-                ctx.stroke(Path(ellipseIn: er), with: .color(Color.white.opacity(0.38)), lineWidth: 1.5)
+                ctx.stroke(Path(ellipseIn: er), with: .color(Color.white.opacity(0.40)), lineWidth: 1.5)
             }
 
-            // Shot dots: green if in fairway, pink if outside
+            // Shot dots: green = in fairway, pink = outside
             for sp in valid {
                 let pt = CGPoint(x: xCG(sp.lateral), y: yCG(sp.carry))
                 guard pt.x >= plotLeft - 6 && pt.x <= plotRight + 6 &&
@@ -606,7 +603,7 @@ struct TCRangeFinderDispersion: View {
                            with: .color(Color.black.opacity(0.30)), lineWidth: 0.8)
             }
 
-            // Mean dot (gold, larger)
+            // Mean dot (gold)
             if !valid.isEmpty {
                 let avgLat  = valid.map { $0.lateral }.reduce(0, +) / Double(valid.count)
                 let avgCarr = valid.map { $0.carry   }.reduce(0, +) / Double(valid.count)
