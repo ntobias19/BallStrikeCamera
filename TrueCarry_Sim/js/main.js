@@ -840,7 +840,15 @@ function updateFlight() {
     else if (ev.type === 'splash') SFX.splash();
     else if (ev.type === 'holed') SFX.holed();
     else if (ev.type === 'lip') hud.toast('<span class="t-gold">LIP OUT</span>', 1400);
-    else if (ev.type === 'tree') { SFX.bounce(4); hud.toast('<span class="t-sub">TREE</span>', 1100); }
+    else if (ev.type === 'tree') {
+      if (ev.graze) {
+        SFX.bounce(2);
+        hud.toast('<span class="t-sub">BRUSH</span>', 900);
+      } else {
+        SFX.bounce(4);
+        hud.toast('<span class="t-sub">TREE</span>', 1100);
+      }
+    }
   }
 
   ball.position.set(sim.pos.x, sim.pos.y, sim.pos.z);

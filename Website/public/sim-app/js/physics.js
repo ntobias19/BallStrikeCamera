@@ -164,13 +164,28 @@ export function createShot(opts) {
         if (dist2 < canopyR * canopyR) {
           const dist = Math.sqrt(dist2) || 0.01;
           const nx = dx / dist, ny = dy / dist, nz = dz / dist;
+          const vn = sim.vel.x * nx + sim.vel.y * ny + sim.vel.z * nz;
+          if (vn >= 0) break; // already exiting sphere, skip re-collision
+          const depth = (canopyR - dist) / canopyR; // 0=edge, 1=center
+          // outer fringe = sparse leaves; pass-through probability drops with depth
+          const passChance = depth < 0.20 ? 0.60 : depth < 0.50 ? 0.25 : 0;
+          if (passChance > 0 && Math.random() < passChance) {
+            sim.vel.x *= 0.97; sim.vel.y *= 0.97; sim.vel.z *= 0.97;
+            sim.events.push({ type: 'tree', graze: true, pos: { ...sim.pos } });
+            break;
+          }
+          // solid hit: push out and reflect with depth-scaled energy loss
           const pen = canopyR - dist + 0.02;
           sim.pos.x += nx * pen; sim.pos.y += ny * pen; sim.pos.z += nz * pen;
-          const vn = sim.vel.x * nx + sim.vel.y * ny + sim.vel.z * nz;
-          sim.vel.x -= 1.28 * vn * nx; sim.vel.y -= 1.28 * vn * ny; sim.vel.z -= 1.28 * vn * nz;
-          sim.vel.x *= 0.52; sim.vel.y *= 0.52; sim.vel.z *= 0.52;
-          sim.vel.x += (Math.random() - 0.5) * 1.8;
-          sim.vel.z += (Math.random() - 0.5) * 1.8;
+          const energyRetain = depth < 0.35 ? 0.70 : depth < 0.65 ? 0.60 : 0.52;
+          const restitution  = depth < 0.35 ? 0.50 : depth < 0.65 ? 0.38 : 0.28;
+          sim.vel.x -= (1 + restitution) * vn * nx;
+          sim.vel.y -= (1 + restitution) * vn * ny;
+          sim.vel.z -= (1 + restitution) * vn * nz;
+          sim.vel.x *= energyRetain; sim.vel.y *= energyRetain; sim.vel.z *= energyRetain;
+          const deflect = depth < 0.35 ? 2.5 : 1.8;
+          sim.vel.x += (Math.random() - 0.5) * deflect;
+          sim.vel.z += (Math.random() - 0.5) * deflect;
           sim.events.push({ type: 'tree', pos: { ...sim.pos } });
           break;
         }
