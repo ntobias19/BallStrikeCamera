@@ -27,7 +27,7 @@ final class LiveSimService: ObservableObject {
     }
 
     var simURL: URL? {
-        URL(string: "https://truecarry.vercel.app/sim?code=\(sessionCode)")
+        URL(string: "https://truecarry.vercel.app/play?code=\(sessionCode)")
     }
 
     func broadcast(metrics: SavedShotMetrics) async {
