@@ -38,7 +38,9 @@ final class ShotPersistenceService {
                   holeNumber: Int? = nil,
                   isBadShot: Bool = false,
                   badShotReason: String? = nil,
-                  notes: String? = nil) async throws -> SavedShot {
+                  notes: String? = nil,
+                  shotLatitude: Double? = nil,
+                  shotLongitude: Double? = nil) async throws -> SavedShot {
 
         let shotId = UUID()
         let mediaDir = AppStorageManager.shotFramesDir(userId: userId, shotId: shotId)
@@ -85,7 +87,7 @@ final class ShotPersistenceService {
             media.metricsJsonPath = jsonPath.path
         }
 
-        let shot = SavedShot(
+        var shot = SavedShot(
             id: shotId,
             userId: userId,
             mode: mode,
@@ -100,6 +102,8 @@ final class ShotPersistenceService {
             roundId: roundId,
             holeNumber: holeNumber
         )
+        shot.shotLatitude  = shotLatitude
+        shot.shotLongitude = shotLongitude
 
         try await backend.saveShot(shot)
         return shot

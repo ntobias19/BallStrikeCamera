@@ -21,6 +21,7 @@ struct EditClubView: View {
     @State private var expectedTotal: String
     @State private var isActive: Bool
     @State private var nfcTagId: String?
+    @State private var pendingNFCClubId: UUID?
 
     private var title: String {
         switch mode {
@@ -204,7 +205,8 @@ struct EditClubView: View {
                 Divider().padding(.leading, 50)
 
                 Button {
-                    guard let clubId = originalClub?.id ?? (name.isEmpty ? nil : UUID()) else { return }
+                    let clubId = originalClub?.id ?? pendingNFCClubId ?? UUID()
+                    pendingNFCClubId = clubId
                     nfc.writeState = .idle
                     nfc.beginWriting(clubId: clubId)
                 } label: {
@@ -245,11 +247,8 @@ struct EditClubView: View {
             .premiumCard(padding: 0)
         }
         .onChange(of: nfc.writeState) { state in
-            if case .success = state {
-                // Mark this club as NFC-linked using the club's id written to the tag
-                if let id = originalClub?.id {
-                    nfcTagId = NFCManager.nfcURL(for: id)
-                }
+            if case .success = state, let id = originalClub?.id ?? pendingNFCClubId {
+                nfcTagId = NFCManager.nfcURL(for: id)
             }
         }
     }
@@ -268,6 +267,11 @@ struct EditClubView: View {
             expectedCarryYards: carry,
             expectedTotalYards: total
         )
+        // If an NFC tag was written to this new club before saving, use that same
+        // UUID so the tag still resolves to this club after it's persisted.
+        if originalClub == nil, let nfcId = pendingNFCClubId {
+            club.id = nfcId
+        }
         club.brand = trimmedBrand.isEmpty ? nil : trimmedBrand
         club.name = trimmedName
         club.loftDegrees = trimmedLoft.isEmpty ? nil : loftValue

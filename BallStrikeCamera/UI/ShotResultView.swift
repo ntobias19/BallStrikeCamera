@@ -310,7 +310,9 @@ struct ShotResultView: View {
                 roundId: context?.courseRoundId,
                 holeNumber: context?.holeNumber,
                 isBadShot: false,
-                badShotReason: nil
+                badShotReason: nil,
+                shotLatitude: context?.playerCoordinate?.latitude,
+                shotLongitude: context?.playerCoordinate?.longitude
             )
             onShotSaved?(shot)
         } catch {

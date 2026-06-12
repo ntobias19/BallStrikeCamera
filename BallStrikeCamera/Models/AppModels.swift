@@ -159,6 +159,8 @@ struct SavedShot: Codable, Identifiable {
     var sessionId: UUID?
     var roundId: UUID?
     var holeNumber: Int?
+    var shotLatitude: Double?
+    var shotLongitude: Double?
 }
 
 enum ShotSource: String, Codable {
@@ -493,6 +495,8 @@ extension SavedShot {
         sessionId     = try c.decodeIfPresent(UUID.self,           forKey: .sessionId)
         roundId       = try c.decodeIfPresent(UUID.self,           forKey: .roundId)
         holeNumber    = try c.decodeIfPresent(Int.self,            forKey: .holeNumber)
+        shotLatitude  = try c.decodeIfPresent(Double.self,         forKey: .shotLatitude)
+        shotLongitude = try c.decodeIfPresent(Double.self,         forKey: .shotLongitude)
     }
 }
 

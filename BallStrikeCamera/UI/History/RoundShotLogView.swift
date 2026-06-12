@@ -9,13 +9,18 @@ import MapKit
 /// user can watch that shot back inline.
 struct RoundShotLogView: View {
     let round: CourseRound
-    /// SavedShots already loaded by SessionDetailView — used to resolve linkedShotId.
+    /// All SavedShots for this round — used for linked-shot playback and GPS pins.
     let linkedShots: [SavedShot]
 
     @State private var selectedLinkedShot: SavedShot?
 
     private var holesWithShots: [Int] {
-        Array(Set(round.nfcShots.map { $0.holeNumber })).sorted()
+        let nfcHoles = round.nfcShots.map { $0.holeNumber }
+        let cameraHoles = linkedShots.compactMap { shot -> Int? in
+            guard shot.shotLatitude != nil, let h = shot.holeNumber else { return nil }
+            return h
+        }
+        return Array(Set(nfcHoles + cameraHoles)).sorted()
     }
 
     var body: some View {
@@ -35,6 +40,9 @@ struct RoundShotLogView: View {
                                 .filter { $0.holeNumber == holeNum }
                                 .sorted { $0.shotNumber < $1.shotNumber },
                             linkedShots: linkedShots,
+                            cameraShots: linkedShots.filter {
+                                $0.holeNumber == holeNum && $0.shotLatitude != nil
+                            },
                             mapWidth: geo.size.width,
                             onPlayShot: { selectedLinkedShot = $0 }
                         )
@@ -69,13 +77,19 @@ private struct HoleShotPage: View {
     let holeNumber: Int
     let shots: [NFCShot]
     let linkedShots: [SavedShot]
+    let cameraShots: [SavedShot]
     let mapWidth: CGFloat
     let onPlayShot: (SavedShot) -> Void
 
     private let mapHeight: CGFloat = 220
 
     @State private var snapshot: UIImage?
-    @State private var pinPoints: [(id: UUID, point: CGPoint)] = []
+    @State private var nfcPinPoints: [(id: UUID, point: CGPoint)] = []
+    @State private var cameraPinPoints: [(id: UUID, point: CGPoint)] = []
+
+    private var linkedShotIds: Set<UUID> {
+        Set(shots.compactMap { $0.linkedShotId })
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -88,8 +102,19 @@ private struct HoleShotPage: View {
                         .resizable()
                         .frame(width: mapWidth, height: mapHeight)
 
+                    // Camera shot GPS pins (unlinked only — linked ones show via NFC pin)
+                    ForEach(cameraShots.filter { !linkedShotIds.contains($0.id) }) { shot in
+                        if let pt = cameraPinPoints.first(where: { $0.id == shot.id })?.point {
+                            CameraShotPin(shot: shot) {
+                                onPlayShot(shot)
+                            }
+                            .position(x: pt.x, y: pt.y - 18)
+                        }
+                    }
+
+                    // NFC tap pins
                     ForEach(shots) { shot in
-                        if let pt = pinPoints.first(where: { $0.id == shot.id })?.point {
+                        if let pt = nfcPinPoints.first(where: { $0.id == shot.id })?.point {
                             let linked = linkedShots.first(where: { $0.id == shot.linkedShotId })
                             ShotPin(shot: shot, hasVideo: linked != nil) {
                                 if let s = linked { onPlayShot(s) }
@@ -117,6 +142,12 @@ private struct HoleShotPage: View {
 
     // MARK: Sub-views
 
+    private var totalShotCount: Int {
+        let nfcIds = Set(shots.map { $0.id })
+        let cameraOnly = cameraShots.filter { !linkedShotIds.contains($0.id) }.count
+        return nfcIds.count + cameraOnly
+    }
+
     private var holeHeader: some View {
         HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 2) {
@@ -124,7 +155,7 @@ private struct HoleShotPage: View {
                     .font(.system(size: 10, weight: .bold))
                     .tracking(1.5)
                     .foregroundColor(TCTheme.textMuted)
-                Text("\(shots.count) shot\(shots.count == 1 ? "" : "s")")
+                Text("\(totalShotCount) shot\(totalShotCount == 1 ? "" : "s")")
                     .font(.system(size: 18, weight: .bold))
                     .foregroundColor(TCTheme.textPrimary)
             }
@@ -206,9 +237,14 @@ private struct HoleShotPage: View {
         MKMapSnapshotter(options: opts).start { snap, _ in
             guard let snap else { return }
             DispatchQueue.main.async {
-                self.snapshot  = snap.image
-                self.pinPoints = shots.map { s in
+                self.snapshot = snap.image
+                self.nfcPinPoints = shots.map { s in
                     let coord = CLLocationCoordinate2D(latitude: s.latitude, longitude: s.longitude)
+                    return (id: s.id, point: snap.point(for: coord))
+                }
+                self.cameraPinPoints = cameraShots.compactMap { s in
+                    guard let lat = s.shotLatitude, let lon = s.shotLongitude else { return nil }
+                    let coord = CLLocationCoordinate2D(latitude: lat, longitude: lon)
                     return (id: s.id, point: snap.point(for: coord))
                 }
             }
@@ -216,8 +252,13 @@ private struct HoleShotPage: View {
     }
 
     private func computeRegion() -> MKCoordinateRegion {
-        let lats = shots.map { $0.latitude }
-        let lons = shots.map { $0.longitude }
+        var lats = shots.map { $0.latitude }
+        var lons = shots.map { $0.longitude }
+        for s in cameraShots {
+            if let lat = s.shotLatitude, let lon = s.shotLongitude {
+                lats.append(lat); lons.append(lon)
+            }
+        }
         guard !lats.isEmpty else {
             return MKCoordinateRegion(center: .init(latitude: 0, longitude: 0),
                                      span: .init(latitudeDelta: 0.005, longitudeDelta: 0.005))
@@ -280,6 +321,35 @@ private struct ShotPin: View {
             return "\(abbr) · \(Int(dist.rounded()))y"
         }
         return abbr
+    }
+}
+
+// MARK: - CameraShotPin
+
+private struct CameraShotPin: View {
+    let shot: SavedShot
+    let onTap: () -> Void
+
+    var body: some View {
+        VStack(spacing: 2) {
+            ZStack {
+                Circle()
+                    .fill(Color.white.opacity(0.88))
+                    .frame(width: 22, height: 22)
+                    .shadow(color: .black.opacity(0.5), radius: 2, x: 0, y: 1)
+                Image(systemName: "camera.fill")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.black.opacity(0.75))
+            }
+            Text(shot.clubName.flatMap { abbreviateClub($0) } ?? "—")
+                .font(.system(size: 8, weight: .semibold))
+                .foregroundColor(.white)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 1)
+                .background(Color.black.opacity(0.6))
+                .clipShape(Capsule())
+        }
+        .onTapGesture { onTap() }
     }
 }
 

@@ -963,6 +963,11 @@
 			productName = BallStrikeCamera;
 			productReference = BF0000010000000000000111 /* BallStrikeCamera.app */;
 			productType = "com.apple.product-type.application";
+			systemCapabilities = {
+				com.apple.NFCTagReading = {
+					enabled = 1;
+				};
+			};
 		};
 		CA0000000000000000000009 /* BallStrikeCameraWidget */ = {
 			isa = PBXNativeTarget;

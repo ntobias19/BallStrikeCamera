@@ -409,20 +409,41 @@ final class CourseRoundViewModel: ObservableObject {
     func addShot(_ shot: SavedShot) async {
         guard var round = activeRound else { return }
 
-        // Link this camera shot to the nearest unlinked NFC tap on the same hole
-        // within a 3-minute window. The golfer taps their club then (or just after)
-        // hitting — closest tap in time is almost always the correct match.
         let holeNum = currentHole?.holeNumber ?? (currentHoleIndex + 1)
-        let candidates = round.nfcShots.indices.filter {
+        let unlinked = round.nfcShots.indices.filter {
             round.nfcShots[$0].holeNumber == holeNum &&
-            round.nfcShots[$0].linkedShotId == nil &&
-            abs(round.nfcShots[$0].tappedAt.timeIntervalSince(shot.timestamp)) <= 180
+            round.nfcShots[$0].linkedShotId == nil
         }
-        if let bestIdx = candidates.min(by: { i, j in
-            abs(round.nfcShots[i].tappedAt.timeIntervalSince(shot.timestamp)) <
-            abs(round.nfcShots[j].tappedAt.timeIntervalSince(shot.timestamp))
-        }) {
-            round.nfcShots[bestIdx].linkedShotId = shot.id
+
+        var bestIdx: Int? = nil
+
+        // GPS proximity primary: if shot has coordinates, find the closest unlinked NFC
+        // tap within 5 yards (~4.57 m) on the same hole.
+        if let lat = shot.shotLatitude, let lon = shot.shotLongitude {
+            bestIdx = unlinked
+                .filter { i in
+                    let nfc = round.nfcShots[i]
+                    return haversineMeters(lat, lon, nfc.latitude, nfc.longitude) <= 4.572
+                }
+                .min(by: { i, j in
+                    let di = haversineMeters(lat, lon, round.nfcShots[i].latitude, round.nfcShots[i].longitude)
+                    let dj = haversineMeters(lat, lon, round.nfcShots[j].latitude, round.nfcShots[j].longitude)
+                    return di < dj
+                })
+        }
+
+        // Fallback: closest NFC tap within a 3-minute window.
+        if bestIdx == nil {
+            bestIdx = unlinked
+                .filter { abs(round.nfcShots[$0].tappedAt.timeIntervalSince(shot.timestamp)) <= 180 }
+                .min(by: { i, j in
+                    abs(round.nfcShots[i].tappedAt.timeIntervalSince(shot.timestamp)) <
+                    abs(round.nfcShots[j].tappedAt.timeIntervalSince(shot.timestamp))
+                })
+        }
+
+        if let idx = bestIdx {
+            round.nfcShots[idx].linkedShotId = shot.id
         }
 
         if !round.shotIds.contains(shot.id) {
@@ -500,6 +521,16 @@ final class CourseRoundViewModel: ObservableObject {
     }
 
     // MARK: - Private
+
+    private func haversineMeters(_ lat1: Double, _ lon1: Double, _ lat2: Double, _ lon2: Double) -> Double {
+        let R = 6_371_000.0
+        let dLat = (lat2 - lat1) * .pi / 180
+        let dLon = (lon2 - lon1) * .pi / 180
+        let a = sin(dLat / 2) * sin(dLat / 2)
+            + cos(lat1 * .pi / 180) * cos(lat2 * .pi / 180)
+            * sin(dLon / 2) * sin(dLon / 2)
+        return R * 2 * atan2(sqrt(a), sqrt(1 - a))
+    }
 
     private func computeSummary(_ round: CourseRound) -> RoundScoreSummary {
         let scored = round.holes.filter { $0.score != nil }

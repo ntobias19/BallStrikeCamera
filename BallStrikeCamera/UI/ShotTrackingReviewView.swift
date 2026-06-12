@@ -189,7 +189,9 @@ struct ShotTrackingReviewView: View {
                 roundId: context?.courseRoundId,
                 holeNumber: context?.holeNumber,
                 isBadShot: markBad,
-                badShotReason: markBad ? "Marked from review" : nil
+                badShotReason: markBad ? "Marked from review" : nil,
+                shotLatitude: context?.playerCoordinate?.latitude,
+                shotLongitude: context?.playerCoordinate?.longitude
             )
             savedShot = shot
             onShotSaved?(shot)

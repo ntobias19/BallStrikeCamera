@@ -94,10 +94,11 @@ struct SessionDetailView: View {
                             headerCard
                             if case .range(let rs) = item { rangeStatsCard(rs) }
                             if case .course(let r)  = item { courseStatsCard(r) }
-                            if case .course(let r)  = item, !r.nfcShots.isEmpty {
-                                roundShotLogSection(r, shots: shots)
+                            if case .course(let r)  = item {
+                                let hasMap = !r.nfcShots.isEmpty || shots.contains { $0.shotLatitude != nil }
+                                if hasMap { roundShotLogSection(r, shots: shots) }
                             }
-                            shotsSection
+                            if case .course = item { EmptyView() } else { shotsSection }
                             Spacer(minLength: 40)
                         }
                         .padding(.horizontal, TCTheme.hPad)
@@ -177,8 +178,66 @@ struct SessionDetailView: View {
                 statItem("Fairways", "\(r.scoreSummary.fairwaysHit)")
                 statItem("Putts", "\(r.scoreSummary.totalPutts)")
             }
+            let scoredHoles = r.holes.filter { $0.score != nil || $0.putts != nil }
+            if !scoredHoles.isEmpty {
+                TCDivider()
+                holeScorecardTable(r.holes)
+            }
         }
         .tcCard()
+    }
+
+    private func holeScorecardTable(_ holes: [RoundHole]) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                Text("HOLE").frame(width: 44, alignment: .leading)
+                Text("PAR").frame(width: 40, alignment: .center)
+                Text("SCORE").frame(width: 56, alignment: .center)
+                Text("PUTTS").frame(width: 48, alignment: .center)
+            }
+            .font(.system(size: 10, weight: .bold))
+            .foregroundColor(TCTheme.textMuted)
+            .tracking(0.5)
+            .padding(.vertical, 5)
+
+            TCDivider()
+
+            ForEach(Array(holes.enumerated()), id: \.element.id) { idx, hole in
+                HStack(spacing: 0) {
+                    Text("\(hole.holeNumber)")
+                        .frame(width: 44, alignment: .leading)
+                    Text("\(hole.par)")
+                        .frame(width: 40, alignment: .center)
+                    if let score = hole.score {
+                        let diff = score - hole.par
+                        Text("\(score)")
+                            .foregroundColor(scoreToParColor(diff))
+                            .frame(width: 56, alignment: .center)
+                    } else {
+                        Text("—").frame(width: 56, alignment: .center)
+                            .foregroundColor(TCTheme.textMuted)
+                    }
+                    Text(hole.putts.map { "\($0)" } ?? "—")
+                        .frame(width: 48, alignment: .center)
+                        .foregroundColor(hole.putts != nil ? TCTheme.textPrimary : TCTheme.textMuted)
+                }
+                .font(.system(size: 13))
+                .foregroundColor(TCTheme.textPrimary)
+                .padding(.vertical, 6)
+
+                if idx < holes.count - 1 {
+                    Divider().padding(.leading, 44).opacity(0.3)
+                }
+            }
+        }
+    }
+
+    private func scoreToParColor(_ diff: Int) -> Color {
+        if diff <= -2 { return .yellow }
+        if diff == -1 { return .red }
+        if diff == 0  { return TCTheme.textPrimary }
+        if diff == 1  { return Color(white: 0.65) }
+        return Color(white: 0.5)
     }
 
     // MARK: Round Shot Map
