@@ -24,9 +24,10 @@ export default function SiteNav({ actions }: { actions?: ReactNode }) {
         <div className="nav-links">
           {actions ?? (
             <>
-              <Link href="/#features" className="hide-sm">Features</Link>
+              <Link href="/#h03" className="hide-sm">What it does</Link>
+              <Link href="/play" className="hide-sm">The Sim</Link>
+              <Link href="/store">Store</Link>
               <Link href="/#pricing">Pricing</Link>
-              <Link href="/sim" className="hide-sm">Sim</Link>
               <Link href="/login" className="btn btn-gold" style={{ padding: "10px 22px", fontSize: 14 }}>
                 Sign In
               </Link>

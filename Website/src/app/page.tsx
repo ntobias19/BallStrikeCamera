@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import EmbeddedCheckoutPanel from "@/components/EmbeddedCheckoutPanel";
 import PhoneDemo from "@/components/PhoneDemo";
+import ClubCards from "@/components/ClubCards";
 
 type Hole = { n: number; name: string; par: number; yd: number; id: string };
 
@@ -10,9 +11,10 @@ const HOLES: Hole[] = [
   { n: 1, name: "Tee off", par: 4, yd: 372, id: "h01" },
   { n: 2, name: "What it does", par: 5, yd: 542, id: "h03" },
   { n: 3, name: "Play the sim", par: 5, yd: 527, id: "h05" },
-  { n: 4, name: "One plan", par: 4, yd: 425, id: "h07" },
-  { n: 5, name: "When you're ready", par: 3, yd: 158, id: "h08" },
-  { n: 6, name: "Clubhouse", par: 5, yd: 580, id: "h09" },
+  { n: 4, name: "Club cards", par: 3, yd: 188, id: "h06" },
+  { n: 5, name: "One plan", par: 4, yd: 425, id: "h07" },
+  { n: 6, name: "When you're ready", par: 3, yd: 158, id: "h08" },
+  { n: 7, name: "Clubhouse", par: 5, yd: 580, id: "h09" },
 ];
 
 type Plan = { id: string; name: string; price: string; per: string; tag: string; features: string[]; featured?: boolean; href?: string; cta?: string };
@@ -138,6 +140,7 @@ export default function HomePage() {
           <nav className="nav">
             <a className="l" href="#h03">What it does</a>
             <a className="l" href="/play">The Sim</a>
+            <a className="l" href="/store">Store</a>
             <a className="l" href="#h07">Pricing</a>
             <a className="l btn" href="/login">Sign in</a>
             <a className="l btn primary" href="#h07" onClick={(e) => { e.preventDefault(); openCheckout(); }}>
@@ -159,7 +162,17 @@ export default function HomePage() {
         <main>
           {/* H01 — hero */}
           <section className="hole h01" id="h01">
-            <video className="hero-video" autoPlay muted loop playsInline preload="metadata" aria-hidden="true">
+            <video
+              className="hero-video"
+              autoPlay
+              muted
+              loop
+              playsInline
+              preload="auto"
+              aria-hidden="true"
+              onLoadedMetadata={(e) => { e.currentTarget.playbackRate = 0.82; }}
+              onPlaying={(e) => e.currentTarget.classList.add("ready")}
+            >
               <source src="/hero-golf-course.mp4" type="video/mp4" />
             </video>
             <div className="hero-shade" aria-hidden="true" />
@@ -240,11 +253,34 @@ export default function HomePage() {
             </div>
           </section>
 
+          {/* H06 — NFC club cards */}
+          <section className="hole h06" id="h06">
+            <div className="wrap">
+              <HoleStrip hole={HOLES[3]} />
+              <div className="cards-feature">
+                <div className="cards-copy">
+                  <h2>Tap in.<br /><span className="it">Every club, tagged.</span></h2>
+                  <p className="cards-deck">A slim NFC card lives on every club in your bag. Tap your phone on the way to address, and True Carry tags the shot — club, carry, and gapping build themselves, swing after swing.</p>
+                  <ul className="cards-points">
+                    <li><b>No batteries, no pairing</b><span>Passive NFC — tap and swing.</span></li>
+                    <li><b>Gapping that fills itself</b><span>Real carries per club, not range guesses.</span></li>
+                    <li><b>Fits any grip</b><span>Under-grip sticker or bag-tag card.</span></li>
+                  </ul>
+                  <div className="cards-ctas">
+                    <a className="solid" href="/store">Visit the store</a>
+                    <a className="ghost" href="#h03">See the app first</a>
+                  </div>
+                </div>
+                <ClubCards />
+              </div>
+            </div>
+          </section>
+
           {/* H07 — pricing (four tiers) */}
           <span id="pricing" aria-hidden style={{ position: "absolute", marginTop: "-80px" }} />
           <section className="hole h07" id="h07">
             <div className="wrap">
-              <HoleStrip hole={HOLES[3]} />
+              <HoleStrip hole={HOLES[4]} />
               <div className="plans-head">
                 <h2>One round.<br /><span className="it">Four ways to play.</span></h2>
                 <p>Start free. Step up when you want more of the numbers. <span className="it">Cancel anytime, keep your data.</span></p>
@@ -274,7 +310,7 @@ export default function HomePage() {
           <section className="hole h08" id="h08">
             <div className="atlas-bg"><img src="/truecarry-logo.png" alt="" /></div>
             <div className="wrap">
-              <HoleStrip hole={HOLES[4]} />
+              <HoleStrip hole={HOLES[5]} />
               <p className="copy">When you&apos;re ready,<br />we&apos;ll be in the <span className="gold">bag.</span></p>
               <a href="#h07" className="link" onClick={(e) => { e.preventDefault(); openCheckout(); }}>Get Premium &nbsp;→</a>
             </div>
@@ -293,6 +329,7 @@ export default function HomePage() {
                   <h4>Product</h4>
                   <a href="#h03">What it does</a>
                   <a href="/play">Play the sim</a>
+                  <a href="/store">Store</a>
                   <a href="#h07">Pricing</a>
                   <a href="#h07" onClick={(e) => { e.preventDefault(); openCheckout(); }}>Get the app</a>
                 </div>

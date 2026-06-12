@@ -18,8 +18,9 @@ export default function SiteFooter() {
 
           <div className="footer-links">
             <span style={{ color: "var(--faint)", fontSize: 12, letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 4 }}>Product</span>
-            <Link href="/#features">Features</Link>
-            <Link href="/#how">How it works</Link>
+            <Link href="/#h03">What it does</Link>
+            <Link href="/play">Play the sim</Link>
+            <Link href="/store">Store</Link>
             <Link href="/#pricing">Pricing</Link>
           </div>
 
