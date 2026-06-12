@@ -17,9 +17,11 @@ struct SimModeView: View {
     @StateObject private var ogsVM = OpenGolfSimViewModel()
     @StateObject private var gsproVM = GSProViewModel()
     @StateObject private var bleVM = SimBLEViewModel()
+    @StateObject private var liveSimService = LiveSimService()
 
     @State private var selectedProvider = "OGS"
     @State private var showCamera = false
+    @State private var showLiveCamera = false
     @State private var showEndConfirmation = false
     @State private var showSaveSheet = false
     @State private var saveSheetDefaultName = "Sim Session"
@@ -32,6 +34,7 @@ struct SimModeView: View {
         SimProviderOption(name: "OGS",       subtitle: "OpenGolfSim — same network",    icon: "antenna.radiowaves.left.and.right"),
         SimProviderOption(name: "GSPro",      subtitle: "GSPro — same network",          icon: "display"),
         SimProviderOption(name: "Bluetooth",  subtitle: "No Wi-Fi needed — BLE bridge",  icon: "dot.radiowaves.right"),
+        SimProviderOption(name: "Live Sim",   subtitle: "Stream to browser — free, no PC needed", icon: "globe"),
         SimProviderOption(name: "Local JSON", subtitle: "Export shot data to JSON file", icon: "doc.text"),
     ]
 
@@ -52,6 +55,7 @@ struct SimModeView: View {
                         if selectedProvider == "OGS"        { ogsConnectionSection }
                         if selectedProvider == "GSPro"       { gsproConnectionSection }
                         if selectedProvider == "Bluetooth"   { bleConnectionSection }
+                        if selectedProvider == "Live Sim"    { liveSimSection }
                         sessionSection
                         if simVM.sessionActive { activeSessionSection }
                         Spacer(minLength: 32)
@@ -91,12 +95,22 @@ struct SimModeView: View {
                 .ignoresSafeArea()
                 .statusBarHidden(true)
         }
+        // Camera screen for Live Sim mode
+        .fullScreenCover(isPresented: $showLiveCamera) {
+            LiveSimCameraScreen(simVM: simVM, liveSimService: liveSimService)
+                .ignoresSafeArea()
+                .statusBarHidden(true)
+        }
         .onChange(of: selectedProvider) { provider in
             // Start BLE peripheral only when Bluetooth mode is selected; stop otherwise.
             if provider == "Bluetooth" {
                 bleVM.start()
             } else {
                 bleVM.stop()
+            }
+            // Fresh code each time Live Sim is selected.
+            if provider == "Live Sim" {
+                liveSimService.regenerateCode()
             }
         }
         .onDisappear { bleVM.stop() }
@@ -289,6 +303,17 @@ struct SimModeView: View {
                     .buttonStyle(.plain)
                 }
             }
+        }
+    }
+
+    // MARK: - Live Sim section
+
+    private var liveSimSection: some View {
+        LiveSimCodeView(liveSimService: liveSimService) {
+            if !simVM.sessionActive {
+                Task { await simVM.startSession(provider: .notConnected, usedOGS: false) }
+            }
+            showLiveCamera = true
         }
     }
 
@@ -572,7 +597,13 @@ struct SimModeView: View {
                 title: "Hit Shot",
                 icon: "camera.fill",
                 style: .gradient(BSTheme.rangeGradient),
-                action: { showCamera = true }
+                action: {
+                    if selectedProvider == "Live Sim" {
+                        showLiveCamera = true
+                    } else {
+                        showCamera = true
+                    }
+                }
             )
             .glowingAccent(BSTheme.electricCyan)
 
