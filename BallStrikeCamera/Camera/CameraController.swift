@@ -53,7 +53,8 @@ final class CameraController: NSObject, ObservableObject {
     private var trackingMissCount = 0
     private let trackingMissLimit = 5   // tolerate brief gaps before resetting stable count
     private var lockedBallRect: CGRect?
-    private let requiredStableFrames = 8
+    private var lockedStateEnteredAt: Date?
+    private let requiredStableFrames = 20
     private let stableCenterThreshold: CGFloat = 0.025
     private let leaveSpotThreshold: CGFloat = 0.035
 
@@ -365,6 +366,11 @@ extension CameraController: AVCaptureVideoDataOutputSampleBufferDelegate {
             statusText = "READY — watching for impact"
 
             if impactDetected {
+                let lockAge = lockedStateEnteredAt.map { Date().timeIntervalSince($0) } ?? 0
+                guard lockAge >= 0.6 else {
+                    // Suppress — ball is still being positioned
+                    return
+                }
                 print("ROI IMPACT DETECTED — triggering capture")
                 triggerHitCapture()
                 return
@@ -418,6 +424,26 @@ extension CameraController: AVCaptureVideoDataOutputSampleBufferDelegate {
 
         case .tracking:
             currentBallRect = observation.normalizedRect
+            // Ball must be well inside the setup circle — not near the edge or rolling in.
+            // This prevents a ball being slid/rolled across the boundary from accumulating
+            // stable frames and causing a false lock + false trigger.
+            let isWellInsideROI: Bool = {
+                roiLock.lock()
+                let roi = _searchROI
+                roiLock.unlock()
+                guard roi.width > 0, roi.height > 0 else { return true }
+                let dx = (observation.center.x - roi.midX) / (roi.width  / 2)
+                let dy = (observation.center.y - roi.midY) / (roi.height / 2)
+                return dx * dx + dy * dy <= 0.60  // center must be within ~77% of radius
+            }()
+            guard isWellInsideROI else {
+                if stableFrameCount > 0 {
+                    stableFrameCount = 0
+                    stableRect = nil
+                }
+                statusText = "Move ball to center of circle"
+                return
+            }
             updateStability(with: observation.normalizedRect)
             statusText = "Tracking ball: \(stableFrameCount)/\(requiredStableFrames) stable frames"
             if stableFrameCount >= requiredStableFrames {
@@ -428,6 +454,7 @@ extension CameraController: AVCaptureVideoDataOutputSampleBufferDelegate {
                 phase = .ready
                 stableRect = rect
                 readyLostFrameCount = 0
+                lockedStateEnteredAt = Date()
                 statusText = "READY — swing when ready"
 
                 let impactROI = expandedImpactROI(from: rect)
@@ -574,19 +601,6 @@ extension CameraController: AVCaptureVideoDataOutputSampleBufferDelegate {
             for obs  in trackingResult.observations { observationMap[obs.frameIndex]  = obs }
             for info in trackingResult.debugInfos   { debugInfoMap[info.frameIndex]   = info }
 
-            // DEPARTURE CHECK — If zero post-impact frames were tracked the ball didn't
-            // actually launch. Most common cause: user repositioned the ball inside the
-            // detection circle, causing a brief ROI brightness spike. Silently re-arm.
-            let postTrackedCount = trackingResult.observations.filter {
-                $0.frameIndex > effectiveImpactIndex && $0.centerX != nil
-            }.count
-            if postTrackedCount == 0 {
-                print("[ShotValidation] 0 post-impact tracked frames — false trigger, re-arming")
-                isAnalyzingShot = false
-                analysisStatusText = ""
-                resetShotPipeline(to: .searching, status: "Looking for ball")
-                return
-            }
         } else {
             print("PostImpactBallTracker: no lockedBallRect — skipping tracking")
         }
@@ -710,6 +724,7 @@ extension CameraController: AVCaptureVideoDataOutputSampleBufferDelegate {
         stableFrameCount = 0
         trackingMissCount = 0
         readyLostFrameCount = 0
+        lockedStateEnteredAt = nil
     }
 
     nonisolated private func normalizedDistance(_ a: CGPoint, _ b: CGPoint) -> CGFloat {
