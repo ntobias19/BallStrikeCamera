@@ -3,8 +3,8 @@
 
 import * as THREE from 'three';
 import { CLUBS, LIE_EFFECT, fmtYards } from './clubs.js';
-import { createShot, simulateCarry, findDropPoint, SURF } from './physics.js';
-import { HOLES, holeLength } from './holes.js';
+import { createShot, simulateCarry, SURF } from './physics.js';
+import { HOLES, RANGE, holeLength } from './holes.js';
 import { buildCourse } from './terrain.js';
 import { makeSky } from './sky.js';
 import { loadAssets } from './assets.js';
@@ -99,7 +99,7 @@ tracerGeo.setAttribute('position', new THREE.BufferAttribute(tracerPos, 3));
 tracerGeo.setDrawRange(0, 0);
 const tracer = new THREE.Line(
   tracerGeo,
-  new THREE.LineBasicMaterial({ color: 0xCBB079, transparent: true, opacity: 0.85 }),
+  new THREE.LineBasicMaterial({ color: 0xecd9ad, transparent: true, opacity: 0.85 }),
 );
 tracer.frustumCulled = false;
 scene.add(tracer);
@@ -109,14 +109,14 @@ let tracerCount = 0;
 const aimGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
 const aimLine = new THREE.Line(
   aimGeo,
-  new THREE.LineDashedMaterial({ color: 0xCBB079, dashSize: 1.6, gapSize: 1.2, transparent: true, opacity: 0.6 }),
+  new THREE.LineDashedMaterial({ color: 0xecd9ad, dashSize: 1.6, gapSize: 1.2, transparent: true, opacity: 0.6 }),
 );
 aimLine.frustumCulled = false;
 scene.add(aimLine);
 
 const ring = new THREE.Mesh(
   new THREE.TorusGeometry(1.5, 0.14, 10, 36),
-  new THREE.MeshBasicMaterial({ color: 0xB89A5E, transparent: true, opacity: 0.85 }),
+  new THREE.MeshBasicMaterial({ color: 0xc9a86a, transparent: true, opacity: 0.85 }),
 );
 ring.rotation.x = -Math.PI / 2;
 scene.add(ring);
@@ -142,7 +142,11 @@ const game = {
   greenCamSet: false,
   camLook: new THREE.Vector3(0, 0, 50),
   time: 0,
+  isRange: false,
 };
+
+let rangeMarkers = null;
+let lastRangeShot = null;
 
 const club = () => CLUBS[game.clubIdx];
 const onGreen = () => game.lie === SURF.GREEN;
@@ -161,6 +165,9 @@ function totalToPar() {
 // ---------- hole / shot setup ----------
 
 function startHole(idx) {
+  if (rangeMarkers) { rangeMarkers.forEach(m => scene.remove(m)); rangeMarkers = null; }
+  game.isRange = false;
+  if (idx === 0) game.scores = HOLES.map(() => null);
   if (game.course) {
     scene.remove(game.course.group);
     game.course.dispose();
@@ -235,6 +242,12 @@ function setupShot() {
 
   hud.setStroke(game.strokes + 1, totalToPar());
   hud.setPin(rem);
+  if (game.isRange) {
+    const pinNum = document.getElementById('pin-num');
+    const pinLabel = document.getElementById('pin-label');
+    if (pinNum) pinNum.textContent = '0';
+    if (pinLabel) pinLabel.textContent = 'CARRY';
+  }
   hud.setLie(game.lie);
   refreshClubHud();
   hud.meterHide();
@@ -333,6 +346,10 @@ function fire(accuracyRaw) {
   } else {
     hud.shotDataShow({ speedMph: speed * 2.237, launchDeg, spinRpm: backspinRpm });
   }
+  if (game.isRange && !c.putter) {
+    lastRangeShot = { speedMph: speed * 2.237, launchDeg, spinRpm: backspinRpm, apexFt: 0 };
+    document.getElementById('range-pill')?.classList.add('hidden');
+  }
   game.shotApex = 0;
   game.shotGroundY = game.course.heightAt(game.ballPos.x, game.ballPos.z);
 
@@ -375,6 +392,40 @@ function resolveShot() {
   const sim = game.sim;
   game.ballPos = { x: sim.pos.x, y: sim.pos.y, z: sim.pos.z };
 
+  // Range mode: show carry/total, reset to tee, no scoring
+  if (game.isRange) {
+    const finalLie = sim.state === 'water' ? SURF.WATER
+      : game.course.surfaceAt(sim.pos.x, sim.pos.z);
+    const carry = sim.carryPos
+      ? Math.hypot(sim.carryPos.x - game.shotStart.x, sim.carryPos.z - game.shotStart.z) : 0;
+    const total = Math.hypot(sim.pos.x - game.shotStart.x, sim.pos.z - game.shotStart.z);
+    if (!club().putter) hud.shotDataResult(fmtYards(carry), fmtYards(total));
+    // populate last-shot pill
+    const rangePill = document.getElementById('range-pill');
+    if (rangePill) {
+      const rs = lastRangeShot || {};
+      const carryYd = fmtYards(carry), totalYd = fmtYards(total);
+      rangePill.innerHTML =
+        `<span class="rp-hi">${carryYd}</span><span class="rp-lo">y carry</span>` +
+        ` · <span class="rp-hi">${totalYd}</span><span class="rp-lo">y total</span>` +
+        (rs.speedMph > 0 ? ` · <span class="rp-hi">${Math.round(rs.speedMph)}</span><span class="rp-lo">mph</span>` : '') +
+        (rs.launchDeg > 0 ? ` · <span class="rp-hi">${Number(rs.launchDeg).toFixed(1)}°</span><span class="rp-lo">launch</span>` : '') +
+        (rs.spinRpm > 0 ? ` · <span class="rp-hi">${Math.round(rs.spinRpm).toLocaleString()}</span><span class="rp-lo">rpm</span>` : '') +
+        (rs.apexFt > 0 ? ` · <span class="rp-hi">${Math.round(rs.apexFt)}</span><span class="rp-lo">ft apex</span>` : '');
+      rangePill.classList.remove('hidden');
+    }
+
+    const t = game.course.teePos;
+    game.ballPos = { x: t.x, y: t.y + 0.0214, z: t.z };
+    game.lie = SURF.TEE;
+    game.shotStart = { ...game.ballPos };
+    tracerCount = 0;
+    tracerGeo.setDrawRange(0, 0);
+    ball.visible = true;
+    setupShot();
+    return;
+  }
+
   if (sim.state === 'holed') {
     const def = HOLES[game.holeIdx];
     game.scores[game.holeIdx] = game.strokes;
@@ -388,12 +439,18 @@ function resolveShot() {
 
   if (sim.state === 'water') {
     game.strokes += 1; // penalty
-    // drop at the last point along the flight that is genuinely ashore
-    const pts = [];
-    for (let i = 0; i < tracerCount; i++) {
-      pts.push({ x: tracerPos[i * 3], z: tracerPos[i * 3 + 2] });
+    // drop at the last dry point along the flight
+    let drop = game.shotStart;
+    for (let i = tracerCount - 1; i >= 0; i--) {
+      const x = tracerPos[i * 3], z = tracerPos[i * 3 + 2];
+      if (game.course.surfaceAt(x, z) !== SURF.WATER) {
+        // nudge back toward the shot origin, out of the hazard line
+        const bx = game.shotStart.x - x, bz = game.shotStart.z - z;
+        const L = Math.hypot(bx, bz) || 1;
+        const dx = x + (bx / L) * 3, dz = z + (bz / L) * 3;
+        if (game.course.surfaceAt(dx, dz) !== SURF.WATER) { drop = { x: dx, z: dz }; break; }
+      }
     }
-    const drop = findDropPoint(game.course, pts, game.shotStart);
     game.ballPos = { x: drop.x, y: game.course.heightAt(drop.x, drop.z) + 0.0214, z: drop.z };
     game.lie = game.course.surfaceAt(drop.x, drop.z);
     hud.toast(`<span class="t-gold">WATER</span><span class="t-sub">+1 PENALTY · DROP</span>`, 2600);
@@ -434,6 +491,69 @@ function nextHole() {
   } else {
     game.state = 'ROUND_DONE';
     hud.summaryShow(HOLES, game.scores);
+  }
+}
+
+function startRange() {
+  if (rangeMarkers) { rangeMarkers.forEach(m => scene.remove(m)); rangeMarkers = null; }
+  game.isRange = true;
+  if (game.course) { scene.remove(game.course.group); game.course.dispose(); }
+  game.course = buildCourse(RANGE, assets);
+  scene.add(game.course.group);
+  game.holeIdx = 0;
+  game.scores = [null];
+  game.strokes = 0;
+  hud.shotDataHide();
+  const t = game.course.teePos;
+  game.ballPos = { x: t.x, y: t.y + 0.0214, z: t.z };
+  game.lie = SURF.TEE;
+  const ang = Math.random() * Math.PI * 2;
+  const spd = Math.random() * RANGE.windMax;
+  game.wind = { x: Math.sin(ang) * spd, z: Math.cos(ang) * spd, speed: spd };
+  tracerCount = 0;
+  tracerGeo.setDrawRange(0, 0);
+  hud.mapSetHole(RANGE);
+  hud.show();
+  // override hole card for range
+  const hcHole = document.getElementById('hc-hole');
+  const hcPar  = document.getElementById('hc-par');
+  const hcYds  = document.getElementById('hc-yds');
+  const hcName = document.getElementById('hc-name');
+  if (hcHole) hcHole.textContent = 'RANGE';
+  if (hcPar)  hcPar.textContent  = 'PRACTICE';
+  if (hcYds)  hcYds.textContent  = '';
+  if (hcName) hcName.textContent = 'DRIVING RANGE';
+  const helpStrip = document.getElementById('help-strip');
+  if (helpStrip && window.__liveMode) {
+    helpStrip.textContent = 'RANGE · LIVE MODE — hit shots on your phone · M MUTE';
+  }
+  const liveWaiting = document.getElementById('live-waiting');
+  if (liveWaiting && window.__liveMode) liveWaiting.classList.remove('hidden');
+  setupShot();
+  buildRangeMarkers();
+}
+
+function buildRangeMarkers() {
+  rangeMarkers = [];
+  const yardages = [50, 100, 150, 200, 250, 300];
+  const ox = game.course.teePos.x, oz = game.course.teePos.z;
+  for (const yd of yardages) {
+    const dist = yd * 0.9144;
+    const mz = oz + dist, mx = ox;
+    const my = game.course.heightAt(mx, mz) + 0.07;
+    const isHundred = yd % 100 === 0;
+    const marker = new THREE.Mesh(
+      new THREE.TorusGeometry(isHundred ? 4 : 2.5, 0.12, 6, 40),
+      new THREE.MeshBasicMaterial({
+        color: isHundred ? 0xffd700 : 0xffffff,
+        transparent: true, opacity: isHundred ? 0.75 : 0.45,
+        depthWrite: false,
+      })
+    );
+    marker.rotation.x = -Math.PI / 2;
+    marker.position.set(mx, my, mz);
+    scene.add(marker);
+    rangeMarkers.push(marker);
   }
 }
 
@@ -586,6 +706,31 @@ window.addEventListener('pointerup', () => {
   dragInfo = null;
 });
 
+// Map an app club name (e.g. "7 Iron", "SW") to a CLUBS index.
+function matchClubByName(name) {
+  if (!name) return -1;
+  const n = name.trim().toUpperCase().replace(/\s+/g, ' ');
+  let idx = CLUBS.findIndex(c => c.name === n);
+  if (idx >= 0) return idx;
+  idx = CLUBS.findIndex(c => c.id === n);
+  if (idx >= 0) return idx;
+  if (n.includes('DRIVER') || n === 'DR') return 0;
+  if ((n.includes('3') && n.includes('WOOD')) || n === 'W3') return 1;
+  if ((n.includes('5') && n.includes('WOOD')) || n === 'W5') return 2;
+  if (n.includes('HYBRID') || n === 'HY') return 3;
+  if ((n.includes('4') && n.includes('IRON')) || n === 'I4') return 4;
+  if ((n.includes('5') && n.includes('IRON')) || n === 'I5') return 5;
+  if ((n.includes('6') && n.includes('IRON')) || n === 'I6') return 6;
+  if ((n.includes('7') && n.includes('IRON')) || n === 'I7') return 7;
+  if ((n.includes('8') && n.includes('IRON')) || n === 'I8') return 8;
+  if ((n.includes('9') && n.includes('IRON')) || n === 'I9') return 9;
+  if (n.includes('PITCH') || n === 'PW' || n === 'P WEDGE') return 10;
+  if (n.includes('GAP') || n.includes('APPROACH') || n === 'GW' || n === 'AW') return 11;
+  if (n.includes('SAND') || n === 'SW' || n === 'S WEDGE') return 12;
+  if (n.includes('PUTT') || n === 'PT') return 13;
+  return -1;
+}
+
 function rotateAim(ang) {
   const { x, z } = game.aimDir;
   const c = Math.cos(ang), s = Math.sin(ang);
@@ -595,6 +740,7 @@ function rotateAim(ang) {
 }
 
 function changeClub(delta) {
+  if (window.__liveMode) return; // club is driven by app in live mode
   if (game.state !== 'AIM') return;
   game.clubIdx = (game.clubIdx + delta + CLUBS.length) % CLUBS.length;
   refreshClubHud();
@@ -694,16 +840,37 @@ function updateFlight() {
     else if (ev.type === 'splash') SFX.splash();
     else if (ev.type === 'holed') SFX.holed();
     else if (ev.type === 'lip') hud.toast('<span class="t-gold">LIP OUT</span>', 1400);
+    else if (ev.type === 'tree') {
+      if (ev.graze) {
+        SFX.bounce(2);
+        hud.toast('<span class="t-sub">BRUSH</span>', 900);
+      } else {
+        SFX.bounce(4);
+        hud.toast('<span class="t-sub">TREE</span>', 1100);
+      }
+    }
   }
 
   ball.position.set(sim.pos.x, sim.pos.y, sim.pos.z);
   pushTracer(sim.pos);
-  hud.setPin(Math.hypot(sim.pos.x - game.course.pinPos.x, sim.pos.z - game.course.pinPos.z));
+
+  if (game.isRange) {
+    const pinNum = document.getElementById('pin-num');
+    const pinLabel = document.getElementById('pin-label');
+    if (pinNum && pinLabel) {
+      const d = Math.hypot(sim.pos.x - game.shotStart.x, sim.pos.z - game.shotStart.z);
+      pinNum.textContent = fmtYards(d);
+      pinLabel.textContent = sim.carryPos ? 'TOTAL' : 'CARRY';
+    }
+  } else {
+    hud.setPin(Math.hypot(sim.pos.x - game.course.pinPos.x, sim.pos.z - game.course.pinPos.z));
+  }
 
   const alt = sim.pos.y - game.shotGroundY;
   if (alt > game.shotApex) {
     game.shotApex = alt;
     if (!club().putter) hud.shotDataApex(game.shotApex * 3.28084);
+    if (lastRangeShot) lastRangeShot.apexFt = game.shotApex * 3.28084;
   }
 
   flightCamera();
@@ -797,6 +964,23 @@ window.parent?.postMessage({ type: 'SIM_READY' }, '*');
 
 // postMessage preview mode: course-builder sends PREVIEW_HOLE with custom holes array.
 window.addEventListener('message', (e) => {
+  // Play page tells the sim to start. Works from any state (course switching).
+  if (e.data?.type === 'START_SIM') {
+    assetsReady.then(() => {
+      if (game.state === 'TITLE') hud.titleHide();
+      startHole(0);
+    });
+    return;
+  }
+
+  if (e.data?.type === 'START_RANGE') {
+    assetsReady.then(() => {
+      if (game.state === 'TITLE') hud.titleHide();
+      startRange();
+    });
+    return;
+  }
+
   if (!e.data || e.data.type !== 'PREVIEW_HOLE') return;
   const { holes, holeIndex = 0 } = e.data;
   if (!holes?.length) return;
@@ -870,10 +1054,13 @@ if (liveCode) {
   // eslint-disable-next-line no-global-assign
   window.__liveMode = true;
 
+  const liveClub = document.getElementById('live-club');
+
   function updateLiveStatus(text, cls) {
     if (!liveStatus) return;
     liveStatus.textContent = text;
     liveStatus.className = 'live-status-badge ' + (cls || '');
+    liveStatus.classList.remove('hidden');
   }
 
   function updateLiveShotNum(n) {
@@ -882,8 +1069,11 @@ if (liveCode) {
     liveShotNum.classList.remove('hidden');
   }
 
-  // Show status badge immediately.
-  if (liveStatus) liveStatus.classList.remove('hidden');
+  function updateLiveClub(name) {
+    if (!liveClub) return;
+    liveClub.textContent = name;
+    liveClub.classList.remove('hidden');
+  }
 
   connectLive(liveCode,
     // onShotReceived
@@ -894,14 +1084,25 @@ if (liveCode) {
         updateLiveShotNum(game.strokes);
       }
     },
-    // onStatusChange
+    // onStatusChange — only surface errors; don't show "waiting for shot" unsolicited
     function (status) {
-      if (status === 'connecting') {
-        updateLiveStatus('Connecting…', 'live-connecting');
-      } else if (status === 'connected') {
-        updateLiveStatus('● Live — waiting for shot', 'live-connected');
-      } else {
+      if (status === 'error') {
         updateLiveStatus('Connection error — reload to retry', 'live-error');
+      }
+      // connecting / connected states are silent; the play page handles the UX
+    },
+    // onPing — app tapped Connect; tell the parent page to advance to course selector
+    function () {
+      window.parent?.postMessage({ type: 'APP_CONNECTED' }, '*');
+    },
+    // onClubChanged — sync club selection from app
+    function (clubName) {
+      updateLiveClub(clubName);
+      const idx = matchClubByName(clubName);
+      if (idx >= 0) {
+        game.clubIdx = idx;
+        refreshClubHud();
+        if (game.state === 'AIM') updateGuides();
       }
     }
   );
@@ -930,6 +1131,10 @@ function fireLiveShot({ ballSpeedMph, vlaDegrees, backspinRpm, sidespinRpm, hlaD
   hud.meterHide();
   hud.toastHide();
   hud.shotDataShow({ speedMph: ballSpeedMph, launchDeg: vlaDegrees || 12, spinRpm: Math.abs(backspinRpm || 4000) });
+  if (game.isRange) {
+    lastRangeShot = { speedMph: ballSpeedMph, launchDeg: vlaDegrees || 12, spinRpm: Math.abs(backspinRpm || 0), apexFt: 0 };
+    document.getElementById('range-pill')?.classList.add('hidden');
+  }
   game.shotApex = 0;
   game.shotGroundY = game.course.heightAt(game.ballPos.x, game.ballPos.z);
 

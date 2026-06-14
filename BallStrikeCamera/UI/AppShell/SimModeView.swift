@@ -108,9 +108,9 @@ struct SimModeView: View {
             } else {
                 bleVM.stop()
             }
-            // Fresh code each time Live Sim is selected.
-            if provider == "Live Sim" {
-                liveSimService.regenerateCode()
+            // Clear any previously entered code when switching away from Live Sim.
+            if provider != "Live Sim" {
+                liveSimService.enteredCode = ""
             }
         }
         .onDisappear { bleVM.stop() }
@@ -311,7 +311,7 @@ struct SimModeView: View {
     private var liveSimSection: some View {
         LiveSimCodeView(liveSimService: liveSimService) {
             if !simVM.sessionActive {
-                Task { await simVM.startSession(provider: .notConnected, usedOGS: false) }
+                Task { await simVM.startSession(provider: .liveSim, usedOGS: false) }
             }
             showLiveCamera = true
         }

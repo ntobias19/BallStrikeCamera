@@ -2,6 +2,7 @@
 // and the top-down minimap (drawn straight from the hole definition).
 
 import { fmtYards } from './clubs.js';
+import { holeLength } from './holes.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -34,9 +35,18 @@ export class HUD {
       summary: $('summary'), summaryScore: $('summary-score'),
       summaryTable: $('summary-table'), btnAgain: $('btn-again'),
       minimap: $('minimap'),
+      btnHoles: $('btn-holes'),
+      jumpMenu: $('jump-menu'), jumpList: $('jump-list'),
     };
     this.mapCtx = this.el.minimap.getContext('2d');
     this.toastTimer = null;
+
+    // close the jump menu when the backdrop (not the panel) is clicked
+    if (this.el.jumpMenu) {
+      this.el.jumpMenu.addEventListener('click', (e) => {
+        if (e.target === this.el.jumpMenu) this.jumpMenuHide();
+      });
+    }
   }
 
   show() { this.el.hud.classList.remove('hidden'); }
@@ -215,108 +225,185 @@ export class HUD {
   }
   summaryHide() { this.el.summary.classList.add('hidden'); }
 
-  // ---------- minimap ----------
+  // ---------- minimap (whole-course overview, world coordinates) ----------
 
-  mapSetHole(hole) {
-    this.mapHole = hole;
-    const tee = hole.path[0];
-    const green = hole.path[hole.path.length - 1];
-    const dx = green.x - tee.x, dz = green.z - tee.z;
-    const L = Math.hypot(dx, dz) || 1;
-    this.mapDir = { x: dx / L, z: dz / L };           // map "up"
-    this.mapRight = { x: this.mapDir.z, z: -this.mapDir.x };
-
-    // gather extents in rotated frame
-    const pts = [...hole.path];
-    for (const b of hole.bunkers) pts.push({ x: b.cx, z: b.cz });
-    if (hole.green) pts.push({ x: hole.green.cx, z: hole.green.cz });
-    let minF = Infinity, maxF = -Infinity, minS = Infinity, maxS = -Infinity;
-    for (const p of pts) {
-      const f = p.x * this.mapDir.x + p.z * this.mapDir.z;
-      const s = p.x * this.mapRight.x + p.z * this.mapRight.z;
-      minF = Math.min(minF, f); maxF = Math.max(maxF, f);
-      minS = Math.min(minS, s); maxS = Math.max(maxS, s);
+  // Fit every hole's world-space footprint into the minimap. North-up (no
+  // per-hole rotation) so the routing reads as one connected course.
+  mapSetCourse(holes, focusIdx) {
+    this.worldHoles = holes;
+    this.focusIdx = focusIdx;
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    const ext = (x, z, m = 0) => {
+      minX = Math.min(minX, x - m); maxX = Math.max(maxX, x + m);
+      minZ = Math.min(minZ, z - m); maxZ = Math.max(maxZ, z + m);
+    };
+    for (const h of holes) {
+      for (const p of h.path) ext(p.x, p.z, h.fairwayHalf);
+      ext(h.green.cx, h.green.cz, Math.max(h.green.rx, h.green.rz));
+      for (const b of h.bunkers) ext(b.cx, b.cz, Math.max(b.rx, b.rz));
+      for (const w of h.water) {
+        if (w.type === 'pond') ext(w.cx, w.cz, Math.max(w.rx, w.rz));
+        else for (const p of w.pts) ext(p.x, p.z, w.width);
+      }
     }
-    minF -= 30; maxF += 30; minS -= 38; maxS += 38;
+    const padX = (maxX - minX) * 0.06 + 12, padZ = (maxZ - minZ) * 0.06 + 12;
+    minX -= padX; maxX += padX; minZ -= padZ; maxZ += padZ;
     const W = this.el.minimap.width, H = this.el.minimap.height;
-    this.mapScale = Math.min(W / (maxS - minS), H / (maxF - minF));
-    this.mapMid = { f: (minF + maxF) / 2, s: (minS + maxS) / 2 };
+    this.mapScale = Math.min(W / (maxX - minX), H / (maxZ - minZ));
+    this.mapBounds = { minX, maxX, minZ, maxZ };
+    this.mapOff = {
+      x: (W - (maxX - minX) * this.mapScale) / 2,
+      y: (H - (maxZ - minZ) * this.mapScale) / 2,
+    };
   }
 
   mapPt(x, z) {
-    const W = this.el.minimap.width, H = this.el.minimap.height;
-    const f = x * this.mapDir.x + z * this.mapDir.z;
-    const s = x * this.mapRight.x + z * this.mapRight.z;
-    return [
-      W / 2 + (s - this.mapMid.s) * this.mapScale,
-      H / 2 - (f - this.mapMid.f) * this.mapScale,
-    ];
+    const b = this.mapBounds, sc = this.mapScale;
+    return [this.mapOff.x + (x - b.minX) * sc, this.mapOff.y + (b.maxZ - z) * sc];
+  }
+
+  // Build a closed variable-width ribbon polygon (canvas points) around a hole
+  // path. `halfWidthAt(t)` gives the half-width in metres at normalised position
+  // t∈[0,1] along the hole, so fairways can taper and bulge organically.
+  _ribbon(path, halfWidthAt) {
+    const s = [];
+    for (let i = 0; i < path.length - 1; i++) {
+      const a = path[i], b = path[i + 1];
+      const segLen = Math.hypot(b.x - a.x, b.z - a.z);
+      const steps = Math.max(1, Math.round(segLen / 7));
+      for (let k = 0; k < steps; k++) {
+        const t = k / steps;
+        s.push({ x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t });
+      }
+    }
+    s.push(path[path.length - 1]);
+    const n = s.length, L = [], R = [];
+    for (let i = 0; i < n; i++) {
+      const pv = s[Math.max(0, i - 1)], nx2 = s[Math.min(n - 1, i + 1)];
+      let tx = nx2.x - pv.x, tz = nx2.z - pv.z;
+      const tl = Math.hypot(tx, tz) || 1; tx /= tl; tz /= tl;
+      const nx = -tz, nz = tx;                           // left normal
+      const hw = halfWidthAt(i / (n - 1));
+      L.push(this.mapPt(s[i].x + nx * hw, s[i].z + nz * hw));
+      R.push(this.mapPt(s[i].x - nx * hw, s[i].z - nz * hw));
+    }
+    return L.concat(R.reverse());
+  }
+
+  _fillPoly(pts, style) {
+    const ctx = this.mapCtx;
+    ctx.fillStyle = style;
+    ctx.beginPath();
+    pts.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
+    ctx.closePath();
+    ctx.fill();
   }
 
   mapDraw(ball, aimDir, pin) {
-    if (!this.mapHole) return;
+    if (!this.worldHoles) return;
     const ctx = this.mapCtx;
-    const hole = this.mapHole;
     const W = this.el.minimap.width, H = this.el.minimap.height;
     const sc = this.mapScale;
     ctx.clearRect(0, 0, W, H);
 
-    // rough backdrop
-    ctx.fillStyle = 'rgba(34, 58, 28, 0.85)';
+    // dark ground outside the course
+    ctx.fillStyle = '#0f1d10';
     ctx.beginPath();
     ctx.roundRect(0, 0, W, H, 9);
     ctx.fill();
+    ctx.save();
+    ctx.beginPath(); ctx.roundRect(0, 0, W, H, 9); ctx.clip();
 
-    // fairway corridor
-    ctx.strokeStyle = '#4f8a3c';
-    ctx.lineWidth = hole.fairwayHalf * 2 * sc;
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    ctx.beginPath();
-    hole.path.forEach((p, i) => {
-      const [mx, my] = this.mapPt(p.x, p.z);
-      i ? ctx.lineTo(mx, my) : ctx.moveTo(mx, my);
-    });
-    ctx.stroke();
 
-    // water
-    ctx.fillStyle = '#2a5d74'; ctx.strokeStyle = '#2a5d74';
-    for (const w of hole.water) {
-      if (w.type === 'pond') {
-        const [mx, my] = this.mapPt(w.cx, w.cz);
-        ctx.beginPath();
-        ctx.ellipse(mx, my, w.rx * sc, w.rz * sc, 0, 0, Math.PI * 2);
-        ctx.fill();
-      } else {
-        ctx.lineWidth = w.width * sc;
-        ctx.beginPath();
-        w.pts.forEach((p, i) => {
-          const [mx, my] = this.mapPt(p.x, p.z);
-          i ? ctx.lineTo(mx, my) : ctx.moveTo(mx, my);
-        });
-        ctx.stroke();
+    // 1) ROUGH underlay: a wide corridor per hole. Adjacent holes' corridors
+    //    merge into one organic green "property" mass — the course body.
+    ctx.strokeStyle = '#2f5128';
+    this.worldHoles.forEach((hole) => {
+      ctx.lineWidth = (hole.fairwayHalf + 30) * 2 * sc;
+      ctx.beginPath();
+      hole.path.forEach((p, j) => {
+        const [mx, my] = this.mapPt(p.x, p.z);
+        j ? ctx.lineTo(mx, my) : ctx.moveTo(mx, my);
+      });
+      ctx.stroke();
+    });
+    // tree speckle in the rough (deterministic), gives the property texture
+    ctx.fillStyle = 'rgba(20,40,18,0.55)';
+    let seed = 9241;
+    const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+    for (const hole of this.worldHoles) {
+      for (const p of hole.path) {
+        for (let t = 0; t < 3; t++) {
+          const ang = rnd() * Math.PI * 2, r = (hole.fairwayHalf + 12 + rnd() * 26);
+          const [mx, my] = this.mapPt(p.x + Math.cos(ang) * r, p.z + Math.sin(ang) * r);
+          ctx.beginPath(); ctx.arc(mx, my, 1.4, 0, Math.PI * 2); ctx.fill();
+        }
       }
     }
 
-    // green
-    {
+    // 2) first-cut + fairway as variable-width ribbons (narrow off the tee and
+    //    at the green, bulging through the landing zones) so holes read as
+    //    organic shapes with doglegs, not uniform bars.
+    const prof = (t) => 0.5 + 0.5 * Math.sin(Math.max(0, Math.min(1, t)) * Math.PI);
+    this.worldHoles.forEach((hole, i) => {
+      const isF = i === this.focusIdx;
+      const fhw = hole.fairwayHalf;
+      this._fillPoly(this._ribbon(hole.path, (t) => (fhw + 5) * (0.62 + 0.38 * prof(t))), '#3e7233');
+      this._fillPoly(this._ribbon(hole.path, (t) => fhw * (0.5 + 0.5 * prof(t))), isF ? '#67ad4f' : '#4f9040');
+    });
+
+    // water — every hole
+    ctx.fillStyle = '#2a5d74'; ctx.strokeStyle = '#2a5d74';
+    for (const hole of this.worldHoles) {
+      for (const w of hole.water) {
+        if (w.type === 'pond') {
+          const [mx, my] = this.mapPt(w.cx, w.cz);
+          ctx.beginPath();
+          ctx.ellipse(mx, my, w.rx * sc, w.rz * sc, w.rot || 0, 0, Math.PI * 2);
+          ctx.fill();
+        } else {
+          ctx.lineWidth = w.width * sc;
+          ctx.beginPath();
+          w.pts.forEach((p, j) => {
+            const [mx, my] = this.mapPt(p.x, p.z);
+            j ? ctx.lineTo(mx, my) : ctx.moveTo(mx, my);
+          });
+          ctx.stroke();
+        }
+      }
+    }
+
+    // greens + bunkers + tee number labels — every hole
+    this.worldHoles.forEach((hole, i) => {
+      const isF = i === this.focusIdx;
       const g = hole.green;
-      const [mx, my] = this.mapPt(g.cx, g.cz);
-      ctx.fillStyle = '#79bb60';
+      let [mx, my] = this.mapPt(g.cx, g.cz);
+      ctx.fillStyle = isF ? '#8fd673' : '#6aa552';
       ctx.beginPath();
       ctx.ellipse(mx, my, ((g.rx + g.rz) / 2) * sc, ((g.rx + g.rz) / 2) * sc, 0, 0, Math.PI * 2);
       ctx.fill();
-    }
 
-    // bunkers
-    ctx.fillStyle = '#dcc995';
-    for (const b of hole.bunkers) {
-      const [mx, my] = this.mapPt(b.cx, b.cz);
-      ctx.beginPath();
-      ctx.ellipse(mx, my, ((b.rx + b.rz) / 2) * sc, ((b.rx + b.rz) / 2) * sc, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
+      ctx.fillStyle = '#dcc995';
+      for (const b of hole.bunkers) {
+        const [bx, by] = this.mapPt(b.cx, b.cz);
+        ctx.beginPath();
+        ctx.ellipse(bx, by, ((b.rx + b.rz) / 2) * sc, ((b.rx + b.rz) / 2) * sc, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
 
-    // aim line
+      // hole number at the tee
+      if (!hole.isRange) {
+        const t = hole.path[0];
+        const [tx, ty] = this.mapPt(t.x, t.z);
+        ctx.fillStyle = isF ? '#f4e2a8' : 'rgba(230,232,220,0.7)';
+        ctx.font = `${isF ? 'bold ' : ''}9px Rajdhani, sans-serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(String(hole.id), tx, ty);
+      }
+    });
+
+    // aim line (focus hole)
     if (ball && aimDir) {
       const [bx, by] = this.mapPt(ball.x, ball.z);
       const [ax, ay] = this.mapPt(ball.x + aimDir.x * 400, ball.z + aimDir.z * 400);
@@ -342,5 +429,33 @@ export class HUD {
       ctx.lineWidth = 1;
       ctx.beginPath(); ctx.arc(bx, by, 3, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     }
+
+    ctx.restore();
+  }
+
+  // ---------- hole jump menu ----------
+
+  jumpMenuToggle(holes, currentIdx, onPick) {
+    const m = this.el.jumpMenu;
+    if (!m) return;
+    if (!m.classList.contains('hidden')) { m.classList.add('hidden'); return; }
+    const list = this.el.jumpList;
+    list.innerHTML = '';
+    holes.forEach((h, i) => {
+      if (h.isRange) return;
+      const btn = document.createElement('button');
+      btn.className = 'jump-item' + (i === currentIdx ? ' current' : '');
+      btn.innerHTML =
+        `<span class="ji-num">${h.id}</span>` +
+        `<span class="ji-name">${h.name}</span>` +
+        `<span class="ji-meta">PAR ${h.par} · ${fmtYards(holeLength(h))}y</span>`;
+      btn.addEventListener('click', () => onPick(i));
+      list.appendChild(btn);
+    });
+    m.classList.remove('hidden');
+  }
+
+  jumpMenuHide() {
+    if (this.el.jumpMenu) this.el.jumpMenu.classList.add('hidden');
   }
 }

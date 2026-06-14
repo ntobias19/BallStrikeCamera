@@ -90,8 +90,9 @@
     </div>
 
     <canvas id="minimap" width="170" height="290"></canvas>
+    <button id="btn-holes" class="holes-btn" title="Jump to a hole (H)">⛳ HOLES</button>
 
-    <div id="help-strip">DRAG / ◀ ▶ AIM &nbsp;·&nbsp; ▲▼ CLUB &nbsp;·&nbsp; SPACE / CLICK SWING &nbsp;·&nbsp; TAB CARD &nbsp;·&nbsp; M MUTE</div>
+    <div id="help-strip">DRAG / ◀ ▶ AIM &nbsp;·&nbsp; ▲▼ CLUB &nbsp;·&nbsp; SPACE / CLICK SWING &nbsp;·&nbsp; H HOLES &nbsp;·&nbsp; TAB CARD &nbsp;·&nbsp; M MUTE</div>
   </div>
 
   <!-- ================= OVERLAYS ================= -->
@@ -137,6 +138,15 @@
     </div>
   </div>
 
+  <!-- Hole jump menu: transport to any hole's tee -->
+  <div id="jump-menu" class="overlay hidden">
+    <div class="jump-inner">
+      <div class="card-title">SELECT HOLE</div>
+      <div id="jump-list" class="jump-list"></div>
+      <div class="card-hint">H to close · tap a hole to transport</div>
+    </div>
+  </div>
+
   <div id="summary" class="overlay hidden">
     <div class="card-inner">
       <div class="card-title">ROUND COMPLETE</div>
@@ -150,16 +160,24 @@
   <div id="live-waiting" class="overlay live-waiting-overlay hidden">
     <div class="live-waiting-inner">
       <div class="live-waiting-icon">📡</div>
-      <div class="live-waiting-title">LIVE MODE ACTIVE</div>
-      <div class="live-waiting-sub">Hit a shot on your iPhone to start</div>
+      <div>
+        <div class="live-waiting-title">Live Mode Active</div>
+        <div class="live-waiting-sub">Hit a shot on your iPhone</div>
+      </div>
     </div>
   </div>
 
-  <!-- Live Sim: status badge (top-right corner) -->
+  <!-- Live Sim: status badge (top-right corner, only shown on error) -->
   <div id="live-status" class="live-status-badge hidden"></div>
 
-  <!-- Live Sim: shot counter (top-left, below hole card) -->
+  <!-- Live Sim: shot counter (top-left) -->
   <div id="live-shot-num" class="live-shot-num hidden"></div>
+
+  <!-- Live Sim: current club (top-center) -->
+  <div id="live-club" class="live-club hidden"></div>
+
+  <!-- Range: last-shot metrics pill -->
+  <div id="range-pill" class="range-pill hidden"></div>
 
 </div>
 <script>

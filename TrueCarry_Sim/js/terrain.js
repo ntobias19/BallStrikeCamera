@@ -274,16 +274,45 @@ function treeKit(assets) {
 
 // ---------- course field + meshes ----------
 
-export function buildCourse(hole, assets) {
-  const fbmBase = makeFbm(hole.seed, 4);
-  const fbmDetail = makeFbm(hole.seed * 7 + 3, 3);
-  const fbmGreen = makeFbm(hole.seed * 13 + 5, 3);
+// `holes` is the full world-space routing; `focusIdx` is the hole being played.
+// The field is evaluated over every hole whose footprint overlaps the rendered
+// region (see `active` below) so neighbours blend into one continuous course.
+// (For the range, pass a single-hole array: buildCourse([RANGE], 0, assets).)
+export function buildCourse(holes, focusIdx, assets) {
+  const focus = holes[focusIdx];
+  const hole = focus;                 // focus-hole alias used throughout visuals
+  const isRange = !!focus.isRange;
+
+  const fbmBase = makeFbm(focus.seed, 4);
+  const fbmDetail = makeFbm(focus.seed * 7 + 3, 3);
+  const fbmGreen = makeFbm(focus.seed * 13 + 5, 3);
+
+  // Elevation is sampled in the FOCUS hole's LOCAL frame, so the hole you play
+  // sits on exactly the terrain it was tuned for — yet it's still one continuous
+  // field across the whole rendered region (neighbours included, no seams),
+  // because the region is only ever a single focus hole's neighbourhood.
+  const place = focus.place || { ox: 0, oz: 0, rot: 0 };
+  const pc = Math.cos(place.rot), ps = Math.sin(place.rot);
+  const toLocal = (x, z) => {                 // inverse of routing's toWorld
+    const dx = x - place.ox, dz = z - place.oz;
+    return { lx: dx * pc - dz * ps, lz: dx * ps + dz * pc };
+  };
 
   const path = hole.path;
   const tee = path[0];
   const fhw = hole.fairwayHalf;
 
-  const baseAt = (x, z) => fbmBase(x * 0.0065, z * 0.0065) * 4.5 + fbmBase(x * 0.018 + 50, z * 0.018) * 1.1;
+  const baseAt = isRange
+    ? (x, z) => { const l = toLocal(x, z); return fbmBase(l.lx * 0.003, l.lz * 0.003) * 0.35; }
+    : (x, z) => {
+        const l = toLocal(x, z);
+        return fbmBase(l.lx * 0.0065, l.lz * 0.0065) * 4.5 + fbmBase(l.lx * 0.018 + 50, l.lz * 0.018) * 1.1;
+      };
+
+  // focusSet drives physics/lie (the hole you're playing only); active is the
+  // set of neighbours that also get RENDERED (assigned once region bounds known).
+  const focusSet = [focus];
+  let active = [focus];
 
   // water level: relative to terrain near the water features
   let waterLevel = -100;
@@ -315,41 +344,59 @@ export function buildCourse(hole, assets) {
     return { m, core };
   }
 
-  function heightAt(x, z) {
-    const p = distToPolyline(path, x, z);
-    const fairMask = sstep(fhw + 20, fhw - 5, p.dist);
+  // `set` selects which holes contribute. Physics/lie use the focus hole only
+  // (so each hole plays exactly as designed, regardless of how tightly packed
+  // its neighbours are); the mesh passes `active` so neighbours render too.
+  function heightAt(x, z, set = focusSet) {
+    const l = toLocal(x, z);   // focus-local sample coords for the noise fields
+
+    // nearest fairway across the set → continuous fairway/rough blend
+    let fairMask = 0;
+    for (const ho of set) {
+      const d = distToPolyline(ho.path, x, z).dist;
+      fairMask = Math.max(fairMask, sstep(ho.fairwayHalf + 20, ho.fairwayHalf - 5, d));
+    }
 
     let h = baseAt(x, z);
-    h += fbmDetail(x * 0.05, z * 0.05) * 0.85 * (1 - fairMask);  // bumpy rough
-    h += fairMask * 0.15;                                        // slight fairway crown
+    h += fbmDetail(l.lx * 0.05, l.lz * 0.05) * 0.85 * (1 - fairMask);  // bumpy rough
+    h += fbmGreen(l.lx * 0.034 + 700, l.lz * 0.034) * 0.5;            // gentle micro-undulation everywhere
+    h += fairMask * 0.15;                                             // slight fairway crown
 
-    // green plateau with gentle internal contours
-    const gv = ellipseVal(hole.green, x, z);
-    if (gv < 3.2) {
-      const gm = 1 - sstep(1.05, 2.6, gv);
-      const greenH = baseAt(hole.green.cx, hole.green.cz) + 0.4
-        + fbmGreen(x * 0.028, z * 0.028) * 0.13;
-      h = lerp(h, greenH, gm);
-    }
-
-    // tee pad
-    const td = Math.hypot(x - tee.x, z - tee.z);
-    if (td < 16) {
-      const tm = 1 - sstep(7, 15, td);
-      h = lerp(h, baseAt(tee.x, tee.z) + 0.45, tm);
-    }
-
-    // bunkers: bowl + soft lip
-    for (const b of hole.bunkers) {
-      const bv = ellipseVal(b, x, z);
-      if (bv < 2.2) {
-        const t = Math.max(0, 1 - bv);
-        h -= b.depth * Math.pow(t, 1.25);
-        h += 0.13 * Math.exp(-((bv - 1.18) ** 2) / 0.03);
+    // green plateaus with gentle internal contours
+    for (const ho of set) {
+      const g = ho.green;
+      const gv = ellipseVal(g, x, z);
+      if (gv < 3.2) {
+        const gm = 1 - sstep(1.05, 2.6, gv);
+        const greenH = baseAt(g.cx, g.cz) + 0.4 + fbmGreen(l.lx * 0.028, l.lz * 0.028) * 0.13;
+        h = lerp(h, greenH, gm);
       }
     }
 
-    // water carve (after fairway so the creek cuts through)
+    // tee pads
+    for (const ho of set) {
+      const t = ho.path[0];
+      const td = Math.hypot(x - t.x, z - t.z);
+      if (td < 16) {
+        const tm = 1 - sstep(7, 15, td);
+        h = lerp(h, baseAt(t.x, t.z) + 0.45, tm);
+      }
+    }
+
+    // bunkers: dished bowl + a raised lip/face on the rim, so the trap reads as
+    // a real 3D hazard the ball must climb out of (not a painted patch).
+    for (const ho of set) {
+      for (const b of ho.bunkers) {
+        const bv = ellipseVal(b, x, z);
+        if (bv < 2.4) {
+          const t = Math.max(0, 1 - bv);
+          h -= b.depth * Math.pow(t, 1.15);                       // steeper wall, flatter floor
+          h += 0.22 * Math.exp(-((bv - 1.12) ** 2) / 0.02);       // pronounced grass lip
+        }
+      }
+    }
+
+    // water carve (focus hole only — after fairway so the creek cuts through)
     if (hasWater) {
       const { m } = waterMask(x, z);
       if (m > 0) h = lerp(h, bedH, m * 0.95);
@@ -357,20 +404,25 @@ export function buildCourse(hole, assets) {
     return h;
   }
 
-  function surfaceAt(x, z) {
+  function surfaceAt(x, z, set = focusSet) {
     if (hasWater) {
       const { core } = waterMask(x, z);
-      if (core && heightAt(x, z) <= waterLevel + 0.06) return SURF.WATER;
+      if (core && heightAt(x, z, set) <= waterLevel + 0.06) return SURF.WATER;
     }
-    for (const b of hole.bunkers) {
-      if (ellipseVal(b, x, z) < 1) return SURF.SAND;
+    for (const ho of set) {
+      for (const b of ho.bunkers) {
+        if (ellipseVal(b, x, z) < 1) return SURF.SAND;
+      }
     }
-    const gv = ellipseVal(hole.green, x, z);
-    if (gv <= 1.0) return SURF.GREEN;
-    if (gv <= 1.6) return SURF.FRINGE;
-    if (Math.hypot(x - tee.x, z - tee.z) < 7) return SURF.TEE;
-    const p = distToPolyline(path, x, z);
-    if (p.dist < fhw) return SURF.FAIRWAY;
+    for (const ho of set) { if (ellipseVal(ho.green, x, z) <= 1.0) return SURF.GREEN; }
+    for (const ho of set) { if (ellipseVal(ho.green, x, z) <= 1.6) return SURF.FRINGE; }
+    for (const ho of set) {
+      const t = ho.path[0];
+      if (Math.hypot(x - t.x, z - t.z) < 7) return SURF.TEE;
+    }
+    for (const ho of set) {
+      if (distToPolyline(ho.path, x, z).dist < ho.fairwayHalf) return SURF.FAIRWAY;
+    }
     return SURF.ROUGH;
   }
 
@@ -419,6 +471,21 @@ export function buildCourse(hole, assets) {
   const MARGIN = 90;
   minX -= MARGIN; maxX += MARGIN; minZ -= MARGIN; maxZ += MARGIN;
 
+  // Holes whose footprint overlaps this region render + feed the field too,
+  // so neighbours appear as part of one continuous course (not islands).
+  active = holes.filter((h) => {
+    let hx0 = Infinity, hx1 = -Infinity, hz0 = Infinity, hz1 = -Infinity;
+    const ext = (x, z, m) => {
+      hx0 = Math.min(hx0, x - m); hx1 = Math.max(hx1, x + m);
+      hz0 = Math.min(hz0, z - m); hz1 = Math.max(hz1, z + m);
+    };
+    for (const p of h.path) ext(p.x, p.z, h.fairwayHalf);
+    ext(h.green.cx, h.green.cz, Math.max(h.green.rx, h.green.rz));
+    for (const b of h.bunkers) ext(b.cx, b.cz, Math.max(b.rx, b.rz));
+    return hx1 >= minX && hx0 <= maxX && hz1 >= minZ && hz0 <= maxZ;
+  });
+  if (!active.includes(focus)) active.push(focus);
+
   const pinPos = {
     x: hole.pin.x,
     z: hole.pin.z,
@@ -430,6 +497,7 @@ export function buildCourse(hole, assets) {
   let group = null;
   let updateFlag = () => {};
   let updateWater = () => {};
+  let spots = [];
 
   if (VISUAL && assets) {
     group = new THREE.Group();
@@ -444,13 +512,13 @@ export function buildCourse(hole, assets) {
     const splats = new Float32Array((nx + 1) * (nz + 1) * 4);
 
     const C = {
-      fairA: new THREE.Color(0x568f3f), fairB: new THREE.Color(0x447c31),
+      fairA: new THREE.Color(0x5fa047), fairB: new THREE.Color(0x437d2c),  // mower light/dark
       firstCut: new THREE.Color(0x4c8237),
-      fringe: new THREE.Color(0x467c38),
-      greenA: new THREE.Color(0x67a64f), greenB: new THREE.Color(0x5d9b46),
-      tee: new THREE.Color(0x5c9d48),
+      fringe: new THREE.Color(0x57954a),
+      greenA: new THREE.Color(0x79c25e), greenB: new THREE.Color(0x6cb451), // bright, fine-mown
+      tee: new THREE.Color(0x60a44b),
       rough: new THREE.Color(0x3b662e), deep: new THREE.Color(0x2c4f22),
-      sand: new THREE.Color(0xd5c28c),
+      sand: new THREE.Color(0xe6d6a8),
       bed: new THREE.Color(0x31464a),
     };
     const tmp = new THREE.Color();
@@ -460,38 +528,49 @@ export function buildCourse(hole, assets) {
       for (let ix = 0; ix <= nx; ix++) {
         const x = minX + (maxX - minX) * (ix / nx);
         const z = minZ + (maxZ - minZ) * (iz / nz);
-        const h = heightAt(x, z);
+        const h = heightAt(x, z, active);
         positions[vi * 3] = x;
         positions[vi * 3 + 1] = h;
         positions[vi * 3 + 2] = z;
 
-        const surf = surfaceAt(x, z);
+        const surf = surfaceAt(x, z, active);
         const p = pathInfo(x, z);
         let sg = 0, sr = 0, ss = 0, sw = 0;   // grass, rough, sand, tight-mow
 
         if (hasWater && h < waterLevel + 0.05 && waterMask(x, z).m > 0.45) {
           tmp.copy(C.bed); sr = 1;
         } else if (surf === SURF.SAND) {
-          tmp.copy(C.sand); ss = 1;
+          // bright dry sand in the middle, darker damp/shadowed sand at the rim
           let depthT = 0;
-          for (const b of hole.bunkers) depthT = Math.max(depthT, 1 - ellipseVal(b, x, z));
-          tmp.multiplyScalar(1 - 0.15 * Math.max(0, depthT));
+          for (const ho of active) for (const b of ho.bunkers) depthT = Math.max(depthT, 1 - ellipseVal(b, x, z));
+          tmp.copy(C.sand).multiplyScalar(0.82 + 0.18 * Math.max(0, depthT));
+          tmp.multiplyScalar(1 + Math.sin((x * 0.9 + z * 1.3)) * 0.02);  // faint rake lines
+          ss = 1;
         } else if (surf === SURF.GREEN || surf === SURF.TEE) {
-          const checker = (Math.floor(x / 2.4) + Math.floor(z / 2.4)) % 2 === 0;
+          // fine cross-mown checker, aligned to the hole's own orientation
+          const lg = toLocal(x, z);
+          const checker = (Math.floor(lg.lx / 1.7) + Math.floor(lg.lz / 1.7)) % 2 === 0;
           tmp.copy(surf === SURF.TEE ? C.tee : (checker ? C.greenA : C.greenB));
           sg = 1; sw = 1;
         } else if (surf === SURF.FRINGE) {
-          tmp.copy(C.fringe); sg = 1; sw = 0.45;
-        } else if (surf === SURF.FAIRWAY) {
-          const stripe = Math.floor(p.along / 7) % 2 === 0;
-          tmp.copy(stripe ? C.fairA : C.fairB);
-          sg = 1;
-        } else if (p.dist < fhw + 3.5) {
-          tmp.copy(C.firstCut); sg = 0.55; sr = 0.45;
+          tmp.copy(C.fringe); sg = 1; sw = 0.6;
         } else {
-          const t = sstep(fhw + 10, fhw + 45, p.dist);
-          tmp.copy(C.rough).lerp(C.deep, t);
-          sr = 1;
+          // fairway ↔ first-cut ↔ rough as a smooth, noise-warped blend so the
+          // boundaries wander organically instead of tracing polygon edges.
+          let fd = Infinity, falong = 0, fhwN = fhw;
+          for (const ho of active) {
+            const pi = distToPolyline(ho.path, x, z);
+            if (pi.dist < fd) { fd = pi.dist; falong = pi.along; fhwN = ho.fairwayHalf; }
+          }
+          const edge = fbmDetail(x * 0.05 + 500, z * 0.05) * 3.6 + fbmDetail(x * 0.15 + 22, z * 0.15) * 1.3;
+          const dd = fd + edge;                                   // wavy effective distance
+          const fairT = sstep(fhwN + 5, fhwN - 3, dd);            // 1 fairway → 0 rough
+          const stripe = Math.floor(falong / 8) % 2 === 0;       // mower bands
+          tmp.copy(C.firstCut)
+            .lerp(C.rough, sstep(fhwN + 3, fhwN + 13, dd))
+            .lerp(C.deep, sstep(fhwN + 12, fhwN + 46, dd) * 0.8);
+          tmp.lerp(stripe ? C.fairA : C.fairB, fairT);
+          sg = fairT; sr = 1 - 0.65 * fairT;
         }
         const vmod = 1 + fbmDetail(x * 0.11 + 31, z * 0.11) * 0.07;
         colors[vi * 3] = tmp.r * vmod;
@@ -559,24 +638,36 @@ export function buildCourse(hole, assets) {
 
     // ---------- trees: instanced branch-card trees ----------
     const rng = makeRng(hole.seed * 31 + 7);
-    const spots = [];
-    const candidates = Math.floor(1700 * (hole.treeDensity || 1));
-    for (let i = 0; i < candidates && spots.length < 460; i++) {
+    spots = [];
+    // Dense, tree-LINED corridors: trees crowd the rough just off the fairway
+    // edges so each hole reads as an enclosed avenue, screening neighbours.
+    const candidates = Math.floor(3800 * (hole.treeDensity || 1));
+    for (let i = 0; i < candidates && spots.length < 1000; i++) {
       const x = minX + 14 + rng() * (maxX - minX - 28);
       const z = minZ + 14 + rng() * (maxZ - minZ - 28);
-      const p = pathInfo(x, z);
-      if (p.dist < fhw + 11) continue;
-      if (ellipseVal(hole.green, x, z) < 3.0) continue;
-      if (Math.hypot(x - tee.x, z - tee.z) < 20) continue;
+      // wavy forest edge — the tree line wanders in and out, never a straight wall
+      const edgeWobble = fbmDetail(x * 0.08 + 401, z * 0.08) * 7;
+      let nearPlay = false;
+      for (const ho of active) {
+        if (distToPolyline(ho.path, x, z).dist < ho.fairwayHalf + 13 + edgeWobble) { nearPlay = true; break; }
+        if (ellipseVal(ho.green, x, z) < 3.0) { nearPlay = true; break; }
+        if (Math.hypot(x - ho.path[0].x, z - ho.path[0].z) < 18) { nearPlay = true; break; }
+      }
+      if (nearPlay) continue;
       if (hasWater && waterMask(x, z).m > 0.05) continue;
-      if (fbmDetail(x * 0.02 + 90, z * 0.02) < -0.12) continue; // clearings
+      // copse clustering: trees gather into stands with natural clearings between
+      const clump = fbmDetail(x * 0.035 + 90, z * 0.035) * 0.5 + 0.5;
+      if (rng() > clump * 1.15) continue;
+      const u = rng();
       spots.push({
-        x, z, h: heightAt(x, z),
-        s: 0.62 + rng() * 0.95,
-        ry: rng() * Math.PI * 2,
-        tilt: (rng() - 0.5) * 0.08,
-        kind: rng() < 0.6 ? (rng() < 0.5 ? 0 : 1) : (rng() < 0.5 ? 2 : 3),
-        tint: [0.82 + rng() * 0.34, 0.84 + rng() * 0.34, 0.82 + rng() * 0.28],
+        x, z, h: heightAt(x, z, active),
+        s: 0.45 + Math.pow(rng(), 1.6) * 1.4,                       // many small/understory, few tall
+        ry: rng() * Math.PI * 2,                                    // random facing
+        tilt: (rng() - 0.5) * 0.17,                                 // varied lean
+        kind: u < 0.5 ? (rng() < 0.5 ? 0 : 1)                       // mixed species
+            : u < 0.85 ? (rng() < 0.5 ? 2 : 3)
+            : (rng() < 0.5 ? 0 : 2),
+        tint: [0.72 + rng() * 0.48, 0.76 + rng() * 0.46, 0.70 + rng() * 0.36],  // wider colour spread
       });
     }
 
@@ -705,35 +796,47 @@ export function buildCourse(hole, assets) {
       }
     };
 
-    // ---------- flag, cup, tee markers ----------
-    const flagGroup = new THREE.Group();
-    const pole = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.022, 0.022, 2.25, 8),
-      new THREE.MeshLambertMaterial({ color: 0xf4f1e6 }),
-    );
-    pole.position.y = 1.125;
-    pole.castShadow = true;
-    flagGroup.add(pole);
+    // ---------- flags + cups (one per nearby green) ----------
+    const flags = [];
+    const poleGeo = new THREE.CylinderGeometry(0.018, 0.02, 2.3, 8);
+    const poleMat = new THREE.MeshLambertMaterial({ color: 0xf6f3ea });
+    const finialGeo = new THREE.SphereGeometry(0.05, 12, 10);
+    const finialMat = new THREE.MeshStandardMaterial({ color: 0xd8b15a, metalness: 0.7, roughness: 0.35 });
+    const cupGeo = new THREE.CylinderGeometry(0.054, 0.054, 0.16, 18, 1, true);  // sunk liner
+    const cupMat = new THREE.MeshBasicMaterial({ color: 0x0c120b, side: THREE.DoubleSide });
+    const cupRimGeo = new THREE.RingGeometry(0.05, 0.066, 22);
+    const cupRimMat = new THREE.MeshBasicMaterial({ color: 0xf3f1e7 });
+    const flagMat = new THREE.MeshLambertMaterial({ color: 0xd23528, side: THREE.DoubleSide });
+    for (const ho of active) {
+      const fg = new THREE.Group();
+      const pole = new THREE.Mesh(poleGeo, poleMat);
+      pole.position.y = 1.15;
+      pole.castShadow = true;
+      fg.add(pole);
 
-    const flagGeo = new THREE.PlaneGeometry(0.62, 0.4, 8, 3);
-    flagGeo.translate(0.31, 0, 0);
-    const flagBase = flagGeo.attributes.position.array.slice();
-    const flag = new THREE.Mesh(
-      flagGeo,
-      new THREE.MeshLambertMaterial({ color: 0xc23a28, side: THREE.DoubleSide }),
-    );
-    flag.position.y = 2.0;
-    flagGroup.add(flag);
+      const finial = new THREE.Mesh(finialGeo, finialMat);
+      finial.position.y = 2.32;
+      fg.add(finial);
 
-    const cup = new THREE.Mesh(
-      new THREE.CircleGeometry(0.075, 20),
-      new THREE.MeshBasicMaterial({ color: 0x10160f }),
-    );
-    cup.rotation.x = -Math.PI / 2;
-    cup.position.y = 0.012;
-    flagGroup.add(cup);
-    flagGroup.position.set(pinPos.x, pinPos.y, pinPos.z);
-    group.add(flagGroup);
+      const fGeo = new THREE.PlaneGeometry(0.66, 0.42, 10, 4);
+      fGeo.translate(0.33, 0, 0);
+      const fBase = fGeo.attributes.position.array.slice();
+      const fl = new THREE.Mesh(fGeo, flagMat);
+      fl.position.y = 2.04;
+      fg.add(fl);
+
+      const cup = new THREE.Mesh(cupGeo, cupMat);
+      cup.position.y = -0.08;
+      fg.add(cup);
+      const cupRim = new THREE.Mesh(cupRimGeo, cupRimMat);
+      cupRim.rotation.x = -Math.PI / 2;
+      cupRim.position.y = 0.012;
+      fg.add(cupRim);
+
+      fg.position.set(ho.pin.x, heightAt(ho.pin.x, ho.pin.z, active), ho.pin.z);
+      group.add(fg);
+      flags.push({ geo: fGeo, base: fBase });
+    }
 
     // ---------- green-reading grid (slope colored: blue low → red high) ----------
     {
@@ -805,7 +908,7 @@ export function buildCourse(hole, assets) {
           const sx = p.x + -tz * side * (obDist - 2);
           const sz = p.z + tx * side * (obDist - 2);
           if (hasWater && waterMask(sx, sz).m > 0.05) continue;
-          stakes.push({ x: sx, z: sz, h: heightAt(sx, sz) });
+          stakes.push({ x: sx, z: sz, h: heightAt(sx, sz, active) });
         }
       }
       if (stakes.length) {
@@ -831,14 +934,16 @@ export function buildCourse(hole, assets) {
     }
 
     updateFlag = function (t, windSpeed = 4) {
-      const arr = flagGeo.attributes.position.array;
       const amp = 0.03 + windSpeed * 0.012;
-      for (let i = 0; i < arr.length; i += 3) {
-        const bx = flagBase[i];
-        arr[i + 2] = Math.sin(bx * 9 - t * (3 + windSpeed * 0.7)) * amp * bx;
+      for (const f of flags) {
+        const arr = f.geo.attributes.position.array;
+        for (let i = 0; i < arr.length; i += 3) {
+          const bx = f.base[i];
+          arr[i + 2] = Math.sin(bx * 9 - t * (3 + windSpeed * 0.7)) * amp * bx;
+        }
+        f.geo.attributes.position.needsUpdate = true;
+        f.geo.computeVertexNormals();
       }
-      flagGeo.attributes.position.needsUpdate = true;
-      flagGeo.computeVertexNormals();
     };
   }
 
@@ -856,8 +961,10 @@ export function buildCourse(hole, assets) {
   return {
     group, heightAt, surfaceAt, normalAt, waterLevel,
     pinPos, teePos: { x: tee.x, y: teeH, z: tee.z },
+    path, holeDef: focus,
     pointAtAlong, pathInfo, isOB, updateFlag, updateWater, dispose,
     greenGrid: group ? group.userData.greenGrid : null,
     bounds: { minX, maxX, minZ, maxZ },
+    trees: spots.map(t => ({ x: t.x, z: t.z, h: t.h, s: t.s, isPine: t.kind <= 1 })),
   };
 }

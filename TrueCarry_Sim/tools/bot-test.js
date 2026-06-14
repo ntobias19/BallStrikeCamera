@@ -9,8 +9,12 @@ for (const c of CLUBS) {
 
 let totalStrokes = 0, totalPar = 0, failures = 0;
 
-for (const hole of HOLES) {
-  const course = buildCourse(hole);
+// Lay every hole out in the shared world, then play each in its world region.
+const worldHoles = buildRouting(HOLES);
+
+for (let idx = 0; idx < worldHoles.length; idx++) {
+  const hole = worldHoles[idx];           // world-space path / pin / bunkers
+  const course = buildCourse(worldHoles, idx);
   print("=== HOLE " + hole.id + " " + hole.name + " par " + hole.par + " " +
         Math.round(holeLength(hole) * 1.09361) + "y ===");
   const teeS = course.surfaceAt(course.teePos.x, course.teePos.z);
@@ -19,10 +23,13 @@ for (const hole of HOLES) {
     print("  !!! bad surfaces: tee=" + teeS + " pin=" + pinS);
     failures++;
   }
-  // boundary sanity: the playing corridor is in bounds, way offline is not
+  // boundary sanity: the playing corridor is in bounds, way offline is not.
+  // Probe offline along the hole's lateral (world) axis — holes are rotated to
+  // real headings, so a fixed +x offset is no longer reliably "off the hole".
   const mid = course.pointAtAlong(holeLength(hole) / 2);
+  const latX = Math.cos(hole.place.rot), latZ = -Math.sin(hole.place.rot);
   if (course.isOB(course.teePos.x, course.teePos.z) || course.isOB(hole.pin.x, hole.pin.z)
-      || course.isOB(mid.x, mid.z) || !course.isOB(mid.x + 200, mid.z)
+      || course.isOB(mid.x, mid.z) || !course.isOB(mid.x + latX * 200, mid.z + latZ * 200)
       || hole.bunkers.some(b => course.isOB(b.cx, b.cz))) {
     print("  !!! OB corridor misplaced");
     failures++;
@@ -68,8 +75,24 @@ for (const hole of HOLES) {
     const endRem = Math.hypot(sim.pos.x - pin.x, sim.pos.z - pin.z);
     if (sim.state === 'holed') holed = true;
     else if (sim.state === 'water') {
-      strokes++;
-      print("  shot " + shot + " " + c.name + " pw" + power.toFixed(2) + " -> WATER (+1, replay)");
+      strokes++; // penalty
+      // drop at the last dry point short of the hazard, as the real game does
+      // (resolveShot) — not a replay from the same spot — so the bot progresses.
+      const dxp = pin.x - pos.x, dzp = pin.z - pos.z, Lp = Math.hypot(dxp, dzp) || 1;
+      const ux = dxp / Lp, uz = dzp / Lp;
+      let drop = { x: pos.x, z: pos.z };
+      for (let d = 5; d < Lp; d += 5) {
+        const tx = pos.x + ux * d, tz = pos.z + uz * d;
+        if (course.surfaceAt(tx, tz) === 'water') {
+          const back = Math.max(d - 9, 0);
+          drop = { x: pos.x + ux * back, z: pos.z + uz * back };
+          break;
+        }
+        drop = { x: tx, z: tz };
+      }
+      pos = { x: drop.x, y: course.heightAt(drop.x, drop.z) + 0.0214, z: drop.z };
+      lie = course.surfaceAt(pos.x, pos.z);
+      print("  shot " + shot + " " + c.name + " pw" + power.toFixed(2) + " -> WATER (+1, drop)");
       continue;
     } else {
       pos = { x: sim.pos.x, y: sim.pos.y, z: sim.pos.z };

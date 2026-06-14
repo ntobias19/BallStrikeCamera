@@ -150,16 +150,24 @@
   <div id="live-waiting" class="overlay live-waiting-overlay hidden">
     <div class="live-waiting-inner">
       <div class="live-waiting-icon">📡</div>
-      <div class="live-waiting-title">LIVE MODE ACTIVE</div>
-      <div class="live-waiting-sub">Hit a shot on your iPhone to start</div>
+      <div>
+        <div class="live-waiting-title">Live Mode Active</div>
+        <div class="live-waiting-sub">Hit a shot on your iPhone</div>
+      </div>
     </div>
   </div>
 
-  <!-- Live Sim: status badge (top-right corner) -->
+  <!-- Live Sim: status badge (top-right corner, only shown on error) -->
   <div id="live-status" class="live-status-badge hidden"></div>
 
-  <!-- Live Sim: shot counter (top-left, below hole card) -->
+  <!-- Live Sim: shot counter (top-left) -->
   <div id="live-shot-num" class="live-shot-num hidden"></div>
+
+  <!-- Live Sim: current club (top-center) -->
+  <div id="live-club" class="live-club hidden"></div>
+
+  <!-- Range: last-shot metrics pill -->
+  <div id="range-pill" class="range-pill hidden"></div>
 
 </div>
 <script>
